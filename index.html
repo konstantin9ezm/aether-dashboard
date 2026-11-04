@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0e14">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Aether">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<title>Aether</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #141925;
+    --panel-2: #1b2232;
+    --line: #2a3347;
+    --text: #e6e9f0;
+    --muted: #8d97ad;
+    --accent: #7c9cff;
+    --accent-2: #a78bfa;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --radius: 14px;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+  [hidden] { display: none !important; }
+  a { color: var(--accent); }
+  button, input, select { font: inherit; color: inherit; }
+
+  .app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(24px + var(--safe-b)) calc(16px + var(--safe-l));
+  }
+  header.top {
+    display: flex; align-items: center; gap: 12px;
+    margin: 4px 0 20px;
+  }
+  header.top img { width: 40px; height: 40px; border-radius: 10px; }
+  header.top h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  header.top .sub { color: var(--muted); font-size: 13px; }
+  header.top .spacer { flex: 1; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 18px; margin: 0 0 8px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  ol.steps { padding-left: 20px; margin: 8px 0 16px; color: var(--muted); font-size: 14px; }
+  ol.steps li { margin: 4px 0; }
+  ol.steps b { color: var(--text); font-weight: 600; }
+
+  label.field { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  input[type=password], input[type=text] {
+    width: 100%;
+    font-size: 16px; /* verhindert Auto-Zoom in iOS */
+    padding: 12px 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  input:focus { border-color: var(--accent); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border: 0; color: #0b0e14; font-weight: 700;
+  }
+  .btn.danger { color: var(--err); border-color: #4a2a33; }
+  .btn.block { width: 100%; }
+  .btn.big { min-height: 54px; font-size: 18px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .row > .grow { flex: 1; }
+  .mt { margin-top: 12px; }
+
+  .msg {
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
+    border: 1px solid; font-size: 15px;
+  }
+  .msg.error { background: #2a1519; border-color: #5b2630; color: #fecaca; }
+  .msg.warn { background: #2a2312; border-color: #5b4a1c; color: #fde68a; }
+  .msg.info { background: #142033; border-color: #24406b; color: #cfe0ff; }
+  .msg b { display: block; margin-bottom: 2px; }
+  .msg .actions { margin-top: 10px; }
+
+  /* Build-Liste */
+  .builds { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .build {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .build input { margin: 4px 0 0; width: 20px; height: 20px; accent-color: var(--accent); grid-row: span 2; }
+  .build .msgline { font-weight: 600; overflow-wrap: anywhere; }
+  .build .meta { color: var(--muted); font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .build code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+  .build:has(input:checked) { border-color: var(--accent); background: #1d2540; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    padding: 1px 7px; border-radius: 999px; background: #23345e; color: #cfe0ff; text-transform: uppercase;
+  }
+
+  .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
+
+  /* Ladeanzeige */
+  .progress {
+    height: 10px; border-radius: 999px; background: var(--panel-2); overflow: hidden;
+    border: 1px solid var(--line); margin: 14px 0 8px;
+  }
+  .progress > div {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .15s linear;
+  }
+  .progress-text { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .progress-text span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    animation: spin .8s linear infinite; display: inline-block; vertical-align: -3px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Spielansicht */
+  #game {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh; height: 100dvh;
+    background: #000;
+    z-index: 10;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #game iframe {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    border: 0; display: block; background: #000;
+  }
+  #gameBar {
+    position: absolute;
+    top: calc(8px + var(--safe-t));
+    right: calc(8px + var(--safe-r));
+    display: flex; gap: 6px;
+    z-index: 2;
+    opacity: .85;
+    transition: opacity .4s;
+  }
+  #gameBar.dim { opacity: .25; }
+  #gameBar button {
+    width: 44px; height: 44px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(20,25,37,.7);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    color: #fff; font-size: 20px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; touch-action: manipulation;
+  }
+  #gameBar svg { width: 22px; height: 22px; }
+  #gameToast {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(16px + var(--safe-b));
+    max-width: calc(100% - 32px);
+    padding: 10px 14px; border-radius: 12px;
+    background: rgba(20,25,37,.92); border: 1px solid var(--line);
+    font-size: 14px; z-index: 3;
+  }
+  #gameToast.error { border-color: #5b2630; color: #fecaca; }
+
+  html.playing, html.playing body {
+    overflow: hidden;
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  html.playing .app { display: none; }
+
+  @media (min-width: 700px) {
+    .app { padding-top: calc(32px + var(--safe-t)); }
+  }
+</style>
+</head>
+<body>
+<noscript><p style="padding:16px">Diese Seite braucht JavaScript.</p></noscript>
+
+<main class="app" id="app">
+  <header class="top">
+    <img src="icons/icon.svg" alt="" width="40" height="40">
+    <div>
+      <h1>Aether</h1>
+      <div class="sub">Web-Builds starten</div>
+    </div>
+    <div class="spacer"></div>
+  </header>
+
+  <div id="message" class="msg" role="alert" hidden></div>
+
+  <!-- Token eingeben -->
+  <section id="tokenView" class="card" hidden>
+    <h2>GitHub-Token einrichten</h2>
+    <p class="muted small" style="margin-top:0">
+      Die Builds liegen im privaten Repo <b id="repoName1"></b>. Zum Laden brauchst du ein
+      <b>Fine-grained Personal Access Token</b> mit Lesezugriff.
+    </p>
+    <ol class="steps">
+      <li>Auf GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">ein neues Fine-grained Token anlegen</a>.</li>
+      <li>Unter <b>Repository access</b> „Only select repositories“ wählen und nur <b id="repoName2"></b> auswählen.</li>
+      <li>Unter <b>Permissions → Repository permissions</b> nur <b>Contents: Read-only</b> setzen.</li>
+      <li>Ein Ablaufdatum wählen, Token erzeugen und hier einfügen.</li>
+    </ol>
+    <form id="tokenForm" autocomplete="off">
+      <label class="field" for="tokenInput">Token</label>
+      <input id="tokenInput" type="password" name="aether-token" placeholder="github_pat_…"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" required>
+      <p class="muted small">Das Token wird nur auf diesem Gerät gespeichert (localStorage) und nur im
+        Authorization-Header an api.github.com geschickt.</p>
+      <div class="row">
+        <button class="btn primary grow big" id="tokenSave" type="submit">Speichern &amp; prüfen</button>
+        <button class="btn" id="tokenCancel" type="button" hidden>Abbrechen</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Build-Auswahl -->
+  <section id="buildsView" hidden>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <h2 class="grow" style="margin:0">Build wählen</h2>
+        <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
+      </div>
+      <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
+      <button class="btn primary block big mt" id="playBtn" type="button">Spielen</button>
+    </div>
+    <div class="footer">
+      <span class="muted small" id="apiInfo"></span>
+      <span class="row">
+        <button class="btn" id="clearCacheBtn" type="button">Cache leeren</button>
+        <button class="btn danger" id="deleteTokenBtn" type="button">Token löschen</button>
+      </span>
+    </div>
+  </section>
+
+  <!-- Laden -->
+  <section id="loadingView" class="card" hidden aria-live="polite">
+    <h2><span class="spinner"></span>&nbsp; <span id="loadTitle">Lade …</span></h2>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><div id="progressFill"></div></div>
+    <div class="progress-text"><span id="progressFile">&nbsp;</span><span id="progressNum"></span></div>
+    <button class="btn block mt" id="cancelLoadBtn" type="button">Abbrechen</button>
+  </section>
+</main>
+
+<div id="game" hidden>
+  <div id="gameBar">
+    <button id="fsBtn" type="button" aria-label="Vollbild" title="Vollbild">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+    <button id="exitBtn" type="button" aria-label="Spiel beenden" title="Spiel beenden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div id="gameToast" hidden></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Konfiguration
+  // ---------------------------------------------------------------------------
+  var REPO_OWNER = 'konstantin9ezm';
+  var REPO_NAME = 'aether';
+  var REF = 'web-build';
+  var API = 'https://api.github.com';
+  var TOKEN_KEY = 'aether.githubToken';
+  var CACHE_NAME = 'aether-builds-v1';
+  var CACHE_INDEX_KEY = 'aether.cachedBuilds';
+  var CACHE_KEEP_BUILDS = 3;
+  var REPO_FULL = REPO_OWNER + '/' + REPO_NAME;
+  var REPO_PATH = '/repos/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
+
+  // Das Token lebt nur hier im Speicher und in localStorage. Es wird nie geloggt,
+  // nie in eine URL gesetzt und nie an das Spiel weitergegeben.
+  var token = null;
+  var builds = [];
+  var indexLoaded = false;
+  var loadAbort = null;
+  var game = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------------------------------------------------------------------------
+  // Token-Speicher
+  // ---------------------------------------------------------------------------
+  function readStoredToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || null; } catch (e) { return null; }
+  }
+  function storeToken(t) {
+    try { localStorage.setItem(TOKEN_KEY, t); return true; } catch (e) { return false; }
+  }
+  function deleteStoredToken() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignorieren */ }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fehler
+  // ---------------------------------------------------------------------------
+  function AppError(kind, title, text) {
+    this.kind = kind;
+    this.title = title;
+    this.text = text || '';
+    this.message = title;
+  }
+  AppError.prototype = Object.create(Error.prototype);
+
+  function fmtTime(d) {
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function errorFromResponse(res, ctx) {
+    var status = res.status;
+    var remaining = res.headers.get('x-ratelimit-remaining');
+    var reset = res.headers.get('x-ratelimit-reset');
+    var retryAfter = res.headers.get('retry-after');
+    var bodyMsg = '';
+    try { var j = await res.clone().json(); bodyMsg = String((j && j.message) || ''); } catch (e) { /* kein JSON */ }
+
+    if (status === 401) {
+      return new AppError('auth', 'GitHub lehnt das Token ab.',
+        'Das Token ist falsch, abgelaufen oder wurde widerrufen. Erzeuge auf GitHub ein neues Token und gib es hier ein.');
+    }
+    if ((status === 403 || status === 429) && (remaining === '0' || retryAfter || /rate limit/i.test(bodyMsg))) {
+      var when = '';
+      if (reset && /^\d+$/.test(reset)) {
+        var d = new Date(Number(reset) * 1000);
+        var mins = Math.max(1, Math.ceil((d.getTime() - Date.now()) / 60000));
+        when = ' Wieder möglich ab ' + fmtTime(d) + ' Uhr (in ca. ' + mins + ' Min.).';
+      } else if (retryAfter && /^\d+$/.test(retryAfter)) {
+        when = ' Bitte ca. ' + Math.max(1, Math.ceil(Number(retryAfter) / 60)) + ' Min. warten.';
+      }
+      return new AppError('ratelimit', 'GitHub-Rate-Limit erreicht.',
+        'Es wurden zu viele Anfragen an die GitHub-API geschickt.' + when);
+    }
+    if (status === 403) {
+      return new AppError('forbidden', 'Das Token hat keinen Zugriff.',
+        'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „Contents: Read-only“. ' +
+        'Falls das Repo einer Organisation gehört, muss diese Fine-grained Tokens erlauben.');
+    }
+    if (status === 404 && ctx && ctx.notFound) {
+      return typeof ctx.notFound === 'function' ? await ctx.notFound() : ctx.notFound;
+    }
+    if (status === 404) {
+      return new AppError('notfound', 'Nicht gefunden.', 'GitHub meldet 404 für eine benötigte Datei.');
+    }
+    if (status >= 500) {
+      return new AppError('server', 'GitHub hat gerade Probleme (HTTP ' + status + ').', 'Versuche es in ein paar Minuten noch einmal.');
+    }
+    return new AppError('http', 'Unerwartete Antwort von GitHub (HTTP ' + status + ').', bodyMsg);
+  }
+
+  // ---------------------------------------------------------------------------
+  // GitHub-API
+  // ---------------------------------------------------------------------------
+  var lastRate = null;
+
+  async function api(path, opts) {
+    opts = opts || {};
+    var useToken = opts.token || token;
+    if (!useToken) throw new AppError('auth', 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
+    var res;
+    try {
+      res = await fetch(API + path, {
+        method: 'GET',
+        headers: {
+          'Accept': opts.accept || 'application/vnd.github+json',
+          'Authorization': 'Bearer ' + useToken
+        },
+        cache: 'no-store',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        signal: opts.signal
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
+    }
+    var rem = res.headers.get('x-ratelimit-remaining');
+    var lim = res.headers.get('x-ratelimit-limit');
+    if (rem !== null && lim !== null) lastRate = { remaining: rem, limit: lim };
+    var exp = res.headers.get('github-authentication-token-expiration');
+    if (exp) tokenExpiry = exp;
+    if (!res.ok) throw await errorFromResponse(res, opts);
+    return res;
+  }
+  var tokenExpiry = null;
+
+  function contentsPath(p) {
+    var clean = String(p).replace(/^\/+|\/+$/g, '');
+    return REPO_PATH + '/contents/' + clean.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(REF);
+  }
+
+  async function explainIndexMissing(useToken) {
+    try {
+      await api(REPO_PATH, { token: useToken });
+    } catch (e) {
+      if (e.kind === 'notfound') {
+        return new AppError('norepo', 'Repo nicht erreichbar.',
+          'GitHub findet ' + REPO_FULL + ' nicht. Meistens hat das Token keinen Zugriff darauf: ' +
+          'Unter „Repository access“ muss ' + REPO_FULL + ' ausgewählt sein.');
+      }
+      return e;
+    }
+    try {
+      await api(REPO_PATH + '/branches/' + encodeURIComponent(REF), { token: useToken });
+    } catch (e) {
+      if (e.kind === 'notfound') {
+        return new AppError('nobranch', 'Es gibt noch keinen Web-Build.',
+          'Der Branch „' + REF + '“ existiert in ' + REPO_FULL + ' nicht.');
+      }
+      return e;
+    }
+    return new AppError('noindex', 'index.json fehlt.',
+      'Im Branch „' + REF + '“ liegt keine index.json. Der Web-Build wurde wohl nicht vollständig veröffentlicht.');
+  }
+
+  async function loadIndex(useToken) {
+    var res = await api(contentsPath('index.json'), {
+      token: useToken,
+      accept: 'application/vnd.github.raw+json',
+      notFound: function () { return explainIndexMissing(useToken); }
+    });
+    var text = await res.text();
+    var data;
+    try { data = JSON.parse(text); } catch (e) {
+      throw new AppError('badindex', 'index.json ist kaputt.', 'Die Datei enthält kein gültiges JSON.');
+    }
+    if (!Array.isArray(data)) throw new AppError('badindex', 'index.json ist kaputt.', 'Erwartet wurde eine Liste von Builds.');
+    var list = data.filter(function (b) {
+      return b && typeof b.path === 'string' && /^[\w.\-\/]+$/.test(b.path) && !/(^|\/)\.\.(\/|$)/.test(b.path);
+    }).map(function (b) {
+      return {
+        commit: String(b.commit || ''),
+        short: String(b.short || String(b.commit || '').slice(0, 7) || '?'),
+        message: String(b.message || ''),
+        date: String(b.date || ''),
+        path: b.path
+      };
+    });
+    // Neueste zuerst (index.json ist schon so sortiert; stabil nachsortieren, falls nicht).
+    list = list.map(function (b, i) { return { b: b, i: i, t: Date.parse(b.date) }; })
+      .sort(function (x, y) {
+        if (!isNaN(x.t) && !isNaN(y.t) && x.t !== y.t) return y.t - x.t;
+        return x.i - y.i;
+      }).map(function (x) { return x.b; });
+    return list;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build-Dateien erkennen
+  // ---------------------------------------------------------------------------
+  var MIME = {
+    html: 'text/html', htm: 'text/html', js: 'text/javascript', mjs: 'text/javascript',
+    wasm: 'application/wasm', data: 'application/octet-stream', json: 'application/json',
+    css: 'text/css', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml',
+    txt: 'text/plain', map: 'application/json', ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav'
+  };
+  function extOf(name) {
+    var m = /\.([a-z0-9]+)$/i.exec(name);
+    return m ? m[1].toLowerCase() : '';
+  }
+  function kindOf(name) {
+    var e = extOf(name);
+    if (e === 'html' || e === 'htm') return 'html';
+    if (e === 'js' || e === 'mjs') return 'js';
+    if (e === 'wasm') return 'wasm';
+    if (e === 'data') return 'data';
+    return 'other';
+  }
+
+  async function listBuild(build, signal) {
+    var res = await api(contentsPath(build.path), {
+      signal: signal,
+      notFound: new AppError('nobuild', 'Build ' + build.short + ' fehlt.',
+        'Der Ordner „' + build.path + '“ existiert im Branch „' + REF + '“ nicht (mehr). Wähle einen anderen Build oder lade die Liste neu.')
+    });
+    var items = await res.json();
+    if (!Array.isArray(items)) {
+      throw new AppError('nobuild', 'Build ' + build.short + ' ist kein Ordner.', 'Unter „' + build.path + '“ liegt eine Datei statt eines Ordners.');
+    }
+    var files = items.filter(function (it) {
+      return it && it.type === 'file' && typeof it.name === 'string' && typeof it.sha === 'string';
+    }).map(function (it) {
+      return { name: it.name, sha: it.sha, size: Number(it.size) || 0, kind: kindOf(it.name), type: MIME[extOf(it.name)] || 'application/octet-stream' };
+    });
+    var by = function (k) { return files.filter(function (f) { return f.kind === k; }); };
+    var html = by('html'), js = by('js'), wasm = by('wasm'), data = by('data');
+    if (!files.length) {
+      throw new AppError('nobuild', 'Build ' + build.short + ' ist leer.', 'Im Ordner „' + build.path + '“ liegen keine Dateien.');
+    }
+    if (!js.length) {
+      throw new AppError('incomplete', 'Build ' + build.short + ' ist unvollständig.', 'Im Ordner fehlt die JavaScript-Datei des Spiels.');
+    }
+    var mainHtml = html.filter(function (f) { return /^index\.html?$/i.test(f.name); })[0] || html[0] || null;
+    return { build: build, files: files, html: mainHtml, js: js, wasm: wasm, data: data };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Download mit Fortschritt und Cache
+  // ---------------------------------------------------------------------------
+  function cacheKey(sha) { return 'https://aether-cache.invalid/blob/' + sha; }
+  async function openCache() {
+    try { return self.caches ? await caches.open(CACHE_NAME) : null; } catch (e) { return null; }
+  }
+
+  async function readBody(res, expected, onBytes) {
+    if (!res.body || !res.body.getReader) {
+      var b = new Uint8Array(await res.arrayBuffer());
+      onBytes(b.byteLength);
+      return b;
+    }
+    var reader = res.body.getReader();
+    var chunks = [], total = 0;
+    for (;;) {
+      var r = await reader.read();
+      if (r.done) break;
+      chunks.push(r.value);
+      total += r.value.byteLength;
+      onBytes(r.value.byteLength);
+    }
+    var out = new Uint8Array(total), off = 0;
+    for (var i = 0; i < chunks.length; i++) { out.set(chunks[i], off); off += chunks[i].byteLength; }
+    return out;
+  }
+
+  function decodeBase64(s) {
+    var bin = atob(String(s).replace(/\s+/g, ''));
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function downloadFile(file, cache, signal, onBytes) {
+    if (cache) {
+      try {
+        var hit = await cache.match(cacheKey(file.sha));
+        if (hit) {
+          var cached = new Uint8Array(await hit.arrayBuffer());
+          if (cached.byteLength === file.size) { onBytes(cached.byteLength, true); return cached; }
+        }
+      } catch (e) { /* Cache-Fehler ignorieren */ }
+    }
+    var res = await api(REPO_PATH + '/git/blobs/' + encodeURIComponent(file.sha), {
+      accept: 'application/vnd.github.raw+json',
+      signal: signal,
+      notFound: new AppError('nobuild', 'Datei fehlt: ' + file.name, 'GitHub findet die Datei „' + file.name + '“ des Builds nicht mehr.')
+    });
+    var bytes;
+    var ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (ct.indexOf('application/json') === 0 && file.kind !== 'other' && extOf(file.name) !== 'json') {
+      // Fallback: API hat JSON mit Base64-Inhalt statt Rohdaten geliefert.
+      var j = await res.json();
+      bytes = decodeBase64(j.content || '');
+      onBytes(bytes.byteLength);
+    } else {
+      bytes = await readBody(res, file.size, onBytes);
+    }
+    if (bytes.byteLength !== file.size) {
+      throw new AppError('incomplete', 'Download unvollständig: ' + file.name,
+        'Erwartet ' + fmtBytes(file.size) + ', erhalten ' + fmtBytes(bytes.byteLength) + '. Bitte erneut versuchen.');
+    }
+    if (cache) {
+      try { await cache.put(cacheKey(file.sha), new Response(bytes.slice(0), { headers: { 'Content-Type': 'application/octet-stream' } })); } catch (e) { /* Speicher voll o. ä. */ }
+    }
+    return bytes;
+  }
+
+  async function pruneCache(cache, keepShas, buildShort) {
+    if (!cache) return;
+    try {
+      var idx = [];
+      try { idx = JSON.parse(localStorage.getItem(CACHE_INDEX_KEY) || '[]'); } catch (e) { idx = []; }
+      if (!Array.isArray(idx)) idx = [];
+      idx = idx.filter(function (x) { return x && x.short !== buildShort; });
+      idx.unshift({ short: buildShort, shas: keepShas });
+      idx = idx.slice(0, CACHE_KEEP_BUILDS);
+      try { localStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(idx)); } catch (e) { /* egal */ }
+      var keep = {};
+      idx.forEach(function (x) { (x.shas || []).forEach(function (s) { keep[cacheKey(s)] = true; }); });
+      var keys = await cache.keys();
+      await Promise.all(keys.map(function (req) { return keep[req.url] ? null : cache.delete(req); }));
+    } catch (e) { /* egal */ }
+  }
+
+  async function clearCache() {
+    try { if (self.caches) await caches.delete(CACHE_NAME); } catch (e) { /* egal */ }
+    try { localStorage.removeItem(CACHE_INDEX_KEY); } catch (e) { /* egal */ }
+  }
+
+  function fmtBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' KB';
+    return (n / 1048576).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' MB';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spiel-Container (sandboxed iframe ohne allow-same-origin: das Spiel kann
+  // weder localStorage noch das Token dieser Seite lesen)
+  // ---------------------------------------------------------------------------
+  function iframeBoot() {
+    var files = null;
+    var started = false;
+    var parentWin = window.parent;
+    function post(msg) { try { parentWin.postMessage(msg, '*'); } catch (e) { /* egal */ } }
+    function baseName(u) {
+      var s;
+      try { s = typeof u === 'string' ? u : (u && u.url) ? u.url : String(u); } catch (e) { return ''; }
+      if (/^(blob|data):/i.test(s)) return '';
+      s = s.split('#')[0].split('?')[0];
+      s = s.slice(s.lastIndexOf('/') + 1);
+      try { return decodeURIComponent(s); } catch (e) { return s; }
+    }
+    function lookup(u) {
+      if (!files) return null;
+      var n = baseName(u);
+      return n && Object.prototype.hasOwnProperty.call(files, n) ? files[n] : null;
+    }
+    // fetch() auf Build-Dateien aus dem Speicher beantworten.
+    var realFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var f = lookup(input);
+      if (f) {
+        return Promise.resolve(new Response(new Blob([f.bytes], { type: f.type }), {
+          status: 200, statusText: 'OK',
+          headers: { 'Content-Type': f.type, 'Content-Length': String(f.bytes.byteLength) }
+        }));
+      }
+      return realFetch.apply(this, arguments);
+    };
+    // XMLHttpRequest (ältere Emscripten-Loader) auf Blob-URLs umleiten.
+    var blobUrls = {};
+    var realOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      var f = lookup(url);
+      if (f) {
+        var n = baseName(url);
+        try {
+          if (!blobUrls[n]) blobUrls[n] = URL.createObjectURL(new Blob([f.bytes], { type: f.type }));
+          var args = Array.prototype.slice.call(arguments);
+          args[1] = blobUrls[n];
+          return realOpen.apply(this, args);
+        } catch (e) { /* weiter mit Original */ }
+      }
+      return realOpen.apply(this, arguments);
+    };
+    function patchModule() {
+      var M = window.Module;
+      if (!M || typeof M !== 'object') return;
+      if (!M.getPreloadedPackage) {
+        M.getPreloadedPackage = function (name) {
+          var f = lookup(name);
+          return f ? f.bytes.buffer.slice(f.bytes.byteOffset, f.bytes.byteOffset + f.bytes.byteLength) : null;
+        };
+      }
+    }
+    window.addEventListener('error', function (e) {
+      post({ aether: 'error', message: String((e && e.message) || 'Unbekannter Fehler') });
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      post({ aether: 'error', message: String((r && (r.message || r)) || 'Unbekannter Fehler') });
+    });
+    function run() {
+      if (started || !files || document.readyState === 'loading') return;
+      started = true;
+      var dec = new TextDecoder('utf-8');
+      var list = Array.prototype.slice.call(document.querySelectorAll('script[type="text/x-aether-deferred"]'));
+      list.forEach(function (ph) {
+        var s = document.createElement('script');
+        var t = ph.getAttribute('data-aether-type');
+        if (t) s.type = t;
+        var name = ph.getAttribute('data-aether-file');
+        if (name) {
+          var f = files[name];
+          s.textContent = f ? dec.decode(f.bytes) + '\n//# sourceURL=' + name.replace(/[^\w.\-]/g, '_') : '';
+        } else {
+          s.textContent = ph.textContent;
+        }
+        ph.parentNode.replaceChild(s, ph);
+        patchModule();
+      });
+      // Die Spielskripte liefen nach dem eigentlichen Laden; Ereignisse nachreichen.
+      document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+      if (document.readyState === 'complete') window.dispatchEvent(new Event('load'));
+      post({ aether: 'started' });
+    }
+    window.addEventListener('message', function (e) {
+      if (e.source !== parentWin || !e.data || e.data.aether !== 'files' || files) return;
+      files = {};
+      e.data.files.forEach(function (f) { files[f.name] = { bytes: new Uint8Array(f.buffer), type: f.type }; });
+      run();
+    });
+    document.addEventListener('DOMContentLoaded', run);
+    post({ aether: 'boot' });
+  }
+
+  var JS_TYPES = { '': 1, 'text/javascript': 1, 'application/javascript': 1, 'module': 1, 'text/ecmascript': 1, 'application/ecmascript': 1 };
+
+  function buildGameDocument(info, contents) {
+    var parser = new DOMParser();
+    var doc;
+    if (info.html) {
+      doc = parser.parseFromString(new TextDecoder('utf-8').decode(contents[info.html.name]), 'text/html');
+    } else {
+      // Kein HTML im Build: minimale Emscripten-Hülle erzeugen.
+      doc = parser.parseFromString('<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">' +
+        '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;' +
+        '-webkit-user-select:none;user-select:none;overscroll-behavior:none}' +
+        '#canvas{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;display:block;outline:0}</style></head>' +
+        '<body><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>' +
+        '<script>var Module={canvas:document.getElementById("canvas"),print:function(t){console.log(t)},printErr:function(t){console.warn(t)}};' +
+        '["gesturestart","gesturechange"].forEach(function(n){document.addEventListener(n,function(e){e.preventDefault()},{passive:false})});' +
+        'document.addEventListener("touchmove",function(e){e.preventDefault()},{passive:false});<\/script></body></html>', 'text/html');
+      var main = pickMainJs(info);
+      var s = doc.createElement('script');
+      s.setAttribute('src', main.name);
+      doc.body.appendChild(s);
+    }
+    var names = {};
+    info.files.forEach(function (f) { names[f.name] = true; });
+    var nameFromRef = function (ref) {
+      if (!ref || /^[a-z][a-z0-9+.\-]*:/i.test(ref) || ref.indexOf('//') === 0) return null;
+      var n = ref.split('#')[0].split('?')[0];
+      n = n.slice(n.lastIndexOf('/') + 1);
+      try { n = decodeURIComponent(n); } catch (e) { /* roh */ }
+      return names[n] ? n : null;
+    };
+
+    // Alle Skripte zurückhalten und später in Originalreihenfolge ausführen.
+    Array.prototype.slice.call(doc.querySelectorAll('script')).forEach(function (s) {
+      var type = (s.getAttribute('type') || '').trim().toLowerCase();
+      if (!JS_TYPES[type]) return;
+      var ph = doc.createElement('script');
+      ph.setAttribute('type', 'text/x-aether-deferred');
+      if (type === 'module') ph.setAttribute('data-aether-type', 'module');
+      if (s.hasAttribute('src')) {
+        var n = nameFromRef(s.getAttribute('src'));
+        if (!n) return; // externes Skript: unverändert lassen
+        ph.setAttribute('data-aether-file', n);
+      } else {
+        ph.textContent = s.textContent;
+      }
+      s.parentNode.replaceChild(ph, s);
+    });
+    // Stylesheets aus dem Build einbetten.
+    Array.prototype.slice.call(doc.querySelectorAll('link[rel~="stylesheet"][href]')).forEach(function (l) {
+      var n = nameFromRef(l.getAttribute('href'));
+      if (!n || !contents[n]) return;
+      var st = doc.createElement('style');
+      st.textContent = new TextDecoder('utf-8').decode(contents[n]);
+      l.parentNode.replaceChild(st, l);
+    });
+    var boot = doc.createElement('script');
+    boot.textContent = '(' + iframeBoot.toString() + ')();';
+    var head = doc.head || doc.documentElement;
+    head.insertBefore(boot, head.firstChild);
+    return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  }
+
+  function pickMainJs(info) {
+    var cands = info.js.filter(function (f) { return !/\.(worker|worklet|aw)\.m?js$/i.test(f.name) && !/\.audio\.worklet\.m?js$/i.test(f.name); });
+    if (!cands.length) cands = info.js;
+    var stems = info.wasm.map(function (w) { return w.name.replace(/\.wasm$/i, ''); });
+    return cands.filter(function (f) { return stems.indexOf(f.name.replace(/\.m?js$/i, '')) >= 0; })[0] || cands[0];
+  }
+
+  function startGame(info, contents) {
+    stopGame(true);
+    var wrap = $('game');
+    var iframe = document.createElement('iframe');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-pointer-lock');
+    iframe.setAttribute('allow', 'fullscreen; gamepad; autoplay');
+    iframe.setAttribute('title', 'Aether ' + info.build.short);
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    var srcdoc = buildGameDocument(info, contents);
+    var g = { iframe: iframe, info: info, bootTimer: null };
+    game = g;
+
+    var onMsg = function (e) {
+      if (!game || game !== g || e.source !== iframe.contentWindow || !e.data || typeof e.data.aether !== 'string') return;
+      if (e.data.aether === 'boot') {
+        clearTimeout(g.bootTimer);
+        var payload = [], transfer = [];
+        Object.keys(contents).forEach(function (name) {
+          var bytes = contents[name];
+          var buf = bytes.buffer.byteLength === bytes.byteLength ? bytes.buffer : bytes.slice().buffer;
+          var f = info.files.filter(function (x) { return x.name === name; })[0];
+          payload.push({ name: name, type: f ? f.type : 'application/octet-stream', buffer: buf });
+          transfer.push(buf);
+        });
+        iframe.contentWindow.postMessage({ aether: 'files', files: payload }, '*', transfer);
+      } else if (e.data.aether === 'started') {
+        showView('game');
+        try { iframe.focus(); iframe.contentWindow.focus(); } catch (err) { /* egal */ }
+        dimBarSoon();
+      } else if (e.data.aether === 'error') {
+        showToast('Fehler im Spiel: ' + String(e.data.message).slice(0, 200), true);
+      }
+    };
+    g.onMsg = onMsg;
+    window.addEventListener('message', onMsg);
+    g.bootTimer = setTimeout(function () {
+      if (game !== g) return;
+      stopGame(true);
+      showError(new AppError('boot', 'Das Spiel ließ sich nicht starten.', 'Der Spiel-Container hat nicht reagiert. Lade die Seite neu und versuche es erneut.'));
+      showView('builds');
+    }, 15000);
+    iframe.srcdoc = srcdoc;
+    wrap.insertBefore(iframe, wrap.firstChild);
+    wrap.hidden = false;
+    document.documentElement.classList.add('playing');
+  }
+
+  function stopGame(silent) {
+    if (!game) return;
+    clearTimeout(game.bootTimer);
+    window.removeEventListener('message', game.onMsg);
+    try { game.iframe.srcdoc = ''; } catch (e) { /* egal */ }
+    game.iframe.remove();
+    game = null;
+    $('game').hidden = true;
+    $('gameToast').hidden = true;
+    document.documentElement.classList.remove('playing');
+    exitFullscreen();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Vollbild
+  // ---------------------------------------------------------------------------
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function fsSupported() {
+    var el = document.documentElement;
+    return !!(el.requestFullscreen || el.webkitRequestFullscreen) && (document.fullscreenEnabled !== false || document.webkitFullscreenEnabled);
+  }
+  function isStandalone() {
+    return window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches);
+  }
+  function exitFullscreen() {
+    if (!fsElement()) return;
+    try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { /* egal */ }
+  }
+  async function toggleFullscreen() {
+    if (fsElement()) { exitFullscreen(); return; }
+    var el = $('game');
+    try {
+      if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else throw new Error('nicht unterstützt');
+      try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(function () {}); } catch (e) { /* egal */ }
+    } catch (e) {
+      showToast(isStandalone()
+        ? 'Läuft bereits ohne Browserleisten.'
+        : 'Vollbild wird hier nicht unterstützt. Tipp: Teilen → „Zum Home-Bildschirm“ – dann startet Aether ohne Browserleisten.');
+    }
+    if (game && game.iframe) { try { game.iframe.contentWindow.focus(); } catch (e) { /* egal */ } }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Oberfläche
+  // ---------------------------------------------------------------------------
+  function showView(name) {
+    $('tokenView').hidden = name !== 'token';
+    $('buildsView').hidden = name !== 'builds';
+    $('loadingView').hidden = name !== 'loading';
+    if (name !== 'game' && name !== 'loading' && game) stopGame(true);
+  }
+
+  function showError(err) {
+    var box = $('message');
+    box.className = 'msg error';
+    box.textContent = '';
+    var b = document.createElement('b');
+    b.textContent = err.title || 'Fehler';
+    box.appendChild(b);
+    var p = document.createElement('div');
+    p.textContent = err.text || '';
+    box.appendChild(p);
+    var actions = document.createElement('div');
+    actions.className = 'row actions';
+    if (err.kind === 'auth' || err.kind === 'forbidden' || err.kind === 'norepo') {
+      actions.appendChild(mkBtn('Neues Token eingeben', function () { hideMessage(); openTokenView(true); }, 'primary'));
+    }
+    if (err.kind === 'network' || err.kind === 'ratelimit' || err.kind === 'server' || err.kind === 'nobranch' || err.kind === 'noindex' || err.kind === 'badindex' || err.kind === 'http') {
+      actions.appendChild(mkBtn('Erneut versuchen', function () { hideMessage(); refreshBuilds(); }));
+    }
+    if (actions.childNodes.length) box.appendChild(actions);
+    box.hidden = false;
+    box.dataset.kind = err.kind || 'error';
+  }
+  function showInfo(text, cls) {
+    var box = $('message');
+    box.className = 'msg ' + (cls || 'info');
+    box.textContent = text;
+    box.dataset.kind = cls || 'info';
+    box.hidden = false;
+  }
+  function hideMessage() { $('message').hidden = true; }
+  function mkBtn(label, fn, cls) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  var toastTimer = null;
+  function showToast(text, isError) {
+    var t = $('gameToast');
+    t.textContent = text;
+    t.className = isError ? 'error' : '';
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, isError ? 8000 : 5000);
+  }
+
+  var dimTimer = null;
+  function dimBarSoon() {
+    var bar = $('gameBar');
+    bar.classList.remove('dim');
+    clearTimeout(dimTimer);
+    dimTimer = setTimeout(function () { bar.classList.add('dim'); }, 3000);
+  }
+
+  function openTokenView(canCancel) {
+    $('tokenCancel').hidden = !canCancel || !token;
+    $('tokenInput').value = '';
+    showView('token');
+  }
+
+  function fmtDate(s) {
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return s || '';
+    return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderBuilds() {
+    var ul = $('buildList');
+    ul.textContent = '';
+    if (!builds.length) {
+      var li = document.createElement('li');
+      li.className = 'muted';
+      li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
+      ul.appendChild(li);
+      $('playBtn').disabled = true;
+      return;
+    }
+    $('playBtn').disabled = false;
+    builds.forEach(function (b, i) {
+      var li = document.createElement('li');
+      var label = document.createElement('label');
+      label.className = 'build';
+      var input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'build';
+      input.value = String(i);
+      input.checked = i === 0;
+      var msg = document.createElement('div');
+      msg.className = 'msgline';
+      msg.textContent = (b.message.split('\n')[0] || '(ohne Nachricht)');
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      var code = document.createElement('code');
+      code.textContent = b.short;
+      var date = document.createElement('span');
+      date.textContent = fmtDate(b.date);
+      meta.appendChild(code);
+      meta.appendChild(date);
+      if (i === 0) {
+        var badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = 'neuester';
+        meta.appendChild(badge);
+      }
+      label.appendChild(input);
+      label.appendChild(msg);
+      label.appendChild(meta);
+      li.appendChild(label);
+      ul.appendChild(li);
+    });
+    updateApiInfo();
+  }
+
+  function updateApiInfo() {
+    var parts = [REPO_FULL + ' · ' + REF];
+    if (lastRate) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
+    $('apiInfo').textContent = parts.join(' · ');
+  }
+
+  function selectedBuild() {
+    var r = document.querySelector('input[name="build"]:checked');
+    return r ? builds[Number(r.value)] : builds[0];
+  }
+
+  async function refreshBuilds() {
+    hideMessage();
+    builds = [];
+    indexLoaded = false;
+    showView('loading');
+    $('loadTitle').textContent = 'Lade Build-Liste …';
+    setProgress(0, 0, '');
+    $('cancelLoadBtn').hidden = true;
+    try {
+      builds = await loadIndex(token);
+      indexLoaded = true;
+      renderBuilds();
+      showView('builds');
+      checkExpiry();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  function checkExpiry() {
+    if (!tokenExpiry) return;
+    var d = new Date(tokenExpiry.replace(' UTC', 'Z').replace(' ', 'T'));
+    if (isNaN(d.getTime())) return;
+    var days = (d.getTime() - Date.now()) / 86400000;
+    if (days < 7) {
+      showInfo('Dein Token läuft am ' + d.toLocaleDateString('de-DE') + ' ab. Lege rechtzeitig ein neues an.', 'warn');
+    }
+  }
+
+  function handleError(e) {
+    if (e && e.name === 'AbortError') { showView(token ? 'builds' : 'token'); return; }
+    var err = e instanceof AppError ? e : new AppError('unknown', 'Unerwarteter Fehler.', String((e && e.message) || e));
+    showError(err);
+    if (err.kind === 'auth') { openTokenView(false); return; }
+    renderBuilds();
+    showView('builds');
+  }
+
+  function setProgress(done, total, label) {
+    var pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
+    $('progressFill').style.width = pct + '%';
+    $('progressBar').setAttribute('aria-valuenow', String(pct));
+    $('progressFile').textContent = label || ' ';
+    $('progressNum').textContent = total > 0 ? fmtBytes(done) + ' / ' + fmtBytes(total) + ' · ' + pct + ' %' : '';
+  }
+
+  async function play() {
+    var build = selectedBuild();
+    if (!build) return;
+    hideMessage();
+    loadAbort = new AbortController();
+    var signal = loadAbort.signal;
+    showView('loading');
+    $('cancelLoadBtn').hidden = false;
+    $('loadTitle').textContent = 'Lade Build ' + build.short + ' …';
+    setProgress(0, 0, 'Dateiliste …');
+    try {
+      var info = await listBuild(build, signal);
+      var total = info.files.reduce(function (s, f) { return s + f.size; }, 0);
+      var done = 0, fromCache = 0;
+      var cache = await openCache();
+      var contents = {};
+      // Wichtige Dateien zuerst, große Dateien parallel zu kleinen.
+      var order = info.files.slice().sort(function (a, b) {
+        var rank = { html: 0, js: 1, wasm: 2, data: 3, other: 4 };
+        return rank[a.kind] - rank[b.kind];
+      });
+      var queue = order.slice();
+      var current = {};
+      var label = function () {
+        var names = Object.keys(current);
+        return names.length ? names.join(', ') : '';
+      };
+      var worker = async function () {
+        while (queue.length) {
+          if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+          var f = queue.shift();
+          current[f.name] = true;
+          setProgress(done, total, label());
+          contents[f.name] = await downloadFile(f, cache, signal, function (n, cached) {
+            done += n;
+            if (cached) fromCache += n;
+            setProgress(done, total, label());
+          });
+          delete current[f.name];
+          setProgress(done, total, label());
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+      setProgress(total, total, fromCache === total && total > 0 ? 'aus dem Cache' : 'fertig');
+      $('loadTitle').textContent = 'Starte Aether ' + build.short + ' …';
+      $('cancelLoadBtn').hidden = true;
+      pruneCache(cache, info.files.map(function (f) { return f.sha; }), build.short);
+      startGame(info, contents);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      loadAbort = null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ereignisse
+  // ---------------------------------------------------------------------------
+  $('repoName1').textContent = REPO_FULL;
+  $('repoName2').textContent = REPO_FULL;
+
+  $('tokenForm').addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    var input = $('tokenInput');
+    var candidate = input.value.trim();
+    input.value = '';
+    if (!/^[A-Za-z0-9_]{20,255}$/.test(candidate)) {
+      showError(new AppError('format', 'Das sieht nicht nach einem GitHub-Token aus.', 'Fine-grained Tokens beginnen mit „github_pat_“. Bitte das komplette Token einfügen.'));
+      return;
+    }
+    hideMessage();
+    var btn = $('tokenSave');
+    btn.disabled = true;
+    btn.textContent = 'Prüfe …';
+    try {
+      var list = await loadIndex(candidate);
+      token = candidate;
+      if (!storeToken(candidate)) showInfo('Token konnte nicht dauerhaft gespeichert werden (privater Modus?). Es gilt nur bis zum Neuladen.', 'warn');
+      else if (/^gh[opsu]_/.test(candidate)) showInfo('Hinweis: Das ist ein klassisches Token. Sicherer ist ein Fine-grained Token mit Zugriff nur auf ' + REPO_FULL + '.', 'warn');
+      builds = list;
+      indexLoaded = true;
+      renderBuilds();
+      showView('builds');
+      checkExpiry();
+    } catch (e) {
+      if (e.kind === 'network' || e.kind === 'ratelimit' || e.kind === 'server') {
+        // Token ist vermutlich in Ordnung, GitHub gerade nicht erreichbar.
+        token = candidate;
+        storeToken(candidate);
+        builds = [];
+        indexLoaded = false;
+        showError(e);
+        renderBuilds();
+        showView('builds');
+      } else {
+        showError(e);
+      }
+    } finally {
+      candidate = null;
+      btn.disabled = false;
+      btn.textContent = 'Speichern & prüfen';
+    }
+  });
+
+  $('tokenCancel').addEventListener('click', function () { hideMessage(); showView('builds'); });
+  $('reloadBtn').addEventListener('click', refreshBuilds);
+  $('playBtn').addEventListener('click', play);
+  $('cancelLoadBtn').addEventListener('click', function () { if (loadAbort) loadAbort.abort(); });
+  $('deleteTokenBtn').addEventListener('click', async function () {
+    if (!confirm('Token von diesem Gerät löschen?')) return;
+    deleteStoredToken();
+    token = null;
+    builds = [];
+    indexLoaded = false;
+    lastRate = null;
+    tokenExpiry = null;
+    await clearCache();
+    openTokenView(false);
+    showInfo('Token gelöscht.', 'info');
+  });
+  $('clearCacheBtn').addEventListener('click', async function () {
+    await clearCache();
+    showInfo('Lokaler Build-Cache geleert.', 'info');
+  });
+  $('fsBtn').addEventListener('click', toggleFullscreen);
+  $('exitBtn').addEventListener('click', function () {
+    if (!confirm('Spiel beenden?')) return;
+    stopGame();
+    showView('builds');
+  });
+  $('game').addEventListener('pointerdown', dimBarSoon, true);
+  $('gameBar').addEventListener('pointerdown', dimBarSoon);
+
+  // Kein Zoomen/Scrollen während des Spiels.
+  var playing = function () { return document.documentElement.classList.contains('playing'); };
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (n) {
+    document.addEventListener(n, function (e) { if (playing()) e.preventDefault(); }, { passive: false });
+  });
+  document.addEventListener('touchmove', function (e) { if (playing()) e.preventDefault(); }, { passive: false });
+  var lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    var now = Date.now();
+    if (playing() && now - lastTouchEnd < 350) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  document.addEventListener('dblclick', function (e) { if (playing()) e.preventDefault(); }, { passive: false });
+
+  if (!fsSupported() && isStandalone()) $('fsBtn').hidden = true;
+
+  // ---------------------------------------------------------------------------
+  // Start
+  // ---------------------------------------------------------------------------
+  token = readStoredToken();
+  if (token) refreshBuilds();
+  else openTokenView(false);
+})();
+</script>
+</body>
+</html>
