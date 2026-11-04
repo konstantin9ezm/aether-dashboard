@@ -341,7 +341,10 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
           scrollY: window.scrollY,
           overflow: getComputedStyle(document.documentElement).overflow,
           touch: getComputedStyle(document.body).touchAction,
-          sandbox: document.querySelector('#game iframe').getAttribute('sandbox')
+          sandbox: document.querySelector('#game iframe').getAttribute('sandbox'),
+          allow: document.querySelector('#game iframe').getAttribute('allow'),
+          bar: document.getElementById('exitBtn').getBoundingClientRect().toJSON(),
+          bg: getComputedStyle(document.documentElement).backgroundColor
         };
       });
       assert.equal(geo.w, geo.vw);
@@ -350,6 +353,12 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       assert.equal(geo.overflow, 'hidden');
       assert.equal(geo.touch, 'none');
       assert.ok(!geo.sandbox.includes('allow-same-origin'));
+      assert.equal(geo.sandbox, 'allow-scripts allow-pointer-lock', 'Sandbox unverändert');
+      assert.match(geo.allow, /(^|;)\s*gamepad \*/, 'Gamepad im iframe erlaubt');
+      assert.ok(geo.bar.left < geo.vw / 2 && geo.bar.top < geo.vh / 2, 'Schließen-Button oben links');
+      assert.ok(geo.bar.left >= 12 && geo.bar.top >= 12, 'Abstand zum Rand');
+      assert.ok(geo.bar.width >= 44 && geo.bar.height >= 44, 'gut treffbar');
+      assert.equal(geo.bg, 'rgb(0, 0, 0)', 'schwarzer Hintergrund während des Spiels');
       const viewport = await page.getAttribute('meta[name=viewport]', 'content');
       assert.match(viewport, /user-scalable=no/);
       await page.waitForTimeout(300);
