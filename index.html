@@ -236,6 +236,130 @@
   @media (min-width: 700px) {
     .app { padding-top: calc(32px + var(--safe-t)); }
   }
+
+  /* Umschalter Spielen / Projekt */
+  .tabs {
+    display: flex; gap: 3px; padding: 3px; flex: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+  }
+  .tabs button {
+    min-height: 44px; min-width: 76px; padding: 8px 14px;
+    border: 0; border-radius: 10px; background: transparent;
+    color: var(--muted); font-weight: 600; cursor: pointer;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  @media (max-width: 460px) { header.top .sub { display: none; } }
+
+  /* Projektansicht */
+  .app.wide { max-width: 1180px; }
+  .proj-head { justify-content: space-between; margin-bottom: 12px; }
+  .proj-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  .proj-grid > .card { margin: 0; min-width: 0; }
+  @media (min-width: 900px) {
+    .proj-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    #ciCard, #engineCard { grid-column: 1 / -1; }
+  }
+  .card h2 .count { color: var(--muted); font-weight: 500; font-size: 14px; margin-left: 6px; }
+  .card .msg { margin: 0; }
+  .loadline { color: var(--muted); font-size: 14px; padding: 8px 0; }
+  .note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+  code.hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+
+  /* Build-Ampel */
+  .ci {
+    display: flex; gap: 16px; align-items: center;
+    padding: 12px 14px; min-height: 96px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2);
+    color: inherit; text-decoration: none; touch-action: manipulation;
+  }
+  .lights { display: flex; flex-direction: column; gap: 6px; padding: 7px; flex: none; background: #06080c; border: 1px solid var(--line); border-radius: 14px; }
+  .lights i { display: block; width: 20px; height: 20px; border-radius: 50%; background: #1f2533; }
+  .ci[data-state="err"] .l-r { background: var(--err); box-shadow: 0 0 12px var(--err); }
+  .ci[data-state="warn"] .l-y { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+  .ci[data-state="ok"] .l-g { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .ci .state { font-size: 21px; font-weight: 700; }
+  .ci[data-state="ok"] .state { color: var(--ok); }
+  .ci[data-state="warn"] .state { color: var(--warn); }
+  .ci[data-state="err"] .state { color: var(--err); }
+  .ci .meta { color: var(--muted); font-size: 14px; display: flex; gap: 4px 12px; flex-wrap: wrap; }
+  .ci .commitmsg { font-size: 14px; overflow-wrap: anywhere; margin-top: 2px; }
+  .ci .chev, .tl .chev { margin-left: auto; color: var(--muted); font-size: 22px; flex: none; padding-left: 6px; }
+
+  /* Zeitleiste */
+  .tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .tl a {
+    display: flex; gap: 12px; align-items: center;
+    padding: 10px 12px; min-height: 60px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2);
+    color: inherit; text-decoration: none; touch-action: manipulation;
+  }
+  .tl a:active, .ci:active { background: #1d2540; }
+  .tl .ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .tl .ic.pr { background: #2a1f4a; color: var(--accent-2); }
+  .tl .ic.commit { background: #1d2540; color: var(--accent); }
+  .tl .body { min-width: 0; }
+  .tl .title { font-weight: 600; overflow-wrap: anywhere; }
+  .tl .meta { color: var(--muted); font-size: 13px; display: flex; gap: 2px 10px; flex-wrap: wrap; }
+
+  /* Roadmap */
+  .rm-total { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  .bar { height: 10px; border-radius: 999px; background: #0f131c; border: 1px solid var(--line); overflow: hidden; }
+  .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  .bar.full > div { background: var(--ok); }
+  .rm-sec { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); margin-top: 10px; }
+  .rm-sec summary {
+    list-style: none; cursor: pointer; touch-action: manipulation;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center;
+    padding: 12px 14px; min-height: 60px;
+  }
+  .rm-sec summary::-webkit-details-marker { display: none; }
+  .rm-sec summary .name { font-weight: 600; overflow-wrap: anywhere; }
+  .rm-sec summary .name::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); transition: transform .15s; }
+  .rm-sec[open] summary .name::before { transform: rotate(90deg); }
+  .rm-sec summary .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .rm-sec summary .bar { grid-column: 1 / -1; }
+  .rm-items { list-style: none; margin: 0; padding: 0 14px 6px; }
+  .rm-items li { display: flex; gap: 10px; align-items: center; padding: 6px 0; min-height: 44px; border-top: 1px solid var(--line); }
+  .rm-items li.empty { color: var(--muted); font-size: 14px; }
+  .chk { flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #3a4560; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #0b0e14; }
+  .chk.done { background: var(--ok); border-color: var(--ok); }
+  .rm-items .txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .rm-items li.done .txt { color: var(--muted); }
+  .prs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; }
+  a.pr-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px; min-width: 44px; padding: 0 12px;
+    border-radius: 10px; background: #1d2540; border: 1px solid #2c3a63;
+    color: var(--accent); font-weight: 600; font-size: 14px; text-decoration: none; white-space: nowrap;
+    touch-action: manipulation;
+  }
+
+  /* Engine-Karte */
+  .em-legend { display: flex; gap: 8px 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+  .em-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .em-layer { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); padding: 12px; }
+  .em-layer h3 { margin: 0 0 10px; font-size: 15px; }
+  .em-arrow { text-align: center; color: var(--muted); line-height: 1; padding: 4px 0; font-size: 14px; }
+  .em-group + .em-group { margin-top: 10px; }
+  .em-group .glabel { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 6px; }
+  .em-blocks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; flex-direction: column; justify-content: center;
+    min-height: 48px; padding: 6px 12px; border-radius: 10px; border: 1px solid var(--line);
+    font-size: 14px; max-width: 100%;
+  }
+  .chip .cn { font-weight: 600; overflow-wrap: anywhere; display: inline-flex; align-items: center; gap: 7px; }
+  .chip .cd { font-size: 12px; color: var(--muted); }
+  .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--muted); }
+  .chip[data-status="fertig"] { border-color: #2f6b45; background: #12241a; }
+  .chip[data-status="vorschau"] { border-color: #6b5520; background: #251f10; }
+  .chip[data-status="geplant"] { border-style: dashed; border-color: #3a4560; background: transparent; }
+  .chip[data-status="geplant"] .cn { color: #c4cad8; }
+  .dot.fertig { background: var(--ok); }
+  .dot.vorschau { background: var(--warn); }
+  .dot.geplant { background: transparent; border: 2px solid #6b7690; }
 </style>
 </head>
 <body>
@@ -249,6 +373,10 @@
       <div class="sub">Web-Builds starten</div>
     </div>
     <div class="spacer"></div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Ansicht">
+      <button type="button" role="tab" id="tabPlay" aria-controls="buildsView" aria-selected="true">Spielen</button>
+      <button type="button" role="tab" id="tabProject" aria-controls="projectView" aria-selected="false">Projekt</button>
+    </nav>
   </header>
 
   <div id="message" class="msg" role="alert" hidden></div>
@@ -263,7 +391,7 @@
     <ol class="steps">
       <li>Auf GitHub <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">ein neues Fine-grained Token anlegen</a>.</li>
       <li>Unter <b>Repository access</b> „Only select repositories“ wählen und nur <b id="repoName2"></b> auswählen.</li>
-      <li>Unter <b>Permissions → Repository permissions</b> nur <b>Contents: Read-only</b> setzen.</li>
+      <li>Unter <b>Permissions → Repository permissions</b> <b>Contents</b>, <b>Pull requests</b> und <b>Actions</b> jeweils auf <b>Read-only</b> setzen (Metadata kommt automatisch dazu). Für die Spielansicht allein reicht Contents.</li>
       <li>Ein Ablaufdatum wählen, Token erzeugen und hier einfügen.</li>
     </ol>
     <form id="tokenForm" autocomplete="off">
@@ -295,6 +423,32 @@
         <button class="btn" id="clearCacheBtn" type="button">Cache leeren</button>
         <button class="btn danger" id="deleteTokenBtn" type="button">Token löschen</button>
       </span>
+    </div>
+  </section>
+
+  <!-- Projektübersicht -->
+  <section id="projectView" role="tabpanel" aria-labelledby="tabProject" hidden>
+    <div class="row proj-head">
+      <span class="muted small" id="projStamp"></span>
+      <button class="btn" id="projReload" type="button">Aktualisieren</button>
+    </div>
+    <div class="proj-grid">
+      <section class="card" id="ciCard" aria-labelledby="ciTitle">
+        <h2 id="ciTitle">Build-Ampel</h2>
+        <div id="ciBody" aria-live="polite"></div>
+      </section>
+      <section class="card" id="timelineCard" aria-labelledby="tlTitle">
+        <h2 id="tlTitle">Zeitleiste</h2>
+        <div id="timelineBody"></div>
+      </section>
+      <section class="card" id="roadmapCard" aria-labelledby="rmTitle">
+        <h2 id="rmTitle">Fortschritt</h2>
+        <div id="roadmapBody"></div>
+      </section>
+      <section class="card" id="engineCard" aria-labelledby="emTitle">
+        <h2 id="emTitle">Engine-Karte</h2>
+        <div id="engineBody"></div>
+      </section>
     </div>
   </section>
 
@@ -401,7 +555,7 @@
     }
     if (status === 403) {
       return new AppError('forbidden', 'Das Token hat keinen Zugriff.',
-        'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „Contents: Read-only“. ' +
+        'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „' + ((ctx && ctx.perm) || 'Contents: Read-only') + '“. ' +
         'Falls das Repo einer Organisation gehört, muss diese Fine-grained Tokens erlauben.');
     }
     if (status === 404 && ctx && ctx.notFound) {
@@ -933,6 +1087,12 @@
     $('tokenView').hidden = name !== 'token';
     $('buildsView').hidden = name !== 'builds';
     $('loadingView').hidden = name !== 'loading';
+    $('projectView').hidden = name !== 'project';
+    $('tabs').hidden = name === 'loading' || name === 'game';
+    $('tabPlay').setAttribute('aria-selected', String(name !== 'project'));
+    $('tabProject').setAttribute('aria-selected', String(name === 'project'));
+    $('app').classList.toggle('wide', name === 'project');
+    if (name !== 'project') stopProjectPolling();
     if (name !== 'game' && name !== 'loading' && game) stopGame(true);
   }
 
@@ -1166,6 +1326,520 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Projektübersicht: Build-Ampel, Zeitleiste, Roadmap, Engine-Karte
+  // ---------------------------------------------------------------------------
+  var MAIN = 'main';
+  var BUILD_WORKFLOW = 'Build';
+  var GH_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
+  var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
+  var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
+  var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
+  var TIMELINE_SHOW = 15;
+  var projCache = {};
+  var projGen = 0;
+  var pollTimer = null;
+
+  function clearProjectCache() { projCache = {}; }
+
+  // Kurzzeit-Cache im Speicher. Laufende Anfragen werden geteilt, Fehler nicht gemerkt.
+  function cached(key, ttl, force, fn) {
+    var c = projCache[key];
+    if (!force && c && (c.pending || Date.now() - c.t < ttl)) return c.pending || Promise.resolve(c.data);
+    var entry = { t: 0, data: null, pending: null };
+    entry.pending = Promise.resolve().then(fn).then(function (data) {
+      entry.t = Date.now(); entry.data = data; entry.pending = null;
+      return data;
+    }, function (e) {
+      if (projCache[key] === entry) delete projCache[key];
+      throw e;
+    });
+    projCache[key] = entry;
+    return entry.pending;
+  }
+
+  function needToken() {
+    if (!token) throw new AppError('notoken', 'Kein Token gespeichert.', 'Für die Projektübersicht braucht das Dashboard ein GitHub-Token mit Lesezugriff auf ' + REPO_FULL + '.');
+  }
+
+  function fmtBerlin(s) {
+    var d = new Date(s);
+    if (!s || isNaN(d.getTime())) return '';
+    return d.toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+  }
+  function fmtBerlinTime(d) {
+    return d.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+  }
+  function shortSha(sha) { return /^[0-9a-f]{7,40}$/i.test(String(sha || '')) ? String(sha).slice(0, 7).toLowerCase() : ''; }
+  function prUrl(n) { return GH_WEB + '/pull/' + Number(n); }
+  function commitUrl(sha) { return GH_WEB + '/commit/' + String(sha).toLowerCase(); }
+  function firstLine(s) { return String(s || '').split('\n')[0].trim(); }
+  function validNum(n) { n = Number(n); return Number.isInteger(n) && n > 0 && n < 1e7 ? n : null; }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+  function extLink(href, cls) {
+    var a = el('a', cls);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    return a;
+  }
+  function loadingLine(box, text) {
+    box.textContent = '';
+    var p = el('div', 'loadline');
+    p.appendChild(el('span', 'spinner'));
+    p.appendChild(document.createTextNode('  ' + text));
+    box.appendChild(p);
+  }
+
+  function cardError(box, err, retry) {
+    if (!(err instanceof AppError)) err = new AppError('unknown', 'Unerwarteter Fehler.', String((err && err.message) || err));
+    box.textContent = '';
+    var m = el('div', 'msg error');
+    m.setAttribute('role', 'alert');
+    m.dataset.kind = err.kind;
+    m.appendChild(el('b', null, err.title));
+    if (err.text) m.appendChild(el('div', null, err.text));
+    var actions = el('div', 'row actions');
+    if (err.kind === 'notoken') actions.appendChild(mkBtn('Token eingeben', function () { openTokenView(true); }, 'primary'));
+    if (err.kind === 'auth' || err.kind === 'forbidden' || err.kind === 'norepo') actions.appendChild(mkBtn('Neues Token eingeben', function () { openTokenView(true); }, 'primary'));
+    if (retry && err.kind !== 'notoken' && err.kind !== 'auth') actions.appendChild(mkBtn('Erneut versuchen', retry));
+    if (actions.childNodes.length) m.appendChild(actions);
+    box.appendChild(m);
+  }
+
+  // --- 1. Build-Ampel --------------------------------------------------------
+  async function fetchLatestRun(force) {
+    needToken();
+    var perm = 'Actions: Read-only';
+    var wfId = await cached('workflow', WORKFLOW_ID_TTL, false, async function () {
+      var res = await api(REPO_PATH + '/actions/workflows?per_page=100', { perm: perm,
+        notFound: new AppError('norepo', 'Repo nicht erreichbar.', 'GitHub findet ' + REPO_FULL + ' nicht. Unter „Repository access“ muss ' + REPO_FULL + ' ausgewählt sein.') });
+      var j = await res.json();
+      var list = (j && Array.isArray(j.workflows)) ? j.workflows : [];
+      var m = list.filter(function (w) { return w && w.name === BUILD_WORKFLOW; });
+      if (m.length > 1) m.sort(function (a, b) { return (a.state === 'active' ? 0 : 1) - (b.state === 'active' ? 0 : 1); });
+      if (!m.length) throw new AppError('noworkflow', 'Workflow „' + BUILD_WORKFLOW + '“ nicht gefunden.', 'In ' + REPO_FULL + ' gibt es keinen GitHub-Actions-Workflow mit dem Namen „' + BUILD_WORKFLOW + '“.');
+      return m[0].id;
+    });
+    return cached('run', PROJECT_TTL, force, async function () {
+      var res = await api(REPO_PATH + '/actions/workflows/' + encodeURIComponent(wfId) + '/runs?branch=' + MAIN + '&per_page=1&exclude_pull_requests=true', { perm: perm });
+      var j = await res.json();
+      return (j && Array.isArray(j.workflow_runs) && j.workflow_runs[0]) || null;
+    });
+  }
+
+  function classifyRun(run) {
+    var st = String(run.status || ''), c = String(run.conclusion || '');
+    if (st !== 'completed') {
+      return { state: 'warn', label: st === 'in_progress' ? 'Läuft' : 'Wartet', running: true };
+    }
+    if (c === 'success') return { state: 'ok', label: 'Erfolgreich' };
+    var labels = { failure: 'Fehlgeschlagen', cancelled: 'Abgebrochen', timed_out: 'Zeitüberschreitung', startup_failure: 'Start fehlgeschlagen', action_required: 'Aktion nötig', skipped: 'Übersprungen', neutral: 'Ohne Ergebnis', stale: 'Veraltet' };
+    return { state: 'err', label: labels[c] || 'Fehlgeschlagen' };
+  }
+
+  function renderRun(box, run) {
+    box.textContent = '';
+    if (!run) {
+      box.appendChild(el('p', 'muted', 'Für „' + BUILD_WORKFLOW + '“ auf ' + MAIN + ' gibt es noch keinen Lauf.'));
+      return null;
+    }
+    var info = classifyRun(run);
+    var id = validNum(run.id);
+    var a = id ? extLink(GH_WEB + '/actions/runs/' + id, 'ci') : el('div', 'ci');
+    a.id = 'ciLight';
+    a.dataset.state = info.state;
+    a.setAttribute('aria-label', 'Build ' + info.label);
+    var lights = el('div', 'lights');
+    lights.setAttribute('aria-hidden', 'true');
+    lights.appendChild(el('i', 'l-r')); lights.appendChild(el('i', 'l-y')); lights.appendChild(el('i', 'l-g'));
+    a.appendChild(lights);
+    var body = el('div', 'body');
+    body.appendChild(el('div', 'state', info.label));
+    var meta = el('div', 'meta');
+    var when = info.running ? (run.run_started_at || run.created_at) : (run.updated_at || run.run_started_at || run.created_at);
+    var t = fmtBerlin(when);
+    if (t) meta.appendChild(el('span', 'when', (info.running ? 'gestartet ' : '') + t));
+    var sh = shortSha(run.head_sha);
+    if (sh) meta.appendChild(el('code', 'hash', sh));
+    if (validNum(run.run_number)) meta.appendChild(el('span', null, 'Lauf #' + run.run_number));
+    body.appendChild(meta);
+    var msg = firstLine(run.head_commit && run.head_commit.message) || firstLine(run.display_title);
+    if (msg) body.appendChild(el('div', 'commitmsg', msg));
+    a.appendChild(body);
+    if (id) a.appendChild(el('span', 'chev', '›'));
+    box.appendChild(a);
+    return info;
+  }
+
+  // --- 2. Zeitleiste -----------------------------------------------------------
+  async function fetchTimeline(force) {
+    needToken();
+    return cached('timeline', PROJECT_TTL, force, async function () {
+      var r = await Promise.all([
+        api(REPO_PATH + '/pulls?state=closed&base=' + MAIN + '&sort=updated&direction=desc&per_page=50', { perm: 'Pull requests: Read-only' }).then(function (x) { return x.json(); }),
+        api(REPO_PATH + '/commits?sha=' + MAIN + '&per_page=50', { perm: 'Contents: Read-only',
+          notFound: new AppError('nomain', 'Branch „' + MAIN + '“ nicht gefunden.', 'In ' + REPO_FULL + ' gibt es keinen Branch „' + MAIN + '“.') }).then(function (x) { return x.json(); })
+      ]);
+      return buildTimeline(Array.isArray(r[0]) ? r[0] : [], Array.isArray(r[1]) ? r[1] : []);
+    });
+  }
+
+  // PRs und Commits zusammenführen. Commits, die nur über den zweiten Elternteil
+  // eines Merge-Commits erreichbar sind, gehören zum PR und werden nicht einzeln gezeigt.
+  function buildTimeline(pulls, commits) {
+    var prs = {}, prByMergeSha = {};
+    pulls.forEach(function (p) {
+      var n = p && validNum(p.number);
+      if (!n || !p.merged_at) return;
+      prs[n] = { kind: 'pr', number: n, title: String(p.title || '').trim() || '(ohne Titel)', date: p.merged_at, sha: String(p.merge_commit_sha || ''), url: prUrl(n), used: false };
+      if (p.merge_commit_sha) prByMergeSha[String(p.merge_commit_sha).toLowerCase()] = prs[n];
+    });
+    var bySha = {};
+    commits = commits.filter(function (c) { return c && typeof c.sha === 'string' && /^[0-9a-f]{40}$/i.test(c.sha); });
+    commits.forEach(function (c) { bySha[c.sha.toLowerCase()] = c; });
+    var parentsOf = function (c) { return (Array.isArray(c.parents) ? c.parents : []).map(function (p) { return String((p && p.sha) || '').toLowerCase(); }); };
+    // Erste-Eltern-Kette ab der Spitze von main.
+    var chain = {}, cur = commits[0];
+    while (cur && !chain[cur.sha.toLowerCase()]) {
+      chain[cur.sha.toLowerCase()] = true;
+      cur = bySha[parentsOf(cur)[0]];
+    }
+    var side = {}, stack = [];
+    commits.forEach(function (c) { if (chain[c.sha.toLowerCase()]) parentsOf(c).slice(1).forEach(function (p) { stack.push(p); }); });
+    while (stack.length) {
+      var s = stack.pop();
+      if (side[s] || chain[s] || !bySha[s]) continue;
+      side[s] = true;
+      parentsOf(bySha[s]).forEach(function (p) { stack.push(p); });
+    }
+    var out = [];
+    commits.forEach(function (c) {
+      var sha = c.sha.toLowerCase();
+      if (side[sha]) return;
+      var msg = firstLine(c.commit && c.commit.message);
+      var pr = prByMergeSha[sha];
+      if (!pr) {
+        var m = /^Merge pull request #(\d+)\b/.exec(msg) || /\(#(\d+)\)\s*$/.exec(msg);
+        if (m && prs[Number(m[1])]) pr = prs[Number(m[1])];
+      }
+      if (pr) {
+        if (!pr.used) { pr.used = true; pr.sha = sha; out.push(pr); }
+        return;
+      }
+      var date = (c.commit && ((c.commit.committer && c.commit.committer.date) || (c.commit.author && c.commit.author.date))) || '';
+      out.push({ kind: 'commit', title: msg || '(ohne Nachricht)', date: date, sha: sha, url: commitUrl(sha) });
+    });
+    Object.keys(prs).forEach(function (n) { if (!prs[n].used) out.push(prs[n]); });
+    return out.map(function (e, i) { return { e: e, i: i, t: Date.parse(e.date) }; }).sort(function (x, y) {
+      var a = isNaN(x.t) ? -Infinity : x.t, b = isNaN(y.t) ? -Infinity : y.t;
+      return a !== b ? b - a : x.i - y.i;
+    }).map(function (x) { return x.e; });
+  }
+
+  function renderTimeline(box, items) {
+    box.textContent = '';
+    $('tlTitle').textContent = 'Zeitleiste';
+    if (!items.length) { box.appendChild(el('p', 'muted', 'Noch keine Einträge auf ' + MAIN + '.')); return; }
+    var ol = el('ol', 'tl');
+    ol.id = 'timeline';
+    var addItem = function (e) {
+      var li = el('li');
+      var a = extLink(e.url);
+      a.dataset.kind = e.kind;
+      var ic = el('span', 'ic ' + e.kind, e.kind === 'pr' ? 'PR' : '•');
+      ic.setAttribute('aria-hidden', 'true');
+      a.appendChild(ic);
+      var body = el('div', 'body');
+      body.appendChild(el('div', 'title', e.title));
+      var meta = el('div', 'meta');
+      meta.appendChild(el('span', 'num', e.kind === 'pr' ? 'PR #' + e.number : 'Commit'));
+      var t = fmtBerlin(e.date);
+      if (t) meta.appendChild(el('span', 'when', t));
+      var sh = shortSha(e.sha);
+      if (sh) meta.appendChild(el('code', 'hash', sh));
+      body.appendChild(meta);
+      a.appendChild(body);
+      a.appendChild(el('span', 'chev', '›'));
+      li.appendChild(a);
+      ol.appendChild(li);
+    };
+    items.slice(0, TIMELINE_SHOW).forEach(addItem);
+    box.appendChild(ol);
+    if (items.length > TIMELINE_SHOW) {
+      var more = mkBtn('Ältere anzeigen (' + (items.length - TIMELINE_SHOW) + ')', function () {
+        items.slice(TIMELINE_SHOW).forEach(addItem);
+        more.remove();
+      });
+      more.classList.add('block', 'mt');
+      more.id = 'timelineMore';
+      box.appendChild(more);
+    }
+  }
+
+  // --- 3. ROADMAP.md -----------------------------------------------------------
+  async function fetchRoadmap(force) {
+    needToken();
+    return cached('roadmap', PROJECT_TTL, force, async function () {
+      var res = await api(REPO_PATH + '/contents/ROADMAP.md?ref=' + MAIN, {
+        accept: 'application/vnd.github.raw+json',
+        perm: 'Contents: Read-only',
+        notFound: new AppError('noroadmap', 'ROADMAP.md fehlt.', 'Im Hauptverzeichnis von ' + REPO_FULL + ' (Branch „' + MAIN + '“) liegt keine ROADMAP.md.')
+      });
+      var text = await res.text();
+      var ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.indexOf('application/json') === 0) {
+        // Falls GitHub doch JSON mit Base64 liefert.
+        try { var j = JSON.parse(text); if (j && typeof j.content === 'string') text = new TextDecoder('utf-8').decode(decodeBase64(j.content)); } catch (e) { /* als Text nehmen */ }
+      }
+      return parseRoadmap(text);
+    });
+  }
+
+  // Tolerant: Unbekanntes wird gezählt und übersprungen, nie ein Absturz.
+  function parseRoadmap(text) {
+    text = String(text || '').slice(0, 500000).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+    text = text.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
+    var sections = [], cur = null, skipped = 0;
+    text.split('\n').forEach(function (line) {
+      var t = line.trim();
+      if (!t) return;
+      var h = /^##(?!#)\s*(.*?)\s*#*$/.exec(t);
+      if (h) {
+        cur = { name: h[1] || '(ohne Namen)', items: [] };
+        sections.push(cur);
+        return;
+      }
+      if (/^#(?!#)/.test(t)) return; // Dokumenttitel
+      var it = /^[-*+]\s*\[([ xX]?)\]\s*(.*)$/.exec(t);
+      if (!it) { skipped++; return; }
+      if (!cur) { cur = { name: 'Ohne Abschnitt', items: [] }; sections.push(cur); }
+      var prs = [];
+      var txt = it[2].replace(/\(\s*PR\s*#(\d{1,7})\s*\)/gi, function (all, n) {
+        n = validNum(n);
+        if (n && prs.indexOf(n) < 0) prs.push(n);
+        return ' ';
+      }).replace(/\s+/g, ' ').trim();
+      cur.items.push({ done: it[1] === 'x' || it[1] === 'X', text: txt || '(ohne Text)', prs: prs });
+    });
+    return { sections: sections, skipped: skipped };
+  }
+
+  function progressBar(done, total) {
+    var bar = el('div', 'bar' + (total > 0 && done === total ? ' full' : ''));
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(total));
+    bar.setAttribute('aria-valuenow', String(done));
+    var fill = el('div');
+    fill.style.width = (total > 0 ? Math.round(done / total * 100) : 0) + '%';
+    bar.appendChild(fill);
+    return bar;
+  }
+
+  function renderRoadmap(box, rm) {
+    box.textContent = '';
+    if (!rm.sections.length) {
+      box.appendChild(el('p', 'muted', 'ROADMAP.md enthält keine Abschnitte („## Name“) mit Punkten.'));
+    }
+    var allDone = 0, all = 0;
+    rm.sections.forEach(function (s) { all += s.items.length; s.items.forEach(function (i) { if (i.done) allDone++; }); });
+    if (all) {
+      var tot = el('div', 'rm-total');
+      tot.appendChild(el('span', null, 'Gesamt'));
+      tot.appendChild(el('span', 'num', allDone + ' / ' + all + ' erledigt'));
+      box.appendChild(tot);
+      box.appendChild(progressBar(allDone, all));
+    }
+    rm.sections.forEach(function (s) {
+      var done = s.items.filter(function (i) { return i.done; }).length;
+      var d = el('details', 'rm-sec');
+      d.open = true;
+      var sum = el('summary');
+      sum.appendChild(el('span', 'name', s.name));
+      sum.appendChild(el('span', 'num', done + '/' + s.items.length));
+      sum.appendChild(progressBar(done, s.items.length));
+      d.appendChild(sum);
+      var ul = el('ul', 'rm-items');
+      if (!s.items.length) ul.appendChild(el('li', 'empty', 'Keine Punkte.'));
+      s.items.forEach(function (i) {
+        var li = el('li', i.done ? 'done' : '');
+        var c = el('span', 'chk' + (i.done ? ' done' : ''), i.done ? '✓' : '');
+        c.setAttribute('aria-hidden', 'true');
+        li.appendChild(c);
+        var txt = el('span', 'txt', i.text);
+        li.appendChild(txt);
+        li.setAttribute('aria-label', (i.done ? 'Erledigt: ' : 'Offen: ') + i.text);
+        if (i.prs.length) {
+          var prs = el('span', 'prs');
+          i.prs.forEach(function (n) {
+            var a = extLink(prUrl(n), 'pr-link');
+            a.textContent = 'PR #' + n;
+            prs.appendChild(a);
+          });
+          li.appendChild(prs);
+        }
+        ul.appendChild(li);
+      });
+      d.appendChild(ul);
+      box.appendChild(d);
+    });
+    if (rm.skipped) {
+      box.appendChild(el('p', 'note', rm.skipped === 1 ? '1 Zeile hatte kein bekanntes Format und wurde übersprungen.' : rm.skipped + ' Zeilen hatten kein bekanntes Format und wurden übersprungen.'));
+    }
+  }
+
+  // --- 4. Engine-Karte -----------------------------------------------------------
+  var STATUS = { fertig: 'fertig', vorschau: 'Vorschau', geplant: 'geplant' };
+
+  async function fetchEngineMap(force) {
+    return cached('engine', PROJECT_TTL, force, async function () {
+      var res;
+      try {
+        res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
+      } catch (e) {
+        throw new AppError('network', 'engine-map.json nicht erreichbar.', 'Keine Verbindung. Prüfe die Internetverbindung.');
+      }
+      if (!res.ok) throw new AppError('noenginemap', 'engine-map.json fehlt.', 'Die Datei engine-map.json wurde nicht gefunden (HTTP ' + res.status + ').');
+      var data;
+      try { data = JSON.parse(await res.text()); } catch (e) {
+        throw new AppError('badenginemap', 'engine-map.json ist kaputt.', 'Die Datei enthält kein gültiges JSON.');
+      }
+      var layers = data && Array.isArray(data.schichten) ? data.schichten : null;
+      if (!layers) throw new AppError('badenginemap', 'engine-map.json ist kaputt.', 'Erwartet wird ein Objekt mit einer Liste „schichten“.');
+      return layers.filter(function (l) { return l && typeof l === 'object'; }).map(function (l) {
+        return {
+          name: String(l.name || '(ohne Namen)'),
+          blocks: (Array.isArray(l.bausteine) ? l.bausteine : []).filter(function (b) { return b && typeof b === 'object' && b.name; }).map(function (b) {
+            var st = String(b.status || '').trim().toLowerCase();
+            return { name: String(b.name), detail: b.detail ? String(b.detail) : '', group: b.gruppe ? String(b.gruppe) : '', status: STATUS[st] ? st : 'unbekannt' };
+          })
+        };
+      });
+    });
+  }
+
+  function renderEngineMap(box, layers) {
+    box.textContent = '';
+    var counts = { fertig: 0, vorschau: 0, geplant: 0, unbekannt: 0 };
+    layers.forEach(function (l) { l.blocks.forEach(function (b) { counts[b.status]++; }); });
+    var legend = el('div', 'em-legend');
+    legend.id = 'engineLegend';
+    ['fertig', 'vorschau', 'geplant', 'unbekannt'].forEach(function (k) {
+      if (k === 'unbekannt' && !counts[k]) return;
+      var s = el('span');
+      s.dataset.status = k;
+      s.appendChild(el('span', 'dot ' + k));
+      s.appendChild(document.createTextNode((STATUS[k] || 'unbekannt') + ': ' + counts[k]));
+      legend.appendChild(s);
+    });
+    box.appendChild(legend);
+    if (!layers.length) box.appendChild(el('p', 'muted', 'engine-map.json enthält keine Schichten.'));
+    layers.forEach(function (l, li) {
+      if (li > 0) {
+        var arrow = el('div', 'em-arrow', '▲ ▼');
+        arrow.setAttribute('aria-hidden', 'true');
+        box.appendChild(arrow);
+      }
+      var sec = el('section', 'em-layer');
+      sec.appendChild(el('h3', null, l.name));
+      var groups = [], byName = {};
+      l.blocks.forEach(function (b) {
+        if (!byName[b.group]) { byName[b.group] = []; groups.push(b.group); }
+        byName[b.group].push(b);
+      });
+      if (!l.blocks.length) sec.appendChild(el('div', 'muted small', 'Keine Bausteine.'));
+      groups.forEach(function (g) {
+        var gw = el('div', 'em-group');
+        if (g) gw.appendChild(el('div', 'glabel', g));
+        var wrap = el('div', 'em-blocks');
+        byName[g].forEach(function (b) {
+          var c = el('div', 'chip');
+          c.dataset.status = b.status;
+          var label = STATUS[b.status] || 'Status unbekannt';
+          c.title = b.name + ': ' + label;
+          var n = el('span', 'cn');
+          n.appendChild(el('span', 'dot ' + b.status));
+          n.appendChild(document.createTextNode(b.name));
+          c.appendChild(n);
+          c.appendChild(el('span', 'cd', (b.detail ? b.detail + ' · ' : '') + label));
+          wrap.appendChild(c);
+        });
+        gw.appendChild(wrap);
+        sec.appendChild(gw);
+      });
+      box.appendChild(sec);
+    });
+  }
+
+  // --- Steuerung -------------------------------------------------------------------
+  function stopProjectPolling() { clearTimeout(pollTimer); pollTimer = null; }
+
+  function loadPart(box, text, fetcher, render, force) {
+    var gen = projGen;
+    if (!box.firstChild || force) loadingLine(box, text);
+    return fetcher(force).then(function (data) {
+      if (gen !== projGen) return;
+      return render(box, data);
+    }, function (e) {
+      if (gen !== projGen) return;
+      cardError(box, e, function () { loadPart(box, text, fetcher, render, true); });
+    });
+  }
+
+  function loadCiPart(force) {
+    return loadPart($('ciBody'), 'Lade Build-Status …', fetchLatestRun, function (box, run) {
+      var info = renderRun(box, run);
+      stopProjectPolling();
+      if (info && info.running && !$('projectView').hidden) {
+        pollTimer = setTimeout(function () { if (!$('projectView').hidden) loadCiPart(true); }, POLL_RUNNING_MS);
+      }
+    }, force);
+  }
+
+  async function loadProject(force) {
+    projGen++;
+    var btn = $('projReload');
+    btn.disabled = true;
+    try {
+      await Promise.all([
+        loadCiPart(force),
+        loadPart($('timelineBody'), 'Lade Zeitleiste …', fetchTimeline, renderTimeline, force),
+        loadPart($('roadmapBody'), 'Lade ROADMAP.md …', fetchRoadmap, renderRoadmap, force),
+        loadPart($('engineBody'), 'Lade engine-map.json …', fetchEngineMap, renderEngineMap, force)
+      ]);
+    } finally {
+      btn.disabled = false;
+    }
+    var parts = ['Stand: ' + fmtBerlinTime(new Date())];
+    if (lastRate && token) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
+    $('projStamp').textContent = parts.join(' · ');
+  }
+
+  function setHash(h) {
+    try { history.replaceState(null, '', h ? '#' + h : location.pathname + location.search); } catch (e) { /* egal */ }
+  }
+
+  function openProject() {
+    showView('project');
+    setHash('projekt');
+    loadProject(false);
+  }
+
+  function openPlay() {
+    hideMessage();
+    setHash('');
+    if (!token) { openTokenView(false); return; }
+    if (!indexLoaded) { refreshBuilds(); return; }
+    showView('builds');
+  }
+
+  // ---------------------------------------------------------------------------
   // Ereignisse
   // ---------------------------------------------------------------------------
   $('repoName1').textContent = REPO_FULL;
@@ -1187,17 +1861,19 @@
     try {
       var list = await loadIndex(candidate);
       token = candidate;
+      clearProjectCache();
       if (!storeToken(candidate)) showInfo('Token konnte nicht dauerhaft gespeichert werden (privater Modus?). Es gilt nur bis zum Neuladen.', 'warn');
       else if (/^gh[opsu]_/.test(candidate)) showInfo('Hinweis: Das ist ein klassisches Token. Sicherer ist ein Fine-grained Token mit Zugriff nur auf ' + REPO_FULL + '.', 'warn');
       builds = list;
       indexLoaded = true;
       renderBuilds();
-      showView('builds');
+      if (location.hash === '#projekt') openProject(); else showView('builds');
       checkExpiry();
     } catch (e) {
       if (e.kind === 'network' || e.kind === 'ratelimit' || e.kind === 'server') {
         // Token ist vermutlich in Ordnung, GitHub gerade nicht erreichbar.
         token = candidate;
+        clearProjectCache();
         storeToken(candidate);
         builds = [];
         indexLoaded = false;
@@ -1214,7 +1890,10 @@
     }
   });
 
-  $('tokenCancel').addEventListener('click', function () { hideMessage(); showView('builds'); });
+  $('tokenCancel').addEventListener('click', function () { hideMessage(); if (location.hash === '#projekt') openProject(); else showView('builds'); });
+  $('tabPlay').addEventListener('click', function () { if ($('tabPlay').getAttribute('aria-selected') === 'true') return; openPlay(); });
+  $('tabProject').addEventListener('click', function () { hideMessage(); openProject(); });
+  $('projReload').addEventListener('click', function () { loadProject(true); });
   $('reloadBtn').addEventListener('click', refreshBuilds);
   $('playBtn').addEventListener('click', play);
   $('cancelLoadBtn').addEventListener('click', function () { if (loadAbort) loadAbort.abort(); });
@@ -1222,6 +1901,7 @@
     if (!confirm('Token von diesem Gerät löschen?')) return;
     deleteStoredToken();
     token = null;
+    clearProjectCache();
     builds = [];
     indexLoaded = false;
     lastRate = null;
@@ -1284,7 +1964,8 @@
   // Start
   // ---------------------------------------------------------------------------
   token = readStoredToken();
-  if (token) refreshBuilds();
+  if (location.hash === '#projekt') openProject();
+  else if (token) refreshBuilds();
   else openTokenView(false);
 })();
 </script>
