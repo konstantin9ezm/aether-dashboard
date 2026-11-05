@@ -3,7 +3,7 @@
   "private": true,
   "description": "Statische Web-App zum Starten der Aether-Web-Builds auf iPad und iPhone",
   "scripts": {
-    "test": "node --test tests/e2e.test.js",
+    "test": "node --test tests/e2e.test.js tests/project.test.js",
     "icons": "node tools/make-icons.js"
   },
   "devDependencies": {

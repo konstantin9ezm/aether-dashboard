@@ -1,0 +1,41 @@
+{
+  "$hinweis": "Engine-Karte für das Dashboard. Schichten von oben nach unten. status: fertig | vorschau | geplant. detail und gruppe sind optional.",
+  "schichten": [
+    {
+      "name": "Spiel/Lua",
+      "bausteine": [
+        { "name": "Lua-Skripting", "status": "geplant" }
+      ]
+    },
+    {
+      "name": "Engine-Systeme",
+      "bausteine": [
+        { "name": "Flugmodell", "status": "vorschau" },
+        { "name": "Physik", "detail": "Jolt", "status": "geplant" },
+        { "name": "ECS", "detail": "EnTT", "status": "geplant" },
+        { "name": "Audio", "detail": "miniaudio", "status": "geplant" },
+        { "name": "UI", "detail": "RmlUi", "status": "geplant" },
+        { "name": "Debug-UI", "detail": "Dear ImGui", "status": "geplant" },
+        { "name": "Profiler", "detail": "Tracy", "status": "geplant" }
+      ]
+    },
+    {
+      "name": "Kern",
+      "bausteine": [
+        { "name": "Log", "status": "fertig" },
+        { "name": "Mathe", "detail": "double-Positionen", "status": "fertig" },
+        { "name": "Spielschleife", "detail": "60 Hz", "status": "fertig" }
+      ]
+    },
+    {
+      "name": "Plattform-Layer/RHI",
+      "bausteine": [
+        { "gruppe": "Plattform", "name": "SDL3-Backend", "status": "fertig" },
+        { "gruppe": "Plattform", "name": "NULL-Backend", "status": "fertig" },
+        { "gruppe": "Plattform", "name": "Web/Emscripten", "status": "fertig" },
+        { "gruppe": "Renderer", "name": "OpenGL ES 3.0 / WebGL 2", "status": "vorschau" },
+        { "gruppe": "Renderer", "name": "Vulkan-RHI", "status": "geplant" }
+      ]
+    }
+  ]
+}
