@@ -407,7 +407,8 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   const { context, page } = await newPage(null);
   await openProject(page);
   const first = mock.requests.length;
-  assert.ok(first >= 5 && first <= 6, `Anfragen beim ersten Laden: ${first}`);
+  // index.json + Dateiliste des neuesten Builds (Spielansicht, beim Start) + die vier Teile der Projektansicht
+  assert.ok(first >= 6 && first <= 7, `Anfragen beim ersten Laden: ${first}`);
   await page.click('#tabPlay');
   await page.waitForSelector('#buildsView:not([hidden])');
   const afterPlay = mock.requests.length;
