@@ -36,6 +36,11 @@ Das Token wird nur im `localStorage` dieses Geräts gespeichert und ausschließl
   Rate-Limit (mit Uhrzeit, ab wann es wieder geht), kein Zugriff aufs Repo, fehlender Branch, fehlende `index.json`,
   fehlenden Build-Ordner und Verbindungsprobleme.
 
+- Das Spiel kann sich selbst beenden: `window.parent.postMessage({ type: "aether:quit" }, "*")`. Das Dashboard
+  schließt es dann wie mit dem Schließen-X (verlässt auch das Vollbild), aber ohne Rückfrage. Angenommen wird nur
+  eine Nachricht, deren `event.source` das Spiel-iframe ist und deren `data.type` genau `"aether:quit"` lautet
+  (der Ursprung des iframes ist `"null"`, deshalb die Prüfung über `event.source`). Alles andere wird ignoriert.
+
 Hinweis: Weil das Spiel isoliert läuft, steht ihm kein eigener `localStorage`/IndexedDB zur Verfügung.
 
 ## Projektansicht
@@ -91,7 +96,7 @@ npm test
 
 Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die Seite in Headless Chromium:
 
-- `tests/e2e.test.js` – Spielansicht (Desktop, iPhone 13, iPad Pro 11).
+- `tests/e2e.test.js` – Spielansicht (Desktop, iPhone 13, iPad Pro 11), dazu `aether:quit` (Desktop).
 - `tests/project.test.js` – Projektansicht (Desktop, iPad Pro 11 hoch und quer, iPhone 13): alle vier Teile,
   Ampelzustände, deutsche Ortszeit bei fremder Gerätezeitzone, Cache, Tippflächen ≥ 44 px, eine `ROADMAP.md` mit
   unerwarteten Zeilen sowie die Fehlerfälle (kein Token, keine Rechte, Rate-Limit, offline, Token abgelehnt,

@@ -1002,7 +1002,10 @@
     game = g;
 
     var onMsg = function (e) {
-      if (!game || game !== g || e.source !== iframe.contentWindow || !e.data || typeof e.data.aether !== 'string') return;
+      if (!game || game !== g || e.source !== iframe.contentWindow || !e.data) return;
+      // "Beenden" im Spiel: derselbe Weg wie das Schließen-X (ohne Rückfrage).
+      if (e.data.type === 'aether:quit') { stopGame(); showView('builds'); return; }
+      if (typeof e.data.aether !== 'string') return;
       if (e.data.aether === 'boot') {
         clearTimeout(g.bootTimer);
         var payload = [], transfer = [];
