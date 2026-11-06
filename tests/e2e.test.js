@@ -451,6 +451,60 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
   });
 }
 
+test('Spiel meldet "aether:quit": Dashboard schließt das Spiel, fremde Nachrichten nicht', async () => {
+  mock.reset();
+  const { context, page, log } = await newPage(null);
+  const dialogs = [];
+  page.on('dialog', (d) => dialogs.push(d.message()));
+  await page.goto(baseUrl);
+  await enterToken(page, TOKEN);
+  await page.waitForSelector('#buildsView:not([hidden])');
+  await page.click('#buildList label:has-text("aaa1111")');
+  await page.click('#playBtn');
+  assert.equal((await waitGame(page)).step, 'done');
+  const frame = gameFrame(page);
+  const gameOpen = () => page.evaluate(() => !!document.querySelector('#game iframe') && !document.getElementById('game').hidden);
+
+  // Richtige Quelle, falscher type (bzw. falsche Form): wird ignoriert.
+  await frame.evaluate(() => {
+    for (const m of [{ type: 'aether:quit ' }, { type: 'AETHER:QUIT' }, { type: 'aether:exit' }, { aether: 'quit' }, { aether: 'aether:quit' }, 'aether:quit', null]) {
+      window.parent.postMessage(m, '*');
+    }
+  });
+  // Richtiger type, falsche Quelle: die Seite selbst und ein zweites (sandboxed) iframe.
+  await page.evaluate(() => {
+    window.postMessage({ type: 'aether:quit' }, '*');
+    const f = document.createElement('iframe');
+    f.id = 'fremd';
+    f.setAttribute('sandbox', 'allow-scripts');
+    f.srcdoc = '<script>parent.postMessage({ type: "aether:quit" }, "*"); parent.postMessage("fremd-fertig", "*");<\/script>';
+    return new Promise((resolve) => {
+      window.addEventListener('message', function h(e) { if (e.data === 'fremd-fertig') { window.removeEventListener('message', h); resolve(); } });
+      document.body.appendChild(f);
+    });
+  });
+  await page.waitForTimeout(500);
+  assert.ok(await gameOpen(), 'Spiel bleibt bei fremden Nachrichten offen');
+  await page.evaluate(() => document.getElementById('fremd').remove());
+
+  // Vollbild an, dann "Beenden" aus dem Spiel.
+  await page.click('#fsBtn');
+  await page.waitForFunction(() => !!document.fullscreenElement);
+  await frame.evaluate(() => window.parent.postMessage({ type: 'aether:quit' }, '*'));
+  await page.waitForSelector('#buildsView:not([hidden])');
+  await page.waitForFunction(() => !document.fullscreenElement);
+  assert.equal(await page.$('#game iframe'), null, 'Spiel entfernt');
+  assert.ok(await page.isHidden('#game'));
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('playing')), false);
+  assert.deepEqual(dialogs, [], 'keine Rückfrage beim Beenden aus dem Spiel');
+
+  // Danach lässt sich wieder ein Spiel starten.
+  await page.click('#playBtn');
+  assert.equal((await waitGame(page)).step, 'done');
+  await assertNoLeak(log, page);
+  await context.close();
+});
+
 test('Quelltext enthält kein Token und lädt keine externen Skripte', () => {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   assert.doesNotMatch(html, /github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9]{20,}/);
