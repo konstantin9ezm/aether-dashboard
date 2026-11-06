@@ -151,7 +151,20 @@
     padding: 1px 7px; border-radius: 999px; background: #23345e; color: #cfe0ff; text-transform: uppercase;
   }
 
+  .badge.saved { background: #12241a; color: var(--ok); }
+  .build.unavailable { opacity: .45; cursor: default; }
+  .build.unavailable input { pointer-events: none; }
+
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
+
+  /* Offline-Hinweis */
+  .offline-hint {
+    display: flex; gap: 4px 12px; align-items: baseline; flex-wrap: wrap;
+    margin: -8px 0 16px; padding: 8px 12px;
+    border-radius: 10px; border: 1px solid #5b4a1c; background: #2a2312; color: #fde68a;
+    font-size: 14px; font-weight: 600;
+  }
+  .offline-hint .why { color: var(--muted); font-weight: 400; font-size: 13px; }
 
   /* Ladeanzeige */
   .progress {
@@ -379,6 +392,7 @@
     </nav>
   </header>
 
+  <div id="offlineHint" class="offline-hint" role="status" hidden><span id="offlineText"></span><span class="why" id="offlineWhy"></span></div>
   <div id="message" class="msg" role="alert" hidden></div>
 
   <!-- Token eingeben -->
@@ -432,7 +446,8 @@
       <span class="muted small" id="projStamp"></span>
       <button class="btn" id="projReload" type="button">Aktualisieren</button>
     </div>
-    <div class="proj-grid">
+    <div id="projOffline" class="msg warn" role="status" hidden>Offline – Projektansicht nicht verfügbar.</div>
+    <div class="proj-grid" id="projGrid">
       <section class="card" id="ciCard" aria-labelledby="ciTitle">
         <h2 id="ciTitle">Build-Ampel</h2>
         <div id="ciBody" aria-live="polite"></div>
@@ -486,8 +501,17 @@
   var API = 'https://api.github.com';
   var TOKEN_KEY = 'aether.githubToken';
   var CACHE_NAME = 'aether-builds-v1';
-  var CACHE_INDEX_KEY = 'aether.cachedBuilds';
-  var CACHE_KEEP_BUILDS = 3;
+  var SHELL_CACHE_NAME = 'aether-shell-v1'; // gehört dem Service Worker (sw.js)
+  var CACHE_INDEX_KEY = 'aether.cachedBuilds'; // welche Builds vollständig im Cache liegen (mit Dateiliste)
+  var LAST_INDEX_KEY = 'aether.lastIndex';     // zuletzt online geladene Build-Liste (für den Offline-Start)
+  // Wie viele Builds lokal bleiben: der zuletzt gestartete und der neueste. Mehr nicht,
+  // weil iOS den Speicher pro Web-App begrenzt und bei Platzmangel alles verwerfen kann.
+  var KEEP_BUILDS = 2;
+  // Zeitlimit für die Online-Prüfung beim Start. Danach wird der lokale Stand angezeigt.
+  var ONLINE_CHECK_TIMEOUT_MS = 30 * 1000;
+  // Nur für die E2E-Tests: kürzeres Zeitlimit, gesetzt bevor dieses Skript läuft.
+  var checkTimeoutMs = (typeof window.AETHER_TEST_CHECK_TIMEOUT_MS === 'number' && window.AETHER_TEST_CHECK_TIMEOUT_MS > 0)
+    ? window.AETHER_TEST_CHECK_TIMEOUT_MS : ONLINE_CHECK_TIMEOUT_MS;
   var REPO_FULL = REPO_OWNER + '/' + REPO_NAME;
   var REPO_PATH = '/repos/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
 
@@ -498,6 +522,8 @@
   var indexLoaded = false;
   var loadAbort = null;
   var game = null;
+  var offlineReason = null; // null = online; sonst der AppError, warum GitHub zuletzt nicht erreichbar war
+  var savedBuilds = {};     // short -> true, wenn der Build vollständig lokal gespeichert ist
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -611,9 +637,9 @@
     return REPO_PATH + '/contents/' + clean.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(REF);
   }
 
-  async function explainIndexMissing(useToken) {
+  async function explainIndexMissing(useToken, signal) {
     try {
-      await api(REPO_PATH, { token: useToken });
+      await api(REPO_PATH, { token: useToken, signal: signal });
     } catch (e) {
       if (e.kind === 'notfound') {
         return new AppError('norepo', 'Repo nicht erreichbar.',
@@ -623,7 +649,7 @@
       return e;
     }
     try {
-      await api(REPO_PATH + '/branches/' + encodeURIComponent(REF), { token: useToken });
+      await api(REPO_PATH + '/branches/' + encodeURIComponent(REF), { token: useToken, signal: signal });
     } catch (e) {
       if (e.kind === 'notfound') {
         return new AppError('nobranch', 'Es gibt noch keinen Web-Build.',
@@ -635,11 +661,12 @@
       'Im Branch „' + REF + '“ liegt keine index.json. Der Web-Build wurde wohl nicht vollständig veröffentlicht.');
   }
 
-  async function loadIndex(useToken) {
+  async function loadIndex(useToken, signal) {
     var res = await api(contentsPath('index.json'), {
       token: useToken,
       accept: 'application/vnd.github.raw+json',
-      notFound: function () { return explainIndexMissing(useToken); }
+      signal: signal,
+      notFound: function () { return explainIndexMissing(useToken, signal); }
     });
     var text = await res.text();
     var data;
@@ -647,6 +674,10 @@
       throw new AppError('badindex', 'index.json ist kaputt.', 'Die Datei enthält kein gültiges JSON.');
     }
     if (!Array.isArray(data)) throw new AppError('badindex', 'index.json ist kaputt.', 'Erwartet wurde eine Liste von Builds.');
+    return normalizeIndex(data);
+  }
+
+  function normalizeIndex(data) {
     var list = data.filter(function (b) {
       return b && typeof b.path === 'string' && /^[\w.\-\/]+$/.test(b.path) && !/(^|\/)\.\.(\/|$)/.test(b.path);
     }).map(function (b) {
@@ -701,9 +732,15 @@
     }
     var files = items.filter(function (it) {
       return it && it.type === 'file' && typeof it.name === 'string' && typeof it.sha === 'string';
-    }).map(function (it) {
-      return { name: it.name, sha: it.sha, size: Number(it.size) || 0, kind: kindOf(it.name), type: MIME[extOf(it.name)] || 'application/octet-stream' };
-    });
+    }).map(function (it) { return fileEntry(it.name, it.sha, it.size); });
+    return assembleInfo(build, files);
+  }
+
+  function fileEntry(name, sha, size) {
+    return { name: name, sha: sha, size: Number(size) || 0, kind: kindOf(name), type: MIME[extOf(name)] || 'application/octet-stream' };
+  }
+
+  function assembleInfo(build, files) {
     var by = function (k) { return files.filter(function (f) { return f.kind === k; }); };
     var html = by('html'), js = by('js'), wasm = by('wasm'), data = by('data');
     if (!files.length) {
@@ -786,26 +823,68 @@
     return bytes;
   }
 
-  async function pruneCache(cache, keepShas, buildShort) {
+  function readJson(key, fallback) {
+    try { var v = JSON.parse(localStorage.getItem(key)); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; }
+  }
+  function writeJson(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* Speicher voll o. ä. */ }
+  }
+  // Einträge: { short, path, files: [{ name, sha, size }] }, zuletzt gestarteter Build zuerst.
+  function readCacheIndex() {
+    var idx = readJson(CACHE_INDEX_KEY, []);
+    return Array.isArray(idx) ? idx.filter(function (x) { return x && typeof x.short === 'string'; }) : [];
+  }
+  function storeLastIndex(list) { writeJson(LAST_INDEX_KEY, { at: new Date().toISOString(), builds: list }); }
+  function readLastIndex() {
+    var v = readJson(LAST_INDEX_KEY, null);
+    if (!v || !Array.isArray(v.builds)) return null;
+    return { at: String(v.at || ''), builds: normalizeIndex(v.builds) };
+  }
+
+  // Nach einem vollständigen Download: Build vorn in den Index, alte Builds samt Dateien entfernen.
+  async function pruneCache(cache, info) {
     if (!cache) return;
     try {
-      var idx = [];
-      try { idx = JSON.parse(localStorage.getItem(CACHE_INDEX_KEY) || '[]'); } catch (e) { idx = []; }
-      if (!Array.isArray(idx)) idx = [];
-      idx = idx.filter(function (x) { return x && x.short !== buildShort; });
-      idx.unshift({ short: buildShort, shas: keepShas });
-      idx = idx.slice(0, CACHE_KEEP_BUILDS);
-      try { localStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(idx)); } catch (e) { /* egal */ }
+      var idx = readCacheIndex().filter(function (x) { return x.short !== info.build.short; });
+      idx.unshift({ short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) });
+      idx = idx.slice(0, KEEP_BUILDS);
+      writeJson(CACHE_INDEX_KEY, idx);
       var keep = {};
-      idx.forEach(function (x) { (x.shas || []).forEach(function (s) { keep[cacheKey(s)] = true; }); });
+      idx.forEach(function (x) { (x.files || []).forEach(function (f) { keep[cacheKey(f.sha)] = true; }); });
       var keys = await cache.keys();
       await Promise.all(keys.map(function (req) { return keep[req.url] ? null : cache.delete(req); }));
     } catch (e) { /* egal */ }
   }
 
+  async function cachedKeySet() {
+    var set = {};
+    var cache = await openCache();
+    if (!cache) return set;
+    try { (await cache.keys()).forEach(function (req) { set[req.url] = true; }); } catch (e) { /* egal */ }
+    return set;
+  }
+
+  // Build-Infos aus dem lokalen Stand, ohne API, oder null, wenn der Build nicht vollständig da ist.
+  function savedBuildInfo(build, have) {
+    var entry = readCacheIndex().filter(function (x) { return x.short === build.short && Array.isArray(x.files) && x.files.length; })[0];
+    if (!entry) return null;
+    var files = entry.files.filter(function (f) { return f && typeof f.name === 'string' && typeof f.sha === 'string'; })
+      .map(function (f) { return fileEntry(f.name, f.sha, f.size); });
+    if (files.length !== entry.files.length || !files.every(function (f) { return have[cacheKey(f.sha)]; })) return null;
+    try { return assembleInfo(build, files); } catch (e) { return null; }
+  }
+
+  async function refreshSaved() {
+    var have = await cachedKeySet();
+    savedBuilds = {};
+    builds.forEach(function (b) { if (savedBuildInfo(b, have)) savedBuilds[b.short] = true; });
+  }
+
   async function clearCache() {
     try { if (self.caches) await caches.delete(CACHE_NAME); } catch (e) { /* egal */ }
     try { localStorage.removeItem(CACHE_INDEX_KEY); } catch (e) { /* egal */ }
+    try { localStorage.removeItem(LAST_INDEX_KEY); } catch (e) { /* egal */ }
+    savedBuilds = {};
   }
 
   function fmtBytes(n) {
@@ -1129,6 +1208,21 @@
     box.hidden = false;
   }
   function hideMessage() { $('message').hidden = true; }
+
+  // Offline-Zustand: gesetzt, wenn die Online-Prüfung scheiterte oder das Gerät keine Verbindung meldet.
+  function isOffline() { return !!offlineReason || navigator.onLine === false; }
+  function setOffline(reason) {
+    offlineReason = reason || null;
+    updateOfflineHint();
+  }
+  function updateOfflineHint() {
+    var box = $('offlineHint');
+    if (!offlineReason) { box.hidden = true; return; }
+    var newest = builds.filter(function (b) { return savedBuilds[b.short]; })[0];
+    $('offlineText').textContent = newest ? 'Offline – letzte Version ' + newest.short : 'Offline – kein Build gespeichert';
+    $('offlineWhy').textContent = offlineReason.title || '';
+    box.hidden = false;
+  }
   function mkBtn(label, fn, cls) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -1170,6 +1264,10 @@
 
   function renderBuilds() {
     var ul = $('buildList');
+    var checked = document.querySelector('input[name="build"]:checked');
+    var keepShort = checked ? checked.dataset.short : null;
+    var offline = isOffline();
+    updateOfflineHint();
     ul.textContent = '';
     if (!builds.length) {
       var li = document.createElement('li');
@@ -1179,16 +1277,21 @@
       $('playBtn').disabled = true;
       return;
     }
-    $('playBtn').disabled = false;
+    // Offline sind nur vollständig gespeicherte Builds startbar; vorausgewählt ist der neueste davon.
+    var startable = builds.filter(function (b) { return !offline || savedBuilds[b.short]; });
+    var preselect = startable.filter(function (b) { return b.short === keepShort; })[0] || startable[0] || null;
+    $('playBtn').disabled = !preselect;
     builds.forEach(function (b, i) {
       var li = document.createElement('li');
       var label = document.createElement('label');
-      label.className = 'build';
+      label.className = 'build' + (startable.indexOf(b) < 0 ? ' unavailable' : '');
       var input = document.createElement('input');
       input.type = 'radio';
       input.name = 'build';
       input.value = String(i);
-      input.checked = i === 0;
+      input.dataset.short = b.short;
+      input.checked = b === preselect;
+      input.disabled = startable.indexOf(b) < 0;
       var msg = document.createElement('div');
       msg.className = 'msgline';
       msg.textContent = (b.message.split('\n')[0] || '(ohne Nachricht)');
@@ -1205,6 +1308,12 @@
         badge.className = 'badge';
         badge.textContent = 'neuester';
         meta.appendChild(badge);
+      }
+      if (savedBuilds[b.short]) {
+        var saved = document.createElement('span');
+        saved.className = 'badge saved';
+        saved.textContent = 'gespeichert';
+        meta.appendChild(saved);
       }
       label.appendChild(input);
       label.appendChild(msg);
@@ -1226,23 +1335,109 @@
     return r ? builds[Number(r.value)] : builds[0];
   }
 
+  // Online prüfen, ob es neue Builds gibt. Läuft länger als das Zeitlimit, wird abgebrochen.
+  async function checkOnline() {
+    var ctrl = new AbortController();
+    var timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; ctrl.abort(); }, checkTimeoutMs);
+    try {
+      return await loadIndex(token, ctrl.signal);
+    } catch (e) {
+      if (timedOut) {
+        throw new AppError('timeout', 'GitHub antwortet nicht.',
+          'Die Prüfung auf neue Builds hat länger als ' + Math.round(checkTimeoutMs / 1000) + ' s gedauert.');
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  // Fehler, bei denen der lokale Stand weiterhilft (GitHub nicht erreichbar, nicht: Token/Inhalt kaputt).
+  function unreachable(e) {
+    return e instanceof AppError && (e.kind === 'network' || e.kind === 'timeout' || e.kind === 'server' || e.kind === 'ratelimit');
+  }
+
+  // Neue Liste übernehmen und, falls der neueste Build noch nicht lokal liegt, laden und speichern.
+  async function applyIndex(list) {
+    builds = list;
+    indexLoaded = true;
+    storeLastIndex(list);
+    setOffline(null);
+    await refreshSaved();
+    await ensureNewestSaved();
+    renderBuilds();
+  }
+
+  async function ensureNewestSaved() {
+    var b = builds[0];
+    if (!b || savedBuilds[b.short]) return;
+    var cache = await openCache();
+    if (!cache) return; // ohne Cache-Storage gibt es nichts zu speichern
+    loadAbort = new AbortController();
+    var signal = loadAbort.signal;
+    showView('loading');
+    $('cancelLoadBtn').hidden = false;
+    $('loadTitle').textContent = 'Lade neuen Build ' + b.short + ' …';
+    setProgress(0, 0, 'Dateiliste …');
+    try {
+      var info = await listBuild(b, signal);
+      await fetchBuildFiles(info, cache, signal);
+      await pruneCache(cache, info);
+      await refreshSaved();
+    } catch (e) {
+      if (!(e && e.name === 'AbortError')) {
+        var err = e instanceof AppError ? e : new AppError('unknown', 'Unerwarteter Fehler.', String((e && e.message) || e));
+        showInfo('Neuer Build ' + b.short + ' konnte nicht gespeichert werden: ' + err.title, 'warn');
+      }
+    } finally {
+      loadAbort = null;
+    }
+  }
+
   async function refreshBuilds() {
     hideMessage();
     builds = [];
     indexLoaded = false;
+    $('buildList').textContent = '';
     showView('loading');
-    $('loadTitle').textContent = 'Lade Build-Liste …';
+    $('loadTitle').textContent = 'Prüfe auf neue Builds …';
     setProgress(0, 0, '');
     $('cancelLoadBtn').hidden = true;
     try {
-      builds = await loadIndex(token);
-      indexLoaded = true;
-      renderBuilds();
+      var list = await checkOnline();
+      await applyIndex(list);
       showView('builds');
       checkExpiry();
     } catch (e) {
+      var local = unreachable(e) ? readLastIndex() : null;
+      if (local) {
+        // GitHub nicht erreichbar: lokalen Stand zeigen, gespeicherte Builds bleiben startbar.
+        builds = local.builds;
+        indexLoaded = true;
+        setOffline(e);
+        await refreshSaved();
+        renderBuilds();
+        showView('builds');
+        return;
+      }
       handleError(e);
     }
+  }
+
+  // Wieder online (Netz meldet Verbindung oder "Aktualisieren"): Prüfung wiederholen.
+  async function reconnect() {
+    var list;
+    try { list = await checkOnline(); } catch (e) {
+      if (unreachable(e)) { setOffline(e); return false; }
+      throw e;
+    }
+    builds = list;
+    indexLoaded = true;
+    storeLastIndex(list);
+    setOffline(null);
+    await refreshSaved();
+    renderBuilds();
+    return true;
   }
 
   function checkExpiry() {
@@ -1283,49 +1478,62 @@
     $('loadTitle').textContent = 'Lade Build ' + build.short + ' …';
     setProgress(0, 0, 'Dateiliste …');
     try {
-      var info = await listBuild(build, signal);
-      var total = info.files.reduce(function (s, f) { return s + f.size; }, 0);
-      var done = 0, fromCache = 0;
       var cache = await openCache();
-      var contents = {};
-      // Wichtige Dateien zuerst, große Dateien parallel zu kleinen.
-      var order = info.files.slice().sort(function (a, b) {
-        var rank = { html: 0, js: 1, wasm: 2, data: 3, other: 4 };
-        return rank[a.kind] - rank[b.kind];
-      });
-      var queue = order.slice();
-      var current = {};
-      var label = function () {
-        var names = Object.keys(current);
-        return names.length ? names.join(', ') : '';
-      };
-      var worker = async function () {
-        while (queue.length) {
-          if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
-          var f = queue.shift();
-          current[f.name] = true;
-          setProgress(done, total, label());
-          contents[f.name] = await downloadFile(f, cache, signal, function (n, cached) {
-            done += n;
-            if (cached) fromCache += n;
-            setProgress(done, total, label());
-          });
-          delete current[f.name];
-          setProgress(done, total, label());
-        }
-      };
-      await Promise.all([worker(), worker(), worker()]);
-      if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
-      setProgress(total, total, fromCache === total && total > 0 ? 'aus dem Cache' : 'fertig');
+      // Vollständig gespeicherte Builds starten ohne API-Aufruf (auch offline).
+      var info = savedBuildInfo(build, await cachedKeySet());
+      if (!info && isOffline()) {
+        throw new AppError('offline', 'Build ' + build.short + ' ist nicht gespeichert.', 'Offline lassen sich nur gespeicherte Builds starten.');
+      }
+      if (!info) info = await listBuild(build, signal);
+      var contents = await fetchBuildFiles(info, cache, signal);
       $('loadTitle').textContent = 'Starte Aether ' + build.short + ' …';
       $('cancelLoadBtn').hidden = true;
-      pruneCache(cache, info.files.map(function (f) { return f.sha; }), build.short);
+      await pruneCache(cache, info);
+      await refreshSaved();
+      renderBuilds(); // Abzeichen „gespeichert“ nachführen, Auswahl bleibt
       startGame(info, contents);
     } catch (e) {
       handleError(e);
     } finally {
       loadAbort = null;
     }
+  }
+
+  // Alle Dateien eines Builds laden (Cache zuerst, sonst API) und dabei den Fortschritt zeigen.
+  async function fetchBuildFiles(info, cache, signal) {
+    var total = info.files.reduce(function (s, f) { return s + f.size; }, 0);
+    var done = 0, fromCache = 0;
+    var contents = {};
+    // Wichtige Dateien zuerst, große Dateien parallel zu kleinen.
+    var order = info.files.slice().sort(function (a, b) {
+      var rank = { html: 0, js: 1, wasm: 2, data: 3, other: 4 };
+      return rank[a.kind] - rank[b.kind];
+    });
+    var queue = order.slice();
+    var current = {};
+    var label = function () {
+      var names = Object.keys(current);
+      return names.length ? names.join(', ') : '';
+    };
+    var worker = async function () {
+      while (queue.length) {
+        if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+        var f = queue.shift();
+        current[f.name] = true;
+        setProgress(done, total, label());
+        contents[f.name] = await downloadFile(f, cache, signal, function (n, cached) {
+          done += n;
+          if (cached) fromCache += n;
+          setProgress(done, total, label());
+        });
+        delete current[f.name];
+        setProgress(done, total, label());
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+    setProgress(total, total, fromCache === total && total > 0 ? 'aus dem Cache' : 'fertig');
+    return contents;
   }
 
   // ---------------------------------------------------------------------------
@@ -1805,9 +2013,29 @@
     }, force);
   }
 
-  async function loadProject(force) {
+  function renderProjectOffline() {
     projGen++;
+    stopProjectPolling();
+    $('projOffline').hidden = false;
+    $('projGrid').hidden = true;
+    $('projStamp').textContent = '';
+  }
+
+  async function loadProject(force) {
     var btn = $('projReload');
+    if (isOffline()) {
+      // Offline nur ein Hinweis statt vier Fehlerkarten. Meldet das Gerät Verbindung,
+      // erst die Online-Prüfung wiederholen (das räumt auch den Offline-Hinweis auf).
+      var back = false;
+      if (navigator.onLine !== false && token) {
+        btn.disabled = true;
+        try { back = await reconnect(); } catch (e) { handleError(e); return; } finally { btn.disabled = false; }
+      }
+      if (!back) { renderProjectOffline(); return; }
+    }
+    $('projOffline').hidden = true;
+    $('projGrid').hidden = false;
+    projGen++;
     btn.disabled = true;
     try {
       await Promise.all([
@@ -1867,9 +2095,7 @@
       clearProjectCache();
       if (!storeToken(candidate)) showInfo('Token konnte nicht dauerhaft gespeichert werden (privater Modus?). Es gilt nur bis zum Neuladen.', 'warn');
       else if (/^gh[opsu]_/.test(candidate)) showInfo('Hinweis: Das ist ein klassisches Token. Sicherer ist ein Fine-grained Token mit Zugriff nur auf ' + REPO_FULL + '.', 'warn');
-      builds = list;
-      indexLoaded = true;
-      renderBuilds();
+      await applyIndex(list);
       if (location.hash === '#projekt') openProject(); else showView('builds');
       checkExpiry();
     } catch (e) {
@@ -1910,11 +2136,14 @@
     lastRate = null;
     tokenExpiry = null;
     await clearCache();
+    // Kompletter Neuanfang: auch die vom Service Worker gespeicherte Seite entfernen.
+    try { if (self.caches) await caches.delete(SHELL_CACHE_NAME); } catch (e) { /* egal */ }
     openTokenView(false);
     showInfo('Token gelöscht.', 'info');
   });
   $('clearCacheBtn').addEventListener('click', async function () {
     await clearCache();
+    renderBuilds();
     showInfo('Lokaler Build-Cache geleert.', 'info');
   });
   $('fsBtn').addEventListener('click', toggleFullscreen);
@@ -1962,6 +2191,23 @@
   fitGameToScreen();
   window.addEventListener('resize', fitGameToScreen);
   window.addEventListener('orientationchange', function () { setTimeout(fitGameToScreen, 300); });
+
+  // Netz weg: Hinweis zeigen, nicht gespeicherte Builds ausgrauen. Netz wieder da: Prüfung wiederholen.
+  window.addEventListener('offline', function () {
+    if (offlineReason) return;
+    setOffline(new AppError('network', 'Keine Verbindung.', ''));
+    if (!$('buildsView').hidden) renderBuilds();
+  });
+  window.addEventListener('online', function () {
+    if (!offlineReason || !token || loadAbort || game) return;
+    if (!$('buildsView').hidden) refreshBuilds();
+    else if (!$('projectView').hidden) loadProject(false);
+  });
+
+  // Service Worker hält die Seite selbst für den Offline-Start vor (siehe sw.js).
+  if ('serviceWorker' in navigator) {
+    try { navigator.serviceWorker.register('sw.js').catch(function () { /* z. B. nicht unterstützt */ }); } catch (e) { /* egal */ }
+  }
 
   // ---------------------------------------------------------------------------
   // Start

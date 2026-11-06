@@ -59,7 +59,7 @@ jobs:
       - name: Nur die statischen Dateien veröffentlichen
         run: |
           mkdir -p _site
-          cp index.html manifest.json engine-map.json _site/
+          cp index.html sw.js manifest.json engine-map.json _site/
           cp -r icons _site/
           touch _site/.nojekyll
 

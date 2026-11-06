@@ -1,6 +1,7 @@
 // End-to-End-Tests für index.html mit nachgebauter GitHub-REST-API (Mock).
 // Aufruf: node --test tests/
 // Optional: AETHER_REAL_BUILD=/pfad/zu/builds/<hash> testet zusätzlich einen echten Emscripten-Build.
+// Gegenprobe: AETHER_NO_SW=1 liefert sw.js nicht aus; die Offline-Tests müssen dann rot werden.
 'use strict';
 
 const { test, before, after, describe } = require('node:test');
@@ -82,6 +83,15 @@ function buildB() {
   };
 }
 
+function buildD() {
+  // Taucht erst später in index.json auf (Test „neuer Build wird erkannt“); teilt die .wasm mit Build A.
+  return {
+    'neu.js': Buffer.from(gameJs('neu.wasm', 'neu.data')),
+    'neu.wasm': WASM,
+    'neu.data': Buffer.from('NEUER-BUILD-DATA' + 'x'.repeat(50000))
+  };
+}
+
 function gitSha(buf) {
   return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 }
@@ -91,6 +101,9 @@ const BUILDS = [
   { commit: 'bbb2222' + '0'.repeat(33), short: 'bbb2222', message: 'Build ohne HTML', date: '2026-11-03T10:00:00Z', path: 'builds/bbb2222/', files: buildB() },
   { commit: 'ccc3333' + '0'.repeat(33), short: 'ccc3333', message: 'Gelöschter Build', date: '2026-11-01T08:00:00Z', path: 'builds/ccc3333/', files: null }
 ];
+
+const BUILD_D = { commit: 'ddd4444' + '0'.repeat(33), short: 'ddd4444', message: 'Noch neuerer Build', date: '2026-11-05T12:00:00Z', path: 'builds/ddd4444/', files: buildD() };
+const allBuilds = () => (mock.newBuild ? [BUILD_D, ...BUILDS] : BUILDS);
 
 if (process.env.AETHER_REAL_BUILD) {
   const dir = process.env.AETHER_REAL_BUILD;
@@ -103,14 +116,16 @@ if (process.env.AETHER_REAL_BUILD) {
 // Mock der GitHub-REST-API
 // ---------------------------------------------------------------------------
 const mock = {
-  mode: 'ok', // ok | ratelimit | revoked | offline | noindex
+  mode: 'ok', // ok | ratelimit | revoked | offline | noindex | nobranch | hang
+  newBuild: false,     // Build D in index.json aufnehmen
+  serverOffline: false, // statischer Server kappt Verbindungen (echtes „kein Netz“ für den Service Worker)
   requests: [],
   blobRequests: 0,
-  reset() { this.mode = 'ok'; this.requests = []; this.blobRequests = 0; }
+  reset() { this.mode = 'ok'; this.newBuild = false; this.serverOffline = false; this.requests = []; this.blobRequests = 0; }
 };
 
 const blobs = new Map();
-for (const b of BUILDS) if (b.files) for (const [n, buf] of Object.entries(b.files)) blobs.set(gitSha(buf), buf);
+for (const b of [...BUILDS, BUILD_D]) if (b.files) for (const [n, buf] of Object.entries(b.files)) blobs.set(gitSha(buf), buf);
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -133,6 +148,7 @@ async function githubApi(route) {
     return route.fulfill({ status: 204, headers: { ...CORS, 'access-control-allow-methods': 'GET', 'access-control-allow-headers': 'Authorization, Accept, Content-Type', 'access-control-max-age': '86400' } });
   }
   if (mock.mode === 'offline') return route.abort('internetdisconnected');
+  if (mock.mode === 'hang') return; // antwortet nie
   if (mock.mode === 'ratelimit') {
     return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
   }
@@ -148,15 +164,16 @@ async function githubApi(route) {
   if (p === `${base}/branches/${REF}`) return mock.mode === 'nobranch' ? json(route, 404, { message: 'Branch not found' }) : json(route, 200, { name: REF });
 
   if (p.startsWith(`${base}/contents/`)) {
-    assert.equal(url.searchParams.get('ref'), REF, 'contents-Aufrufe müssen ref=web-build setzen');
     const rel = p.slice(`${base}/contents/`.length);
+    if (rel !== 'index.json' && !rel.startsWith('builds/')) return json(route, 404, { message: 'Not Found' }); // z. B. ROADMAP.md der Projektansicht
+    assert.equal(url.searchParams.get('ref'), REF, 'contents-Aufrufe müssen ref=web-build setzen');
     if (rel === 'index.json') {
       if (mock.mode === 'noindex' || mock.mode === 'nobranch') return json(route, 404, { message: 'Not Found' });
       assert.ok(raw, 'index.json sollte roh geladen werden');
-      const index = BUILDS.map(({ commit, short, message, date, path }) => ({ commit, short, message, date, path }));
+      const index = allBuilds().map(({ commit, short, message, date, path }) => ({ commit, short, message, date, path }));
       return route.fulfill({ status: 200, headers: { ...CORS, ...rate(4990), 'content-type': 'application/vnd.github.raw+json; charset=utf-8' }, body: JSON.stringify(index, null, 2) });
     }
-    const build = BUILDS.find((b) => b.path.replace(/\/$/, '') === rel);
+    const build = allBuilds().find((b) => b.path.replace(/\/$/, '') === rel);
     if (!build || !build.files) return json(route, 404, { message: 'Not Found' });
     const listing = Object.entries(build.files).map(([name, buf]) => ({
       name, path: `${rel}/${name}`, sha: gitSha(buf), size: buf.length, type: 'file',
@@ -185,9 +202,11 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
 
 before(async () => {
   server = http.createServer((req, res) => {
+    if (mock.serverOffline) { req.socket.destroy(); return; }
     const u = new URL(req.url, 'http://x');
     let p = path.normalize(decodeURIComponent(u.pathname)).replace(/^([/\\])+/, '');
     if (!p || p.endsWith('/')) p += 'index.html';
+    if (p === 'sw.js' && process.env.AETHER_NO_SW) { res.writeHead(404); return res.end('Gegenprobe: kein Service Worker'); }
     const file = path.join(ROOT, p);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end('nope'); }
     res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
@@ -241,6 +260,50 @@ function assertNoLeak(log, page) {
 async function enterToken(page, t) {
   await page.fill('#tokenInput', t);
   await page.click('#tokenSave');
+}
+
+const seedToken = (page) => page.addInitScript((t) => localStorage.setItem('aether.githubToken', t), TOKEN);
+const shasOf = (build) => Object.values(build.files).map(gitSha);
+// Welche Blob-SHAs im Build-Cache liegen und welche Builds der Index als gespeichert führt.
+async function localState(page) {
+  return page.evaluate(async () => {
+    const cache = await caches.open('aether-builds-v1');
+    const shas = (await cache.keys()).map((r) => r.url.split('/').pop());
+    const idx = JSON.parse(localStorage.getItem('aether.cachedBuilds') || '[]');
+    const last = JSON.parse(localStorage.getItem('aether.lastIndex') || 'null');
+    return { shas, saved: idx.map((e) => e.short), lastIndex: last && last.builds.map((b) => b.short), cacheNames: await caches.keys() };
+  });
+}
+async function buildRows(page) {
+  return page.$$eval('.build', (els) => els.map((e) => ({
+    short: e.querySelector('code').textContent,
+    checked: e.querySelector('input').checked,
+    disabled: e.querySelector('input').disabled,
+    unavailable: e.classList.contains('unavailable'),
+    saved: !!e.querySelector('.badge.saved'),
+    opacity: Number(getComputedStyle(e).opacity)
+  })));
+}
+// Der Token darf in keinem Cache (Anfrage oder Antwort) und in keinem anderen localStorage-Eintrag liegen.
+async function assertTokenNotStored(page) {
+  const found = await page.evaluate(async (t) => {
+    const hits = [];
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        if (req.headers.get('authorization') || req.url.includes(t)) hits.push(`${name}: ${req.url}`);
+        const res = await cache.match(req);
+        if (res.headers.get('authorization')) hits.push(`${name}: Antwort-Header ${req.url}`);
+        if ((res.headers.get('content-type') || '').startsWith('text/') && (await res.clone().text()).includes(t)) hits.push(`${name}: Antwort-Text ${req.url}`);
+      }
+    }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k !== 'aether.githubToken' && String(localStorage.getItem(k)).includes(t)) hits.push(`localStorage: ${k}`);
+    }
+    return hits;
+  }, TOKEN);
+  assert.deepEqual(found, [], 'Token in gespeicherten Daten');
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +566,194 @@ test('Spiel meldet "aether:quit": Dashboard schließt das Spiel, fremde Nachrich
   assert.equal((await waitGame(page)).step, 'done');
   await assertNoLeak(log, page);
   await context.close();
+});
+
+describe('Offline', () => {
+  test('Online: neuer Build wird beim Start erkannt, geladen und gespeichert; es bleiben höchstens 2 Builds', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage(null);
+    await seedToken(page);
+    const A = BUILDS.find((b) => b.short === 'aaa1111'), B = BUILDS.find((b) => b.short === 'bbb2222');
+
+    // Erster Start: Liste laden, neuester Build (A) wird sofort vollständig gespeichert.
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.equal(mock.blobRequests, Object.keys(A.files).length, 'alle Dateien von A geladen');
+    let st = await localState(page);
+    assert.deepEqual(st.saved, ['aaa1111']);
+    assert.deepEqual(st.lastIndex, ['aaa1111', 'bbb2222', 'ccc3333'], 'Build-Liste lokal gespeichert');
+    for (const sha of shasOf(A)) assert.ok(st.shas.includes(sha), `Datei ${sha} von A im Cache`);
+    let rows = await buildRows(page);
+    assert.deepEqual(rows.map((r) => r.saved), [true, false, false], 'nur A trägt „gespeichert“');
+    assert.ok(rows.every((r) => !r.unavailable && !r.disabled), 'online ist nichts ausgegraut');
+    assert.ok(await page.isHidden('#offlineHint'));
+
+    // Neuer Build D erscheint: wird beim nächsten Start erkannt, geladen und gespeichert.
+    mock.newBuild = true;
+    const before = mock.blobRequests;
+    await page.reload();
+    await page.waitForSelector('#buildsView:not([hidden])');
+    rows = await buildRows(page);
+    assert.deepEqual(rows.map((r) => r.short), ['ddd4444', 'aaa1111', 'bbb2222', 'ccc3333']);
+    assert.deepEqual(rows.map((r) => r.saved), [true, true, false, false], 'D und A gespeichert');
+    assert.equal(rows[0].checked, true);
+    assert.match(await page.textContent('.build:has-text("ddd4444")'), /neuester/);
+    assert.equal(mock.blobRequests - before, 2, 'nur die neuen Dateien von D geladen (die .wasm lag schon im Cache)');
+    st = await localState(page);
+    assert.deepEqual(st.saved, ['ddd4444', 'aaa1111']);
+    for (const sha of shasOf(BUILD_D)) assert.ok(st.shas.includes(sha));
+
+    // D startet ohne weiteren Download, auch ohne API-Aufruf für die Dateiliste.
+    const reqBefore = mock.requests.length;
+    await page.click('#playBtn');
+    const d = await waitGame(page);
+    assert.equal(d.step, 'done', d.error);
+    assert.equal(d.sum, 5);
+    assert.equal(d.dataHead, 'NEUER-BUILD-DATA');
+    assert.equal(mock.blobRequests - before, 2, 'Start aus dem lokalen Speicher');
+    assert.equal(mock.requests.length, reqBefore, 'gespeicherter Build braucht keinen API-Aufruf');
+    await page.click('#exitBtn');
+    await page.waitForSelector('#buildsView:not([hidden])');
+
+    // B starten: Speicherumfang 2 → A fliegt raus, D (neuester) und B (zuletzt gestartet) bleiben.
+    await page.click('#buildList label:has-text("bbb2222")');
+    await page.click('#playBtn');
+    assert.equal((await waitGame(page)).step, 'done');
+    await page.click('#exitBtn');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    st = await localState(page);
+    assert.deepEqual(st.saved, ['bbb2222', 'ddd4444']);
+    for (const sha of [...shasOf(B), ...shasOf(BUILD_D)]) assert.ok(st.shas.includes(sha));
+    assert.ok(!st.shas.includes(gitSha(A.files['kern.data'])) && !st.shas.includes(gitSha(A.files['kern.js'])), 'Dateien von A entfernt');
+    rows = await buildRows(page);
+    assert.deepEqual(rows.map((r) => r.saved), [true, false, true, false]);
+
+    await assertTokenNotStored(page);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Offline: Seite lädt, Hinweis erscheint, gespeicherter Build startet, andere sind ausgegraut, Projektansicht zeigt Hinweis', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage('iPad Pro 11 landscape');
+    await seedToken(page);
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.ok(await page.isHidden('#offlineHint'));
+    // Service Worker fertig installiert (Seite, Manifest und Icons liegen im Cache). Ohne Service Worker
+    // (Gegenprobe AETHER_NO_SW=1) würde "ready" nie auflösen, deshalb mit Frist.
+    const swReady = await page.evaluate(() => Promise.race([
+      navigator.serviceWorker.ready.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 10000))
+    ]));
+    assert.ok(swReady, 'Service Worker ist aktiv');
+    assert.ok((await localState(page)).cacheNames.includes('aether-shell-v1'), 'Service Worker hat die Seite gespeichert');
+    assert.ok(mock.requests.length > 0, 'API-Aufrufe laufen weiter über die Seite, nicht über den Service Worker');
+
+    // Netz weg: Browser offline, Mock-API bricht ab, statischer Server kappt Verbindungen.
+    mock.mode = 'offline';
+    mock.serverOffline = true;
+    await context.setOffline(true);
+    await page.reload();
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await page.waitForSelector('#offlineHint:not([hidden])');
+    const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
+    assert.match(hint, /^Offline – letzte Version aaa1111/);
+    assert.ok(await page.isHidden('#message'), 'keine Fehlermeldung, nur der Hinweis');
+    const rows = await buildRows(page);
+    assert.deepEqual(rows.map((r) => [r.short, r.unavailable, r.disabled, r.checked]), [
+      ['aaa1111', false, false, true],
+      ['bbb2222', true, true, false],
+      ['ccc3333', true, true, false]
+    ]);
+    assert.ok(rows[1].opacity < 0.6 && rows[0].opacity === 1, 'nicht gespeicherte Builds sichtbar ausgegraut');
+    assert.equal(await page.isDisabled('#playBtn'), false);
+    await page.screenshot({ path: path.join(OUT, 'offline-builds.png') });
+
+    // Gespeicherter Build startet ohne Netz.
+    const reqBefore = mock.requests.length;
+    await page.click('#playBtn');
+    const r = await waitGame(page);
+    assert.equal(r.step, 'done', r.error);
+    assert.equal(r.sum, 5);
+    assert.equal(r.dataHead, 'AETHER-DATA-OK!!');
+    assert.equal(r.parentToken, 'blocked');
+    assert.equal(mock.requests.length, reqBefore, 'kein API-Aufruf');
+    await page.click('#exitBtn');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.ok(await page.isVisible('#offlineHint'));
+
+    // Projektansicht: ein klarer Hinweis statt Fehlerkarten.
+    await page.click('#tabProject');
+    await page.waitForSelector('#projOffline:not([hidden])');
+    assert.match(await page.textContent('#projOffline'), /Offline – Projektansicht nicht verfügbar/);
+    assert.ok(await page.isHidden('#projGrid'));
+    assert.equal((await page.$$('#projectView .msg.error')).length, 0);
+    await page.screenshot({ path: path.join(OUT, 'offline-project.png') });
+
+    // Netz wieder da: Hinweis verschwindet, Projektansicht lädt.
+    mock.mode = 'ok';
+    mock.serverOffline = false;
+    await context.setOffline(false);
+    await page.waitForSelector('#offlineHint', { state: 'hidden' });
+    await page.waitForSelector('#projGrid:not([hidden])');
+    assert.ok(await page.isHidden('#projOffline'));
+    // Die vier Teile laufen gegen den Mock der Spielansicht ins Leere; nur zu Ende laden lassen.
+    await page.waitForFunction(() => ['ciBody', 'timelineBody', 'roadmapBody', 'engineBody']
+      .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); }));
+    assert.equal((await page.$$('#projectView .msg[data-kind="network"]')).length, 0, 'keine Verbindungsfehler mehr');
+    await page.click('#tabPlay');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.ok((await buildRows(page)).every((x) => !x.unavailable && !x.disabled), 'online wieder alles wählbar');
+
+    await assertTokenNotStored(page);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Zeitlimit: hängende API führt zum lokalen Stand; Standard bleibt 30 s', async () => {
+    assert.match(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), /var ONLINE_CHECK_TIMEOUT_MS = 30 \* 1000;/, 'Standard 30 s');
+    mock.reset();
+    const { context, page, log } = await newPage(null);
+    await seedToken(page);
+    await page.addInitScript(() => { window.AETHER_TEST_CHECK_TIMEOUT_MS = 1500; });
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+
+    mock.mode = 'hang';
+    const t0 = Date.now();
+    await page.reload();
+    await page.waitForSelector('#loadingView:not([hidden]) >> text=Prüfe auf neue Builds');
+    await page.waitForSelector('#buildsView:not([hidden])', { timeout: 20000 });
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed >= 1500 && elapsed < 20000, `Zeitlimit greift (${elapsed} ms)`);
+    await page.waitForSelector('#offlineHint:not([hidden])');
+    const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
+    assert.match(hint, /^Offline – letzte Version aaa1111/);
+    assert.match(hint, /antwortet nicht/);
+    const rows = await buildRows(page);
+    assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);
+    await page.click('#playBtn');
+    assert.equal((await waitGame(page)).step, 'done');
+    await page.click('#exitBtn');
+    await page.waitForSelector('#buildsView:not([hidden])');
+
+    // „Aktualisieren“ mit erreichbarer API: Hinweis verschwindet wieder.
+    mock.mode = 'ok';
+    await page.click('#reloadBtn');
+    await page.waitForSelector('#offlineHint', { state: 'hidden' });
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.ok((await buildRows(page)).every((x) => !x.unavailable));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('sw.js: fasst fremde Ursprünge nicht an und wird mit veröffentlicht', () => {
+    const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+    assert.match(sw, /url\.origin !== self\.location\.origin\) return;/, 'fremde Ursprünge (api.github.com) ohne respondWith');
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/pages.yml'), 'utf8');
+    assert.match(wf, /cp [^\n]*sw\.js/, 'sw.js wird nach _site kopiert');
+  });
 });
 
 test('Quelltext enthält kein Token und lädt keine externen Skripte', () => {
