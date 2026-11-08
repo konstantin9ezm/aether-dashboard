@@ -266,7 +266,10 @@
   #feedback .fb-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 8px 14px; color: var(--text); font: inherit; font-weight: 600; }
   #feedback .fb-actions .btn.primary { color: #0b0e14; }
   #feedback .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  #feedback .fb-hint { margin: 0; font-size: 13px; color: var(--muted); }
+  /* Controller-Auswahl (vom Spiel per aether:dialog-input gesteuert): weißer Rahmen ohne Layout-Änderung */
+  #feedback.fb-pad .fb-actions .btn.fb-sel { outline: 3px solid #fff; outline-offset: 2px; }
+  #feedback .fb-hint, #feedback .fb-pad-hint { margin: 0; font-size: 13px; color: var(--muted); }
+  #feedback .fb-pad-hint[hidden] { display: none; }
   #feedback .fb-status { margin: 0; font-size: 13px; min-height: 1.2em; color: var(--ok); }
   #feedback .fb-status.warn { color: var(--warn, #fbbf24); }
   @media (orientation: portrait) and (max-width: 600px) {
@@ -543,6 +546,7 @@
         <button class="btn" id="fbCopy" type="button">Text kopieren</button>
         <button class="btn" id="fbClose" type="button">Schließen</button>
       </div>
+      <p class="fb-pad-hint" id="fbPadHint" hidden>◀ ▶ wechseln · Ⓐ auswählen · Ⓑ schließen</p>
       <p class="fb-hint">Keine Mail-App? Text kopieren und an die Adresse oben schicken.</p>
       <p class="fb-status" id="fbStatus" aria-live="polite"></p>
     </div>
@@ -1178,7 +1182,7 @@
     return JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   }
   function hostScript() {
-    return 'window.AETHER_HOST = ' + scriptJson({ version: 1, settings: true, feedback: true }) + ';\n' +
+    return 'window.AETHER_HOST = ' + scriptJson({ version: 1, settings: true, feedback: true, dialogInput: true }) + ';\n' +
       'window.AETHER_HOST_SETTINGS = ' + scriptJson(readGameSettings()) + ';';
   }
 
@@ -1188,6 +1192,13 @@
   var MAILTO_MAX = 2000;
   var CUT_NOTE = "(gekürzt – vollständig über 'Text kopieren')";
   var feedback = null; // { subject, body } solange der Dialog offen ist
+  // Controller-Bedienung: Das Spiel liest den Controller und schickt aether:dialog-input.
+  var PAD_ACTIONS = ['show', 'prev', 'next', 'press'];
+  var PAD_MAIL_DETECT_MS = 1500; // so lange muss die Seite Fokus/Sichtbarkeit verlieren, sonst gilt "Mail öffnen" als blockiert
+  var PAD_BLOCKED = 'Per Controller nicht möglich – bitte antippen oder Enter drücken.';
+  var fbSel = 0;        // gewählter Knopf (0 Mail öffnen, 1 Text kopieren, 2 Schließen)
+  var fbPad = false;    // Rahmen sichtbar
+  var padMailCheck = null;
 
   // Einzelne UTF-16-Hälften ersetzen (encodeURIComponent würde sonst werfen)
   // und nach Codepoints kürzen, ohne ein Zeichen zu zerteilen.
@@ -1242,6 +1253,10 @@
     $('fbText').value = feedbackText();
     $('fbText').scrollTop = 0;
     setFbStatus('', false);
+    cancelPadMailCheck();
+    fbPad = false;
+    fbSel = 0;
+    renderPad();
     $('feedback').hidden = false;
     $('fbMail').focus();
     postToGame({ type: 'aether:feedback-state', open: true });
@@ -1249,6 +1264,9 @@
   function closeFeedback(refocus) {
     if (!feedback) return;
     feedback = null;
+    cancelPadMailCheck();
+    fbPad = false;
+    renderPad();
     $('feedback').hidden = true;
     $('fbText').value = '';
     setFbStatus('', false);
@@ -1257,7 +1275,7 @@
       try { game.iframe.focus(); game.iframe.contentWindow.focus(); } catch (e) { /* egal */ }
     }
   }
-  function copyFallback(text) {
+  function execCopy(text) {
     var ok = false;
     var ta = document.createElement('textarea');
     ta.value = text;
@@ -1266,7 +1284,10 @@
     $('feedback').appendChild(ta);
     try { ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); } catch (e) { ok = false; }
     ta.remove();
-    if (ok) {
+    return ok;
+  }
+  function copyFallback(text) {
+    if (execCopy(text)) {
       $('fbCopy').focus();
       setFbStatus('Kopiert', false);
     } else {
@@ -1276,6 +1297,80 @@
       try { pv.setSelectionRange(0, pv.value.length); } catch (e) { /* egal */ }
       setFbStatus('Bitte manuell kopieren', true);
     }
+  }
+
+  // --- Controller-Bedienung (aether:dialog-input) ---------------------------
+  function fbButtons() { return [$('fbMail'), $('fbCopy'), $('fbClose')]; }
+  function renderPad() {
+    fbButtons().forEach(function (b, i) { b.classList.toggle('fb-sel', i === fbSel); });
+    $('feedback').classList.toggle('fb-pad', fbPad);
+    $('fbPadHint').hidden = !fbPad;
+  }
+  function focusSel() {
+    var b = fbButtons()[fbSel];
+    if (document.activeElement !== b) { try { b.focus({ preventScroll: true }); } catch (e) { b.focus(); } }
+  }
+  function cancelPadMailCheck() {
+    if (!padMailCheck) return;
+    clearTimeout(padMailCheck.timer);
+    padMailCheck.off();
+    padMailCheck = null;
+  }
+  function clearPadBlocked() {
+    if ($('fbStatus').textContent === PAD_BLOCKED) setFbStatus('', false);
+  }
+  function showPadBlocked() {
+    if (feedback) setFbStatus(PAD_BLOCKED, true);
+  }
+  // "Mail öffnen": derselbe Weg wie beim Antippen. Ohne echte Nutzeraktion blockieren Browser das
+  // oft stillschweigend. Verliert die Seite in PAD_MAIL_DETECT_MS weder Fokus noch Sichtbarkeit,
+  // hat sich keine Mail-App geöffnet → Hinweis.
+  function padMail() {
+    var left = false;
+    var onBlur = function () { left = true; };
+    var onVis = function () { if (document.visibilityState === 'hidden') left = true; };
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVis);
+    padMailCheck = {
+      off: function () { window.removeEventListener('blur', onBlur); document.removeEventListener('visibilitychange', onVis); },
+      timer: setTimeout(function () {
+        var c = padMailCheck;
+        padMailCheck = null;
+        if (c) c.off();
+        if (!left) showPadBlocked();
+      }, PAD_MAIL_DETECT_MS)
+    };
+    try { window.location.href = buildMailto(feedback.subject, feedback.body); } catch (e) { /* Hinweis folgt */ }
+  }
+  // "Text kopieren": derselbe Kopierweg wie beim Antippen, aber ohne den Ersatzweg "Vorschau
+  // markieren" (dafür braucht es Antippen). Scheitert er, Hinweis.
+  function padCopy() {
+    var text = feedbackText();
+    var fail = function () {
+      if (!feedback) return;
+      if (execCopy(text)) fbCopied(); else showPadBlocked();
+      focusSel();
+    };
+    var p = null;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) p = navigator.clipboard.writeText(text); } catch (e) { p = null; }
+    if (!p) { fail(); return; }
+    p.then(function () { if (feedback) fbCopied(); }, fail);
+  }
+  function feedbackDialogInput(action) {
+    if (!feedback || typeof action !== 'string' || PAD_ACTIONS.indexOf(action) < 0) return;
+    // Jede Eingabe beendet einen noch laufenden Mail-Versuch und blendet den Hinweis aus.
+    cancelPadMailCheck();
+    clearPadBlocked();
+    if (action === 'press') {
+      if (fbSel === 2) { closeFeedback(true); return; }
+      if (fbSel === 0) padMail(); else padCopy();
+      return;
+    }
+    if (action === 'prev') fbSel = Math.max(0, fbSel - 1);
+    else if (action === 'next') fbSel = Math.min(2, fbSel + 1);
+    fbPad = true;
+    renderPad();
+    focusSel();
   }
 
   function startGame(info, contents) {
@@ -1301,6 +1396,7 @@
       if (e.data.type === 'aether:setting') { storeGameSetting(e.data); return; }
       if (e.data.type === 'aether:feedback') { openFeedback(e.data); return; }
       if (e.data.type === 'aether:feedback-close') { closeFeedback(true); return; }
+      if (e.data.type === 'aether:dialog-input') { feedbackDialogInput(e.data.action); return; }
       if (typeof e.data.aether !== 'string') return;
       if (e.data.aether === 'boot') {
         clearTimeout(g.bootTimer);
@@ -2379,14 +2475,17 @@
     window.location.href = buildMailto(feedback.subject, feedback.body);
   });
   var fbStatusTimer = null;
+  function fbCopied() {
+    setFbStatus('Kopiert', false);
+    clearTimeout(fbStatusTimer);
+    fbStatusTimer = setTimeout(function () { if ($('fbStatus').textContent === 'Kopiert') setFbStatus('', false); }, 2500);
+  }
   $('fbCopy').addEventListener('click', function () {
     if (!feedback) return;
     var text = feedbackText();
     var done = function () {
       if (!feedback) return;
-      setFbStatus('Kopiert', false);
-      clearTimeout(fbStatusTimer);
-      fbStatusTimer = setTimeout(function () { if ($('fbStatus').textContent === 'Kopiert') setFbStatus('', false); }, 2500);
+      fbCopied();
     };
     var p = null;
     try { if (navigator.clipboard && navigator.clipboard.writeText) p = navigator.clipboard.writeText(text); } catch (e) { p = null; }
@@ -2395,8 +2494,22 @@
   });
   $('fbClose').addEventListener('click', function () { closeFeedback(true); });
   $('feedback').addEventListener('click', function (e) { if (e.target === $('feedback')) closeFeedback(true); });
+  // Antippen/Klick im Dialog: Controller-Rahmen aus (Touch-Bedienung wie bisher), Hinweis weg.
+  $('feedback').addEventListener('pointerdown', function () {
+    if (!feedback) return;
+    cancelPadMailCheck();
+    clearPadBlocked();
+    if (fbPad) { fbPad = false; renderPad(); }
+  }, true);
+  // Tastatur-Fokus und Controller-Auswahl bleiben derselbe Knopf.
+  $('fbActions').addEventListener('focusin', function (e) {
+    var i = fbButtons().indexOf(e.target);
+    if (i >= 0 && i !== fbSel) { fbSel = i; renderPad(); }
+  });
   document.addEventListener('keydown', function (e) {
     if (!feedback) return;
+    cancelPadMailCheck();
+    clearPadBlocked();
     if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); closeFeedback(true); return; }
     var btns = [$('fbMail'), $('fbCopy'), $('fbClose')];
     var i = btns.indexOf(document.activeElement);

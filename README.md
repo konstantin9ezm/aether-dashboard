@@ -54,18 +54,24 @@ Stattdessen bittet das Spiel das Dashboard per `postMessage`, Dinge stellvertret
 Vom Dashboard ins Spiel, beim Start als erstes Skript im `srcdoc` (vor dem Boot-Skript und allen Spielskripten):
 
 ```js
-window.AETHER_HOST = { version: 1, settings: true, feedback: true };
+window.AETHER_HOST = { version: 1, settings: true, feedback: true, dialogInput: true };
 window.AETHER_HOST_SETTINGS = { "<schlüssel>": "<wert>", ... }; // gespeicherte Spiel-Einstellungen, sonst {}
 ```
 
 Ein neues Spiel erkennt ein altes Dashboard daran, dass `window.AETHER_HOST` fehlt. Ein altes Spiel sendet die
 Nachrichten nie, dann passiert im Dashboard nichts.
 
+`dialogInput: true` ist eine rückwärtskompatible Erweiterung innerhalb von Version 1 (`version` bleibt `1`): Nur
+ein Dashboard mit diesem Feld versteht `aether:dialog-input`. Ein Spiel schickt die Nachricht nur, wenn
+`window.AETHER_HOST.dialogInput === true` ist; ältere Dashboards kündigen sie nicht an (und würden sie ignorieren),
+ältere Spiele schicken sie nie, dann bleibt der Dialog wie bisher per Touch/Tastatur bedienbar.
+
 | Richtung | Nachricht | Wirkung |
 |---|---|---|
 | Spiel → Dashboard | `{ type: "aether:setting", key, value }` | Speichert `value` (String) unter `key`; `value: null` löscht den Schlüssel. Keine Antwort. |
 | Spiel → Dashboard | `{ type: "aether:feedback", subject, body }` | Öffnet den Feedback-Dialog. |
 | Spiel → Dashboard | `{ type: "aether:feedback-close" }` | Schließt den Dialog (z. B. Controller-Taste B). |
+| Spiel → Dashboard | `{ type: "aether:dialog-input", action }` | Controller-Bedienung des offenen Dialogs, `action` genau `"show"`, `"prev"`, `"next"` oder `"press"` (nur bei `dialogInput: true`, siehe unten). |
 | Dashboard → Spiel | `{ type: "aether:feedback-state", open: true \| false }` | Nach dem Öffnen und nach jedem Schließen des Dialogs. |
 
 Spiel → Dashboard per `window.parent.postMessage(nachricht, "*")`, Dashboard → Spiel per
@@ -112,6 +118,34 @@ Regeln:
 - Bedienung: Touch und Maus; Tab/Umschalt+Tab und die Pfeiltasten wechseln zwischen den Knöpfen, Enter/Leertaste
   lösen aus. Beim Öffnen hat „Mail öffnen“ den Fokus. Den Controller liest das Dashboard nicht; das Spiel schickt
   bei B `aether:feedback-close`.
+
+### Controller im Feedback-Dialog (`aether:dialog-input`)
+
+Das Spiel bleibt der einzige Controller-Leser (kein `navigator.getGamepads` im Dashboard). Bei offenem Dialog
+übersetzt es Controller-Eingaben in `{ type: "aether:dialog-input", action }`:
+
+| `action` | Wirkung |
+|---|---|
+| `"show"` | Macht den weißen Fokusrahmen (3 px) um den gewählten Knopf sichtbar, ohne die Auswahl zu bewegen. |
+| `"prev"` / `"next"` | Auswahl einen Knopf nach links/rechts (Mail öffnen → Text kopieren → Schließen), am Ende bleibt sie stehen (kein Umlauf). Rahmen wird sichtbar. |
+| `"press"` | Löst den gewählten Knopf aus (siehe unten). |
+
+- Angenommen nur mit derselben Quellprüfung wie die übrigen Nachrichten (`event.source` ist das Spiel-iframe) und
+  nur, solange der Dialog offen ist. Unbekannte `action`-Werte werden ignoriert, zusätzliche Felder ebenfalls
+  (die Nachricht gilt dann mit ihrer `action`). Es gibt keine Antwort.
+- Beim Öffnen ist „Mail öffnen“ gewählt, der Rahmen zunächst unsichtbar. Antippen/Klick im Dialog blendet ihn aus.
+  Tastatur-Fokus und Controller-Auswahl sind derselbe Knopf. Solange der Rahmen sichtbar ist, steht unter den
+  Knöpfen „◀ ▶ wechseln · Ⓐ auswählen · Ⓑ schließen“. Rahmen und Zeile ändern weder Knopfgröße noch -anordnung.
+- `"press"` auf **Schließen** schließt wie der Knopf (`open: false`, Fokus zurück ins Spiel).
+- Browser erlauben Mail-Link und Zwischenablage oft nur nach echter Nutzeraktion; ein Controller zählt dafür nicht
+  überall. Deshalb wird es versucht, sonst erscheint im Dialog „Per Controller nicht möglich – bitte antippen oder
+  Enter drücken.“:
+  - **Mail öffnen**: derselbe `mailto:`-Weg wie beim Antippen. Verliert die Seite innerhalb von
+    `PAD_MAIL_DETECT_MS = 1500` ms weder den Fokus (`blur`) noch die Sichtbarkeit (`visibilitychange` → hidden),
+    hat sich keine Mail-App geöffnet → Hinweis.
+  - **Text kopieren**: `navigator.clipboard.writeText`, sonst `execCommand("copy")`. Scheitert beides → Hinweis
+    (die Vorschau wird nicht markiert; das bleibt dem Antippen vorbehalten). Bei Erfolg kurz „Kopiert“.
+  - Der Hinweis verschwindet bei der nächsten Eingabe (Controller, Antippen, Taste) oder beim Schließen.
 
 ## Offline
 
