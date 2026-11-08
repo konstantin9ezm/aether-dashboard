@@ -14,7 +14,8 @@ Es gibt keine externen Skripte und keinen Build-Schritt.
    - Repository permissions: **Contents**, **Pull requests** und **Actions** jeweils *Read-only*
      (Metadata kommt automatisch dazu; für die Spielansicht allein reicht Contents)
    - mit Ablaufdatum
-3. Build auswählen (Standard: neuester) → **Spielen**.
+3. Build auswählen (Standard: neuester) → **Spielen** (der Knopf liegt bereits im Spiel-iframe, siehe
+   [Spielstart im Rahmen](#spielstart-im-rahmen)).
 4. Oben rechts zwischen **Spielen** und **Projekt** umschalten. Die Projektansicht ist auch direkt
    über `…/#projekt` erreichbar.
 
@@ -44,6 +45,53 @@ Das Token wird nur im `localStorage` dieses Geräts gespeichert und ausschließl
 
 Hinweis: Weil das Spiel isoliert läuft, steht ihm kein eigener `localStorage`/IndexedDB zur Verfügung. Mail-Links
 und die Zwischenablage gehen dort ebenfalls nicht. Dafür gibt es die Schnittstelle unten.
+
+## Spielstart im Rahmen
+
+Safari/WebKit drosselt `requestAnimationFrame` in einem fremden (cross-origin) iframe auf 30 fps, bis der Nutzer
+**in dieses iframe** tippt (gemessen am 08.11.2026 auf dem iPad Pro 11, Safari 26.6, mit dem WebGPU-Check;
+Controller-Tasten und programmatischer Fokus heben das nicht auf). Das Spiel-iframe bleibt absichtlich fremd
+(Sandbox ohne `allow-same-origin`). Deshalb landet schon der Tipp auf „Spielen“ im Spiel-iframe:
+
+1. **Start-Rahmen:** Ist in der Build-Liste ein startbarer Build gewählt, legt das Dashboard das Spiel-iframe sofort an
+   (`createGameFrame()`, gleiche Attribute wie bisher: `sandbox="allow-scripts allow-pointer-lock"`,
+   `allow="gamepad *; fullscreen *; autoplay *"`, `referrerpolicy="no-referrer"`, `title`, `srcdoc`). Das `srcdoc`
+   enthält nur den Knopf „Spielen“ (Aussehen wie der frühere Dashboard-Knopf) und das Boot-Skript. Spieldateien
+   werden noch nicht geladen. Das iframe liegt von Anfang an in `#game`; `#game.slot` legt es per CSS genau über den
+   Platzhalter `#playSlot` in der Karte (Lage folgt per `ResizeObserver` und `resize`).
+2. **Tipp:** Das Boot-Skript meldet `aether:start-tap`. Danach läuft der bisherige Ablauf (Cache bzw. Download mit
+   Fortschrittsanzeige im Dashboard). Anschließend schickt das Dashboard Spiel-HTML und Dateien an **dasselbe**
+   iframe; das Boot-Skript setzt head/body des Spiels in das vorhandene Dokument ein und führt die Skripte der Reihe
+   nach aus. Das iframe-Element wird nie neu erzeugt oder im DOM verschoben, `src`/`srcdoc` bleiben unverändert;
+   nur die Klassen an `#game` ändern das Layout (`slot` → `wait` während des Ladens → bildschirmfüllend).
+3. **Build-Wechsel** legt einen neuen Start-Rahmen an. **Beenden** (Schließen-X mit Rückfrage, `aether:quit`)
+   entfernt das iframe; zurück in der Build-Liste steht ein frischer Start-Rahmen. Offline bekommen nur gespeicherte
+   Builds einen Rahmen; ohne gespeicherten Build steht dort ein ausgegrauter Knopf.
+4. **Rückfall-Hinweis:** Wurde ohne Zeiger-Tipp gestartet (Enter/Leertaste auf dem Knopf im Rahmen) und meldet das
+   Gerät `navigator.maxTouchPoints > 1` (iPhone/iPad), zeigt die Spielansicht unten mittig „Einmal ins Spielbild
+   tippen für flüssigere Darstellung“ (`#gameHint`, `aria-live="polite"`, `pointer-events: none`, über dem iframe,
+   unter Leiste und Feedback-Dialog). Er verschwindet beim ersten Tipp ins Spiel, beim Öffnen des Feedback-Dialogs
+   und beim Beenden. Im Stromsparmodus drosselt iOS unabhängig davon.
+5. **Messhilfe:** `…/?fps=1` zeigt in der Spielansicht oben mittig die Bildrate, die das Boot-Skript im iframe per
+   `requestAnimationFrame` misst (Mittel über ca. 1 s). Ohne den Parameter wird nichts gemessen und nichts angezeigt.
+
+### Dashboard-interne Nachrichten (Boot-Skript ↔ Dashboard)
+
+Das Boot-Skript ist Dashboard-Code. Seine Nachrichten laufen durch dieselbe Verarbeitung wie die Schnittstelle
+unten: angenommen nur, wenn `event.source` das `contentWindow` **genau des aktuellen** Rahmens ist (nicht die Seite,
+nicht ein anderes iframe, nicht ein alter Start-Rahmen); unbekannte Felder werden ignoriert. `doc` ist eine zufällige
+Kennung, die das Boot-Skript beim Laden des Rahmens setzt; sie bleibt nach dem Start dieselbe.
+
+| Richtung | Nachricht | Bedeutung |
+|---|---|---|
+| iframe → Dashboard | `{ aether: "boot", doc }` | Rahmen geladen; das Dashboard merkt sich `doc`. |
+| iframe → Dashboard | `{ type: "aether:start-tap", pointerType, doc }` | „Spielen“ im Rahmen ausgelöst; `pointerType` `"mouse"`/`"touch"`/`"pen"`, `""` ohne Zeiger. Startet nur im Zustand „Start-Rahmen“. |
+| iframe → Dashboard | `{ type: "aether:tapped", doc }` | erster `pointerdown` im iframe (passiv, Capture); blendet den Rückfall-Hinweis aus. |
+| iframe → Dashboard | `{ type: "aether:fps", fps, doc }` | nur mit `?fps=1`, etwa jede Sekunde. |
+| Dashboard → iframe | `{ aether: "files", files, html }` | Spieldateien und Spiel-HTML (mit zurückgehaltenen Skripten). |
+| iframe → Dashboard | `{ aether: "started", doc }` | Spielskripte eingesetzt; gilt nur bei gleichem `doc`. |
+
+Die Schnittstelle Spiel ↔ Dashboard (Version 1) ändert sich dadurch nicht; `AETHER_HOST.version` bleibt `1`.
 
 ## Schnittstelle Spiel ↔ Dashboard (Version 1)
 
@@ -316,10 +364,17 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   (Nachweis über die Chromium-Meldung „Launched external handler for 'mailto:…'“), Kürzen auf 2000 Zeichen,
   Zwischenablage (ausgelesen in einem zweiten Kontext), alle Wege zum Schließen samt Fokus zurück ins Spiel, Layout
   auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop.
+- `tests/start-frame.test.js` – Spielstart im Rahmen (Headless Chromium): Tipp im Rahmen startet, Dokument
+  (Kennung `doc`) und iframe-Element vor und nach dem Start dieselben, kein erneutes Laden, Attribute unverändert;
+  Nachrichten aus falscher Quelle (Seite, Klon-iframe, alter Start-Rahmen) starten nichts; Build-Wechsel und Beenden
+  führen zu neuen Rahmen; Start per Enter mit Touch-Emulation (`maxTouchPoints` 5 per CDP) zeigt den Hinweis, der
+  Tipp darauf kommt im Spiel an und blendet ihn aus, Feedback-Dialog blendet ihn aus, Desktop ohne Hinweis; Layout
+  (iPhone 16 Pro quer, iPad Pro 11 quer, Desktop: Knopf an der Stelle und in der Größe des früheren Knopfs, ±1 px);
+  `?fps=1` mit und ohne Parameter.
 - `tests/webgpu-check.test.js` – WebGPU-Check im **vollen Chromium** mit WebGPU aus SwiftShader
   (`--enable-unsafe-webgpu --use-angle=swiftshader --enable-features=Vulkan --use-vulkan=swiftshader`): lädt ohne
   Token und ohne Anfrage an api.github.com, alle Abschnitte gefüllt, Probe direkt und im iframe grün, iframe-Attribute
-  gleich denen aus `startGame()`, Bildtakt-Stufen a/b/d (c übersprungen), Ergebnistext mit Pflicht-Schlüsseln,
+  gleich denen aus `createGameFrame()`, Bildtakt-Stufen a/b/d (c übersprungen), Ergebnistext mit Pflicht-Schlüsseln,
   Kopieren, mailto ≤ 2000 Zeichen; Rückfall ohne die Flags („kein Adapter“, WebGL-Rückfall) und ohne
   `navigator.gpu` („WebGPU fehlt“); Layout auf iPhone 16 Pro hoch/quer und iPad quer. Gegenproben (müssen rot
   werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.

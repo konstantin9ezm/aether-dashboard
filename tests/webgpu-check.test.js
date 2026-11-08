@@ -61,15 +61,15 @@ function servedCheckPage() {
   return html;
 }
 
-// Attribute, die startGame() in index.html dem Spiel-iframe gibt (aus dem Quelltext gelesen).
+// Attribute, die createGameFrame() in index.html dem Spiel-iframe gibt (aus dem Quelltext gelesen).
 function indexFrameAttrs() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const start = html.indexOf('function startGame(');
-  assert.ok(start > 0, 'startGame() in index.html gefunden');
+  const start = html.indexOf('function createGameFrame(');
+  assert.ok(start > 0, 'createGameFrame() in index.html gefunden');
   const body = html.slice(start, html.indexOf('\n  }\n', start));
   const get = (name) => {
     const m = new RegExp(`iframe\\.setAttribute\\('${name}', '([^']*)'\\)`).exec(body);
-    assert.ok(m, `setAttribute('${name}') in startGame()`);
+    assert.ok(m, `setAttribute('${name}') in createGameFrame()`);
     return m[1];
   };
   return { sandbox: get('sandbox'), allow: get('allow'), referrerpolicy: get('referrerpolicy') };
@@ -212,7 +212,7 @@ describe('WebGPU-Check mit WebGPU (Desktop)', () => {
     assert.match(rows.find((x) => x[0] === 'Adapter')[2], /swiftshader/i, 'Adapter-Infos aus dem iframe');
   });
 
-  test('iframe-Attribute stimmen mit startGame() in index.html überein', async () => {
+  test('iframe-Attribute stimmen mit createGameFrame() in index.html überein', async () => {
     const want = indexFrameAttrs();
     const got = await page.evaluate(() => {
       const f = document.getElementById('probeFrame');

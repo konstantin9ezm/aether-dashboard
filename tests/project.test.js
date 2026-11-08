@@ -232,7 +232,8 @@ async function newPage(deviceName, { withToken = true, timezoneId = 'Europe/Berl
   page.on('pageerror', (e) => log.errors.push(String(e)));
   context.on('request', (r) => log.urls.push(r.url()));
   page.on('dialog', (d) => d.accept());
-  if (withToken) await context.addInitScript((t) => localStorage.setItem('aether.githubToken', t), TOKEN);
+  // Nur im Dashboard selbst: Das Spiel-iframe (Start-Rahmen) hat keinen Speicherzugriff.
+  if (withToken) await context.addInitScript((t) => { if (window === window.top) localStorage.setItem('aether.githubToken', t); }, TOKEN);
   await context.route('https://api.github.com/**', githubApi);
   await context.route(/^https?:\/\/(?!localhost|api\.github\.com)/, (r) => r.abort());
   return { context, page, log };
@@ -337,11 +338,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=geplant', 'Profiler=geplant']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=geplant']);
     assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig']);
-    assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'Vulkan-RHI=geplant']);
-    assert.match(await text(page, '#engineBody'), /Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui.*Tracy.*double-Positionen · fertig.*60 Hz/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 6.*Vorschau: 2.*geplant: 8/);
+    assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
+    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*double-Positionen · fertig.*60 Hz/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 8.*Vorschau: 2.*geplant: 8/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
@@ -433,7 +434,7 @@ test('Spielansicht bleibt unverändert erreichbar', async () => {
   await page.waitForSelector('#buildsView:not([hidden])');
   assert.equal(await page.getAttribute('#tabPlay', 'aria-selected'), 'true');
   assert.match(await text(page, '#buildList'), /Ein Build/);
-  assert.ok(await page.isEnabled('#playBtn'));
+  assert.ok(await page.isVisible('#game.slot iframe'), 'Start-Rahmen mit „Spielen“ bereit');
   assert.ok(await page.isHidden('#projectView'));
   assert.equal(await page.evaluate(() => location.hash), '');
   await context.close();
@@ -486,7 +487,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
     assert.equal(await page.getAttribute(`#${id} .msg`, 'data-kind'), 'notoken');
   }
   assert.equal(mock.requests.length, 0, 'ohne Token keine API-Aufrufe');
-  assert.equal((await page.$$('#engineBody .chip')).length, 16, 'Engine-Karte kommt ohne Token aus');
+  assert.equal((await page.$$('#engineBody .chip')).length, 18, 'Engine-Karte kommt ohne Token aus');
   await page.click('#ciBody button:has-text("Token eingeben")');
   await page.waitForSelector('#tokenView:not([hidden])');
   await page.fill('#tokenInput', TOKEN);
@@ -524,7 +525,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
   for (const id of ['ciBody', 'timelineBody', 'roadmapBody']) {
     assert.match(await text(page, `#${id} .msg`), /Rate-Limit erreicht.*Wieder möglich ab \d\d:\d\d Uhr/);
   }
-  assert.equal((await page.$$('#engineBody .chip')).length, 16);
+  assert.equal((await page.$$('#engineBody .chip')).length, 18);
 
   // Offline
   mock.mode = 'offline';

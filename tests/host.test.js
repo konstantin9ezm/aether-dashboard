@@ -133,8 +133,10 @@ const gameFrame = (page) => page.frames().find((f) => f !== page.mainFrame() && 
 
 async function startGame(page) {
   await page.waitForSelector('#buildsView:not([hidden])');
-  await page.click('#playBtn');
-  await page.waitForFunction(() => document.querySelector('#game iframe') && !document.getElementById('game').hidden);
+  // „Spielen“ ist ein Knopf IM Start-Rahmen (Spiel-iframe): echter Klick dort, nicht per evaluate.
+  const start = await (await page.waitForSelector('#game.slot:not([hidden]) iframe')).contentFrame();
+  await start.click('#aetherStart');
+  await page.waitForFunction(() => document.querySelector('#game iframe') && !document.getElementById('game').hidden && !document.getElementById('game').classList.contains('slot'));
   let frame;
   while (!(frame = gameFrame(page))) await page.waitForEvent('frameattached');
   await frame.waitForFunction(() => window.__t && window.__t.ready && window.__t.js);
@@ -365,7 +367,7 @@ describe('Spiel-Einstellungen', () => {
     const t = await frame.evaluate(() => ({ settings: window.__t.settings, pwned: window.__pwned, scripts: document.scripts.length }));
     assert.deepEqual(t.settings, { 'aether.boese': evil, 'aether.gut': 'ok' }, 'nur gültige Einträge, Wert unverändert');
     assert.equal(t.pwned, undefined, 'kein eingeschleustes Skript gelaufen');
-    assert.ok(await page.evaluate(() => !!document.querySelector('#game iframe')), 'Spiel läuft weiter');
+    assert.ok(await page.evaluate(() => !!document.querySelector('#game iframe') && document.documentElement.classList.contains('playing')), 'Spiel läuft weiter');
     assert.deepEqual(log.errors, []);
     await context.close();
 
@@ -568,12 +570,14 @@ describe('Feedback-Dialog', () => {
     page.on('dialog', (d) => dialogs.push(d.message()));
     await page.goto(baseUrl);
     let frame = await startGame(page);
+    const gameIframe = await page.$('#game iframe');
     await openFeedbackByKey(page, frame);
     await page.click('#exitBtn');
     await page.waitForSelector('#buildsView:not([hidden])');
     assert.deepEqual(dialogs, ['Spiel beenden?'], 'X fragt weiter nach');
     assert.equal(await dialogOpen(page), false);
-    assert.equal(await page.$('#game iframe'), null);
+    assert.equal(await gameIframe.evaluate((f) => f.isConnected), false, 'Spiel-iframe entfernt');
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('playing')), false);
 
     frame = await startGame(page);
     assert.equal(await dialogOpen(page), false, 'neues Spiel startet ohne Dialog');

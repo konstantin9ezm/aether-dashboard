@@ -202,14 +202,61 @@
     position: absolute; inset: 0;
     width: 100%; height: 100%;
     border: 0; display: block; background: #000;
+    z-index: 0;
   }
+  /* Start-Rahmen: In der Build-Liste liegt das Spiel-iframe schon an der Stelle des Knopfs
+     „Spielen“ (#playSlot). Der Tipp landet so im iframe selbst (Safari drosselt fremde iframes
+     auf 30 fps, bis in sie getippt wurde). Danach wechselt nur das Layout, nie das Dokument. */
+  #game.slot {
+    position: absolute;
+    left: var(--slot-x, 0px); top: var(--slot-y, 0px);
+    width: var(--slot-w, 0px); height: var(--slot-h, 0px);
+    background: transparent;
+    border-radius: 12px;
+    z-index: 1;
+    touch-action: manipulation;
+  }
+  #game.slot > :not(iframe) { display: none !important; }
+  #game.slot iframe { background: transparent; }
+  /* Nach dem Tipp, solange der Build lädt: unsichtbar, aber nicht display:none. */
+  #game.wait {
+    position: fixed; top: 0; left: 0;
+    width: 1px; height: 1px;
+    opacity: 0; pointer-events: none;
+    background: transparent;
+  }
+  #playSlot { min-height: 54px; }
+  /* Rückfall-Hinweis (Start ohne Zeiger-Tipp auf iPhone/iPad). Fängt keine Tipps ab. */
+  #gameHint {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(16px + var(--safe-b));
+    max-width: calc(100% - 32px);
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(20,25,37,.85); border: 1px solid rgba(255,255,255,.18);
+    color: #fff; font-size: 14px; line-height: 1.3; text-align: center;
+    z-index: 1;
+    pointer-events: none;
+  }
+  #gameHint, #gameHint * { pointer-events: none; }
+  #gameHint:empty { display: none; }
+  /* Messhilfe ?fps=1: Bildrate, im Spiel-iframe gemessen. */
+  #gameFps {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    top: max(8px, calc(4px + var(--safe-t)));
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(20,25,37,.75); color: #fff;
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
+    z-index: 3;
+    pointer-events: none;
+  }
+  #gameFps:empty { display: none; }
   #gameBar {
     position: absolute;
     /* Oben links: oben rechts liegt im Spiel die Kamera-Taste. */
     top: max(12px, calc(8px + var(--safe-t)));
     left: max(12px, calc(8px + var(--safe-l)));
     display: flex; gap: 8px;
-    z-index: 2;
+    z-index: 3;
     opacity: .6;
     transition: opacity .4s;
   }
@@ -230,13 +277,13 @@
     max-width: calc(100% - 32px);
     padding: 10px 14px; border-radius: 12px;
     background: rgba(20,25,37,.92); border: 1px solid var(--line);
-    font-size: 14px; z-index: 3;
+    font-size: 14px; z-index: 4;
   }
   #gameToast.error { border-color: #5b2630; color: #fecaca; }
 
   /* Feedback-Dialog (über dem laufenden Spiel; das X bleibt darüber erreichbar) */
   #feedback {
-    position: absolute; inset: 0; z-index: 1;
+    position: absolute; inset: 0; z-index: 2;
     display: flex; align-items: center; justify-content: center;
     padding: max(8px, var(--safe-t)) max(8px, var(--safe-r)) max(8px, var(--safe-b)) max(8px, var(--safe-l));
     background: rgba(0,0,0,.55);
@@ -478,7 +525,8 @@
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
       </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
-      <button class="btn primary block big mt" id="playBtn" type="button">Spielen</button>
+      <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
+      <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
     </div>
     <div class="footer">
       <span class="muted small" id="apiInfo"></span>
@@ -535,6 +583,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
   </div>
+  <div id="gameHint" role="status" aria-live="polite"></div>
+  <div id="gameFps" aria-hidden="true"></div>
   <div id="gameToast" hidden></div>
   <div id="feedback" hidden>
     <div class="fb-box" role="dialog" aria-modal="true" aria-labelledby="fbTitle">
@@ -590,7 +640,11 @@
   var builds = [];
   var indexLoaded = false;
   var loadAbort = null;
-  var game = null;
+  var game = null;          // laufendes Spiel (= frame, sobald die Spieldateien geschickt sind)
+  var frame = null;         // aktueller Spiel-Rahmen: { iframe, build, state: 'start' | 'loading' | 'game', doc, tapped, pointer }
+  // Messhilfe: ?fps=1 zeigt die im Spiel-iframe gemessene Bildrate. Ohne Parameter wird nichts gemessen.
+  var FPS_MODE = /(?:^|[?&])fps=1(?:&|$)/.test(location.search.slice(1));
+  var HINT_TEXT = 'Einmal ins Spielbild tippen für flüssigere Darstellung';
   var offlineReason = null; // null = online; sonst der AppError, warum GitHub zuletzt nicht erreichbar war
   var savedBuilds = {};     // short -> true, wenn der Build vollständig lokal gespeichert ist
 
@@ -966,10 +1020,19 @@
   // Spiel-Container (sandboxed iframe ohne allow-same-origin: das Spiel kann
   // weder localStorage noch das Token dieser Seite lesen)
   // ---------------------------------------------------------------------------
-  function iframeBoot() {
+  // Läuft im Spiel-iframe, und zwar schon im Start-Rahmen (vor dem Tipp auf „Spielen“).
+  // Nach dem Tipp bleibt es DASSELBE Dokument: Das Spiel wird per postMessage geliefert und hier
+  // eingesetzt (kein neues srcdoc, kein Neuladen). cfg: { fps: true } nur mit ?fps=1.
+  function iframeBoot(cfg) {
+    cfg = cfg || {};
     var files = null;
     var started = false;
     var parentWin = window.parent;
+    // Zufällige Kennung dieses Dokuments; steht in boot, start-tap, tapped, fps und started.
+    var doc = (function () {
+      try { var a = new Uint32Array(2); crypto.getRandomValues(a); return a[0].toString(36) + a[1].toString(36); } catch (e) { return String(Math.random()).slice(2); }
+    })();
+    try { Object.defineProperty(window, '__aetherDoc', { value: doc }); } catch (e) { /* egal */ }
     function post(msg) { try { parentWin.postMessage(msg, '*'); } catch (e) { /* egal */ } }
     function baseName(u) {
       var s;
@@ -1029,38 +1092,121 @@
       var r = e && e.reason;
       post({ aether: 'error', message: String((r && (r.message || r)) || 'Unbekannter Fehler') });
     });
+
+    // Erster Zeiger-Tipp in diesem Dokument (passiv, Capture, ohne preventDefault): Damit gilt das
+    // iframe für Safari als angetippt; das Dashboard blendet dann den Rückfall-Hinweis aus.
+    var onFirstDown = function () {
+      window.removeEventListener('pointerdown', onFirstDown, true);
+      post({ type: 'aether:tapped', doc: doc });
+    };
+    window.addEventListener('pointerdown', onFirstDown, { capture: true, passive: true });
+
+    // Knopf „Spielen“ im Start-Rahmen. pointerType "" = ohne Zeiger (Enter/Leertaste).
+    var startPointer = '';
+    document.addEventListener('pointerdown', function (e) {
+      if (e.target && e.target.id === 'aetherStart') startPointer = String(e.pointerType || 'mouse');
+    }, { capture: true, passive: true });
+    document.addEventListener('click', function (e) {
+      var b = document.getElementById('aetherStart');
+      if (!b || e.target !== b || b.disabled) return;
+      var pt = e.detail === 0 ? '' : (startPointer || String(e.pointerType || '') || 'mouse');
+      startPointer = '';
+      b.disabled = true;
+      b.textContent = 'Lädt …';
+      post({ type: 'aether:start-tap', pointerType: pt, doc: doc });
+    });
+
+    // Messhilfe (?fps=1): Bildrate dieses Dokuments per requestAnimationFrame, Mittel über ca. 1 s.
+    if (cfg.fps === true && typeof window.requestAnimationFrame === 'function') {
+      var raf = window.requestAnimationFrame.bind(window);
+      var t0 = 0, frames = 0;
+      var tick = function (t) {
+        if (!t0) { t0 = t; frames = 0; } else { frames++; }
+        if (t - t0 >= 1000) {
+          post({ type: 'aether:fps', fps: Math.round(frames * 10000 / (t - t0)) / 10, doc: doc });
+          t0 = t; frames = 0;
+        }
+        raf(tick);
+      };
+      raf(tick);
+    }
+
+    // Spiel-Dokument in DIESES Dokument übernehmen: Attribute von html/body, Inhalt von head/body.
+    function copyAttrs(from, to) {
+      Array.prototype.slice.call(to.attributes).forEach(function (a) { to.removeAttribute(a.name); });
+      Array.prototype.slice.call(from.attributes).forEach(function (a) { to.setAttribute(a.name, a.value); });
+    }
+    function fill(dst, src) {
+      while (dst.firstChild) dst.removeChild(dst.firstChild);
+      Array.prototype.slice.call(src.childNodes).forEach(function (n) { dst.appendChild(document.importNode(n, true)); });
+    }
+    function adopt(html) {
+      var src = new DOMParser().parseFromString(html, 'text/html');
+      copyAttrs(src.documentElement, document.documentElement);
+      fill(document.head, src.head);
+      fill(document.body, src.body);
+      copyAttrs(src.body, document.body);
+      // Übrige script-Elemente (keine JavaScript-Typen, z. B. importmap) frisch anlegen,
+      // damit sie wie beim normalen Laden wirken; importierte gelten sonst als schon gelaufen.
+      Array.prototype.slice.call(document.querySelectorAll('script:not([type="text/x-aether-deferred"])')).forEach(function (s) {
+        var c = document.createElement('script');
+        Array.prototype.slice.call(s.attributes).forEach(function (a) { c.setAttribute(a.name, a.value); });
+        c.textContent = s.textContent;
+        s.parentNode.replaceChild(c, s);
+      });
+    }
+
     function run() {
       if (started || !files || document.readyState === 'loading') return;
       started = true;
       var dec = new TextDecoder('utf-8');
       var list = Array.prototype.slice.call(document.querySelectorAll('script[type="text/x-aether-deferred"]'));
-      list.forEach(function (ph) {
-        var s = document.createElement('script');
-        var t = ph.getAttribute('data-aether-type');
-        if (t) s.type = t;
-        var name = ph.getAttribute('data-aether-file');
-        if (name) {
-          var f = files[name];
-          s.textContent = f ? dec.decode(f.bytes) + '\n//# sourceURL=' + name.replace(/[^\w.\-]/g, '_') : '';
-        } else {
-          s.textContent = ph.textContent;
+      var i = 0;
+      // Der Reihe nach ausführen; externe Skripte (nicht aus dem Build) erst laden lassen.
+      var next = function () {
+        while (i < list.length) {
+          var ph = list[i++];
+          var s = document.createElement('script');
+          var t = ph.getAttribute('data-aether-type');
+          if (t) s.type = t;
+          var ext = ph.getAttribute('data-aether-src');
+          if (ext) {
+            var done = false;
+            var go = function () { if (done) return; done = true; next(); };
+            s.async = false;
+            s.onload = go;
+            s.onerror = go;
+            s.src = ext;
+            ph.parentNode.replaceChild(s, ph);
+            patchModule();
+            return;
+          }
+          var name = ph.getAttribute('data-aether-file');
+          if (name) {
+            var f = files[name];
+            s.textContent = f ? dec.decode(f.bytes) + '\n//# sourceURL=' + name.replace(/[^\w.\-]/g, '_') : '';
+          } else {
+            s.textContent = ph.textContent;
+          }
+          ph.parentNode.replaceChild(s, ph);
+          patchModule();
         }
-        ph.parentNode.replaceChild(s, ph);
-        patchModule();
-      });
-      // Die Spielskripte liefen nach dem eigentlichen Laden; Ereignisse nachreichen.
-      document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
-      if (document.readyState === 'complete') window.dispatchEvent(new Event('load'));
-      post({ aether: 'started' });
+        // Die Spielskripte liefen nach dem eigentlichen Laden; Ereignisse nachreichen.
+        document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+        if (document.readyState === 'complete') window.dispatchEvent(new Event('load'));
+        post({ aether: 'started', doc: doc });
+      };
+      next();
     }
     window.addEventListener('message', function (e) {
-      if (e.source !== parentWin || !e.data || e.data.aether !== 'files' || files) return;
+      if (e.source !== parentWin || !e.data || e.data.aether !== 'files' || files || !Array.isArray(e.data.files)) return;
+      if (typeof e.data.html === 'string') adopt(e.data.html);
       files = {};
       e.data.files.forEach(function (f) { files[f.name] = { bytes: new Uint8Array(f.buffer), type: f.type }; });
       run();
     });
     document.addEventListener('DOMContentLoaded', run);
-    post({ aether: 'boot' });
+    post({ aether: 'boot', doc: doc });
   }
 
   var JS_TYPES = { '': 1, 'text/javascript': 1, 'application/javascript': 1, 'module': 1, 'text/ecmascript': 1, 'application/ecmascript': 1 };
@@ -1105,8 +1251,8 @@
       if (type === 'module') ph.setAttribute('data-aether-type', 'module');
       if (s.hasAttribute('src')) {
         var n = nameFromRef(s.getAttribute('src'));
-        if (!n) return; // externes Skript: unverändert lassen
-        ph.setAttribute('data-aether-file', n);
+        // Externes Skript: an seiner Stelle der Reihe nach laden (das Boot-Skript wartet darauf).
+        if (n) ph.setAttribute('data-aether-file', n); else ph.setAttribute('data-aether-src', s.getAttribute('src'));
       } else {
         ph.textContent = s.textContent;
       }
@@ -1120,15 +1266,36 @@
       st.textContent = new TextDecoder('utf-8').decode(contents[n]);
       l.parentNode.replaceChild(st, l);
     });
-    var boot = doc.createElement('script');
-    boot.textContent = '(' + iframeBoot.toString() + ')();';
-    var head = doc.head || doc.documentElement;
-    head.insertBefore(boot, head.firstChild);
-    // Läuft vor dem Boot-Skript und damit vor allen Spielskripten.
+    // Das Boot-Skript läuft schon im Start-Rahmen (startDocument). Dieses Dokument setzt es nach
+    // dem Tipp in dasselbe iframe ein; AETHER_HOST läuft als erstes zurückgehaltenes Skript,
+    // also vor allen Spielskripten.
     var host = doc.createElement('script');
+    host.setAttribute('type', 'text/x-aether-deferred');
     host.textContent = hostScript();
+    var head = doc.head || doc.documentElement;
     head.insertBefore(host, head.firstChild);
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  }
+
+  // Dokument des Start-Rahmens: nur der Knopf „Spielen“ (sieht aus wie .btn.primary.big.block)
+  // und das Boot-Skript. Spieldateien werden erst nach dem Tipp geladen.
+  var START_CSS = 'html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;' +
+    '-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}' +
+    '#aetherStart{box-sizing:border-box;display:flex;align-items:center;justify-content:center;' +
+    'width:100%;height:100%;min-height:44px;margin:0;padding:10px 18px;border:0;border-radius:12px;' +
+    'background:linear-gradient(135deg,#7c9cff,#a78bfa);color:#0b0e14;' +
+    'font:700 18px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;' +
+    'cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}' +
+    '#aetherStart:active{transform:scale(.98)}' +
+    '#aetherStart:disabled{cursor:default}' +
+    '#aetherStart:focus-visible{outline:3px solid #fff;outline-offset:-6px}';
+  function startDocument() {
+    return '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">' +
+      '<meta name="color-scheme" content="dark"><title>Aether</title>' +
+      '<style>' + START_CSS + '</style>' +
+      '<script>(' + iframeBoot.toString() + ')(' + scriptJson({ fps: FPS_MODE }) + ');<\/script>' +
+      '</head><body><button id="aetherStart" type="button">Spielen</button></body></html>';
   }
 
   function pickMainJs(info) {
@@ -1249,6 +1416,7 @@
   function openFeedback(msg) {
     if (typeof msg.subject !== 'string' || typeof msg.body !== 'string') return;
     feedback = { subject: clip(wellFormed(msg.subject), 200), body: clip(wellFormed(msg.body), 4000) };
+    hideHint();
     $('fbTo').textContent = FEEDBACK_TO;
     $('fbText').value = feedbackText();
     $('fbText').scrollTop = 0;
@@ -1373,76 +1541,170 @@
     focusSel();
   }
 
-  function startGame(info, contents) {
-    stopGame(true);
-    var wrap = $('game');
+  // ---------------------------------------------------------------------------
+  // Spiel-Rahmen. Ablauf: Build gewählt → Start-Rahmen (iframe mit Knopf „Spielen“ an der Stelle
+  // von #playSlot) → Tipp im iframe (aether:start-tap) → Laden wie bisher → Spieldateien in
+  // DASSELBE iframe → bildschirmfüllend. Das iframe-Element wird dabei nie neu erzeugt, nie im DOM
+  // verschoben, und src/srcdoc bleiben unverändert; nur Klassen an #game ändern das Layout.
+  // ---------------------------------------------------------------------------
+  function createGameFrame(build) {
     var iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', 'allow-scripts allow-pointer-lock');
     // Explizit "*": Ohne allow-same-origin hat das srcdoc-Dokument einen opaken
     // Ursprung, den die Standard-Allowlist ('src') nicht zuverlässig abdeckt.
     // Die Sandbox selbst bleibt unverändert.
     iframe.setAttribute('allow', 'gamepad *; fullscreen *; autoplay *');
-    iframe.setAttribute('title', 'Aether ' + info.build.short);
+    iframe.setAttribute('title', 'Aether ' + build.short);
     iframe.setAttribute('referrerpolicy', 'no-referrer');
-    var srcdoc = buildGameDocument(info, contents);
-    var g = { iframe: iframe, info: info, bootTimer: null };
-    game = g;
+    iframe.srcdoc = startDocument();
+    return iframe;
+  }
 
-    var onMsg = function (e) {
-      if (!game || game !== g || e.source !== iframe.contentWindow || !e.data) return;
+  // Gewählter Build, falls er startbar ist (offline nur gespeicherte), sonst null.
+  function startableSelection() {
+    var r = document.querySelector('input[name="build"]:checked');
+    return r && !r.disabled ? (builds[Number(r.value)] || null) : null;
+  }
+
+  function discardFrame(f) {
+    if (!f) return;
+    clearTimeout(f.bootTimer);
+    try { f.iframe.srcdoc = ''; } catch (e) { /* egal */ }
+    f.iframe.remove();
+    if (frame === f) frame = null;
+  }
+
+  // Start-Rahmen passend zur Build-Ansicht anlegen, ersetzen oder entfernen. Rahmen, in denen
+  // schon getippt wurde (Laden/Spiel), fasst diese Funktion nie an.
+  function syncStartFrame() {
+    if (frame && frame.state !== 'start') { layoutGame(); return; }
+    var visible = !$('buildsView').hidden;
+    var b = visible ? startableSelection() : null;
+    if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path)) discardFrame(frame);
+    if (b && !frame) {
+      frame = { iframe: createGameFrame(b), build: b, state: 'start', doc: null, tapped: false, pointer: '' };
+      var wrap = $('game');
+      wrap.insertBefore(frame.iframe, wrap.firstChild);
+    }
+    if (frame) frame.build = b;
+    $('playOff').hidden = !!frame || !visible;
+    layoutGame();
+  }
+
+  // Lage des Start-Rahmens = Lage von #playSlot (Seitenkoordinaten, scrollt mit der Seite).
+  function placeSlot() {
+    if (!frame || frame.state !== 'start' || $('buildsView').hidden) return;
+    var r = $('playSlot').getBoundingClientRect();
+    var st = $('game').style;
+    st.setProperty('--slot-x', (r.left + window.scrollX) + 'px');
+    st.setProperty('--slot-y', (r.top + window.scrollY) + 'px');
+    st.setProperty('--slot-w', r.width + 'px');
+    st.setProperty('--slot-h', r.height + 'px');
+  }
+
+  function layoutGame() {
+    var wrap = $('game');
+    var state = frame ? frame.state : 'none';
+    wrap.classList.toggle('slot', state === 'start');
+    wrap.classList.toggle('wait', state === 'loading');
+    if (state === 'start') {
+      wrap.hidden = $('buildsView').hidden;
+      placeSlot();
+    } else {
+      wrap.hidden = state === 'none';
+    }
+  }
+
+  function showHint() { $('gameHint').textContent = HINT_TEXT; }
+  function hideHint() { $('gameHint').textContent = ''; }
+  function showFps(v) {
+    if (!FPS_MODE || typeof v !== 'number' || !isFinite(v) || v < 0 || v > 1000) return;
+    $('gameFps').textContent = v.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' fps';
+  }
+
+  // Tipp/Klick auf „Spielen“ im Start-Rahmen.
+  function startFromFrame(f, msg) {
+    if (f.state !== 'start' || $('buildsView').hidden) return;
+    f.state = 'loading';
+    f.pointer = typeof msg.pointerType === 'string' ? msg.pointerType : '';
+    play(f);
+  }
+
+  // Alle Nachrichten aus dem Spiel-iframe. Quelle muss das contentWindow GENAU des aktuellen
+  // Rahmens sein (nicht ein anderes Fenster, nicht ein alter Rahmen).
+  function onFrameMessage(e) {
+    var f = frame;
+    if (!f || e.source !== f.iframe.contentWindow || !e.data) return;
+    var d = e.data;
+    if (game === f) {
       // "Beenden" im Spiel: derselbe Weg wie das Schließen-X (ohne Rückfrage).
-      if (e.data.type === 'aether:quit') { stopGame(); showView('builds'); return; }
+      if (d.type === 'aether:quit') { stopGame(); showView('builds'); return; }
       // Schnittstelle Spiel ↔ Dashboard, Version 1 (siehe README).
-      if (e.data.type === 'aether:setting') { storeGameSetting(e.data); return; }
-      if (e.data.type === 'aether:feedback') { openFeedback(e.data); return; }
-      if (e.data.type === 'aether:feedback-close') { closeFeedback(true); return; }
-      if (e.data.type === 'aether:dialog-input') { feedbackDialogInput(e.data.action); return; }
-      if (typeof e.data.aether !== 'string') return;
-      if (e.data.aether === 'boot') {
-        clearTimeout(g.bootTimer);
-        var payload = [], transfer = [];
-        Object.keys(contents).forEach(function (name) {
-          var bytes = contents[name];
-          var buf = bytes.buffer.byteLength === bytes.byteLength ? bytes.buffer : bytes.slice().buffer;
-          var f = info.files.filter(function (x) { return x.name === name; })[0];
-          payload.push({ name: name, type: f ? f.type : 'application/octet-stream', buffer: buf });
-          transfer.push(buf);
-        });
-        iframe.contentWindow.postMessage({ aether: 'files', files: payload }, '*', transfer);
-      } else if (e.data.aether === 'started') {
-        showView('game');
-        try { iframe.focus(); iframe.contentWindow.focus(); } catch (err) { /* egal */ }
-        dimBarSoon();
-      } else if (e.data.aether === 'error') {
-        showToast('Fehler im Spiel: ' + String(e.data.message).slice(0, 200), true);
-      }
-    };
-    g.onMsg = onMsg;
-    window.addEventListener('message', onMsg);
-    g.bootTimer = setTimeout(function () {
-      if (game !== g) return;
+      if (d.type === 'aether:setting') { storeGameSetting(d); return; }
+      if (d.type === 'aether:feedback') { openFeedback(d); return; }
+      if (d.type === 'aether:feedback-close') { closeFeedback(true); return; }
+      if (d.type === 'aether:dialog-input') { feedbackDialogInput(d.action); return; }
+    }
+    // Dashboard-intern (Boot-Skript im iframe), siehe README „Spielstart im Rahmen“.
+    if (d.type === 'aether:start-tap') { startFromFrame(f, d); return; }
+    if (d.type === 'aether:tapped') { f.tapped = true; hideHint(); return; }
+    if (d.type === 'aether:fps') { showFps(d.fps); return; }
+    if (typeof d.aether !== 'string') return;
+    if (d.aether === 'boot') {
+      if (!f.doc && typeof d.doc === 'string') f.doc = d.doc;
+      return;
+    }
+    if (game !== f) return;
+    if (d.aether === 'started') {
+      if (d.doc !== f.doc) return; // anderes Dokument im iframe: gilt nicht als gestartet
+      clearTimeout(f.bootTimer);
+      showView('game');
+      // Ohne Zeiger-Tipp im Rahmen gestartet (Tastatur): Safari drosselt sonst bis zum ersten Tipp.
+      if (!f.tapped && !f.pointer && navigator.maxTouchPoints > 1) showHint();
+      try { f.iframe.focus(); f.iframe.contentWindow.focus(); } catch (err) { /* egal */ }
+      dimBarSoon();
+    } else if (d.aether === 'error') {
+      showToast('Fehler im Spiel: ' + String(d.message).slice(0, 200), true);
+    }
+  }
+  window.addEventListener('message', onFrameMessage);
+
+  function startGame(info, contents, f) {
+    game = f;
+    f.state = 'game';
+    f.info = info;
+    var html = buildGameDocument(info, contents);
+    var payload = [], transfer = [];
+    Object.keys(contents).forEach(function (name) {
+      var bytes = contents[name];
+      var buf = bytes.buffer.byteLength === bytes.byteLength ? bytes.buffer : bytes.slice().buffer;
+      var file = info.files.filter(function (x) { return x.name === name; })[0];
+      payload.push({ name: name, type: file ? file.type : 'application/octet-stream', buffer: buf });
+      transfer.push(buf);
+    });
+    f.bootTimer = setTimeout(function () {
+      if (game !== f) return;
       stopGame(true);
       showError(new AppError('boot', 'Das Spiel ließ sich nicht starten.', 'Der Spiel-Container hat nicht reagiert. Lade die Seite neu und versuche es erneut.'));
       showView('builds');
     }, 15000);
-    iframe.srcdoc = srcdoc;
-    wrap.insertBefore(iframe, wrap.firstChild);
-    wrap.hidden = false;
+    layoutGame();
     document.documentElement.classList.add('playing');
+    f.iframe.contentWindow.postMessage({ aether: 'files', files: payload, html: html }, '*', transfer);
   }
 
   function stopGame(silent) {
     if (!game) return;
     closeFeedback(false);
-    clearTimeout(game.bootTimer);
-    window.removeEventListener('message', game.onMsg);
-    try { game.iframe.srcdoc = ''; } catch (e) { /* egal */ }
-    game.iframe.remove();
+    hideHint();
+    var f = game;
     game = null;
-    $('game').hidden = true;
+    discardFrame(f);
+    $('gameFps').textContent = '';
     $('gameToast').hidden = true;
     document.documentElement.classList.remove('playing');
     exitFullscreen();
+    layoutGame();
   }
 
   // ---------------------------------------------------------------------------
@@ -1490,6 +1752,7 @@
     $('app').classList.toggle('wide', name === 'project');
     if (name !== 'project') stopProjectPolling();
     if (name !== 'game' && name !== 'loading' && game) stopGame(true);
+    syncStartFrame();
   }
 
   function showError(err) {
@@ -1588,13 +1851,12 @@
       li.className = 'muted';
       li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
       ul.appendChild(li);
-      $('playBtn').disabled = true;
+      syncStartFrame();
       return;
     }
     // Offline sind nur vollständig gespeicherte Builds startbar; vorausgewählt ist der neueste davon.
     var startable = builds.filter(function (b) { return !offline || savedBuilds[b.short]; });
     var preselect = startable.filter(function (b) { return b.short === keepShort; })[0] || startable[0] || null;
-    $('playBtn').disabled = !preselect;
     builds.forEach(function (b, i) {
       var li = document.createElement('li');
       var label = document.createElement('label');
@@ -1636,17 +1898,13 @@
       ul.appendChild(li);
     });
     updateApiInfo();
+    syncStartFrame();
   }
 
   function updateApiInfo() {
     var parts = [REPO_FULL + ' · ' + REF];
     if (lastRate) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
     $('apiInfo').textContent = parts.join(' · ');
-  }
-
-  function selectedBuild() {
-    var r = document.querySelector('input[name="build"]:checked');
-    return r ? builds[Number(r.value)] : builds[0];
   }
 
   // Online prüfen, ob es neue Builds gibt. Läuft länger als das Zeitlimit, wird abgebrochen.
@@ -1781,9 +2039,9 @@
     $('progressNum').textContent = total > 0 ? fmtBytes(done) + ' / ' + fmtBytes(total) + ' · ' + pct + ' %' : '';
   }
 
-  async function play() {
-    var build = selectedBuild();
-    if (!build) return;
+  // Nach dem Tipp im Start-Rahmen f: Build laden (Cache bzw. Download, mit Fortschritt) und in f starten.
+  async function play(f) {
+    var build = f.build;
     hideMessage();
     loadAbort = new AbortController();
     var signal = loadAbort.signal;
@@ -1805,8 +2063,10 @@
       await pruneCache(cache, info);
       await refreshSaved();
       renderBuilds(); // Abzeichen „gespeichert“ nachführen, Auswahl bleibt
-      startGame(info, contents);
+      if (frame !== f) throw new DOMException('abgebrochen', 'AbortError');
+      startGame(info, contents, f);
     } catch (e) {
+      if (frame === f && game !== f) discardFrame(f);
       handleError(e);
     } finally {
       loadAbort = null;
@@ -2438,7 +2698,15 @@
   $('tabProject').addEventListener('click', function () { hideMessage(); openProject(); });
   $('projReload').addEventListener('click', function () { loadProject(true); });
   $('reloadBtn').addEventListener('click', refreshBuilds);
-  $('playBtn').addEventListener('click', play);
+  // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
+  $('buildList').addEventListener('change', syncStartFrame);
+  // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).
+  if (window.ResizeObserver) {
+    var slotObserver = new ResizeObserver(placeSlot);
+    slotObserver.observe($('app'));
+    slotObserver.observe($('playSlot'));
+  }
+  window.addEventListener('resize', placeSlot);
   $('cancelLoadBtn').addEventListener('click', function () { if (loadAbort) loadAbort.abort(); });
   $('deleteTokenBtn').addEventListener('click', async function () {
     if (!confirm('Token von diesem Gerät löschen?')) return;
