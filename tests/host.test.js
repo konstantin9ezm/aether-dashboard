@@ -39,6 +39,10 @@ const GAME_HTML = `<!doctype html><html lang=de><head><meta charset=utf-8><title
     if (!e.data || e.data.type !== 'aether:feedback-state') return;
     if (e.source === window.parent) window.__t.states.push(e.data.open); else window.__t.foreign++;
   });
+  // Test-Relais: Das Dashboard bittet das Spiel, eine Nachricht zu schicken (Quelle bleibt das Spiel-iframe).
+  window.addEventListener('message', function (e) {
+    if (e.source === window.parent && e.data && e.data.type === 'test:relay') window.parent.postMessage(e.data.msg, '*');
+  });
   window.__fb = { subject: 'Rückmeldung: Ä & Ö = 100 % #1?', body: 'Zeile 1\\nZeile 2 mit &, ?, =, #, + und Emoji 🚀\\n<b>kein HTML</b>' };
   document.addEventListener('keydown', function (e) {
     window.__t.keys.push(e.key);
@@ -176,6 +180,54 @@ async function openFeedbackByKey(page, frame) {
   await page.waitForSelector('#feedback:not([hidden])');
   await frame.waitForFunction(() => window.__t.states.includes(true));
 }
+// Controller-Zustand des Dialogs.
+const PAD_BLOCKED = 'Per Controller nicht möglich – bitte antippen oder Enter drücken.';
+const PAD_LINE = '◀ ▶ wechseln · Ⓐ auswählen · Ⓑ schließen';
+const padState = (page) => page.evaluate(() => {
+  const sel = [...document.querySelectorAll('#fbActions .btn.fb-sel')];
+  const hint = document.getElementById('fbPadHint');
+  const s = sel[0] && getComputedStyle(sel[0]);
+  return {
+    sel: sel.map((b) => b.id).join(),
+    ring: s ? `${s.outlineWidth} ${s.outlineStyle} ${s.outlineColor}` : '',
+    line: !hint.hidden && hint.getBoundingClientRect().height > 0,
+    lineText: hint.textContent,
+    focus: document.activeElement.id,
+    status: document.getElementById('fbStatus').textContent,
+    warn: document.getElementById('fbStatus').classList.contains('warn')
+  };
+});
+const RING = '3px solid rgb(255, 255, 255)';
+const input = (frame, action) => post(frame, { type: 'aether:dialog-input', action });
+// Nachricht des Spiels ohne jede Nutzeraktivierung: Jedes Playwright-evaluate zählt als Geste (userGesture)
+// und aktiviert über das Spiel-iframe auch das Dashboard. Deshalb läuft alles per CDP ohne Geste in einem
+// Schritt: warten, bis die Aktivierung im Dashboard abgelaufen ist, das Spiel über das Test-Relais senden
+// lassen und dann (weiter ohne Geste) auf den erwarteten Status warten. Liefert die Zeit ab dem Senden.
+async function pressNoGesture(cdp, wantStatus) {
+  const msg = { type: 'aether:dialog-input', action: 'press' };
+  const r = await cdp.send('Runtime.evaluate', {
+    expression: `new Promise((resolve) => {
+      const st = () => document.getElementById('fbStatus').textContent;
+      const idle = () => {
+        if (navigator.userActivation.isActive) return setTimeout(idle, 50);
+        const t0 = performance.now();
+        document.querySelector('#game iframe').contentWindow.postMessage({ type: 'test:relay', msg: ${JSON.stringify(msg)} }, '*');
+        const wait = () => {
+          if (st() === ${JSON.stringify(wantStatus)}) return resolve({ ms: performance.now() - t0, active: navigator.userActivation.isActive });
+          if (performance.now() - t0 > 20000) return resolve({ timeout: true, status: st() });
+          setTimeout(wait, 20);
+        };
+        wait();
+      };
+      idle();
+    })`,
+    awaitPromise: true, returnByValue: true, userGesture: false
+  });
+  const v = r.result.value;
+  assert.ok(!v.timeout, `Status "${wantStatus}" erwartet, ist "${v.status}"`);
+  assert.equal(v.active, false, 'Dashboard blieb ohne Nutzeraktivierung');
+  return v.ms;
+}
 async function assertClosedAndFocused(page, frame, count) {
   await page.waitForSelector('#feedback', { state: 'hidden' });
   await frame.waitForFunction((n) => window.__t.states.filter((s) => s === false).length === n, count);
@@ -199,7 +251,8 @@ describe('Spiel-Einstellungen', () => {
     assert.ok(!attrs.sandbox.includes('allow-same-origin'));
     assert.equal(attrs.allow, 'gamepad *; fullscreen *; autoplay *');
     const t = await frame.evaluate(() => window.__t);
-    assert.deepEqual(t.host, { version: 1, settings: true, feedback: true });
+    assert.deepEqual(t.host, { version: 1, settings: true, feedback: true, dialogInput: true });
+    assert.equal(t.host.dialogInput, true);
     assert.deepEqual(t.settings, {});
     assert.equal(await dialogOpen(page), false, 'ohne Nachricht kein Dialog');
     assert.deepEqual(log.errors, []);
@@ -534,6 +587,204 @@ describe('Feedback-Dialog', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Feedback-Dialog: Controller-Bedienung (aether:dialog-input)
+// ---------------------------------------------------------------------------
+describe('Feedback-Dialog: Controller', () => {
+  test('nur aus dem Spiel und nur bei offenem Dialog; unbekannte action ignoriert; Zusatzfelder stören nicht', async () => {
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+
+    // Geschlossener Dialog: nichts passiert, auch später beim Öffnen nicht.
+    for (const a of ['show', 'next', 'next', 'press', 'prev']) await input(frame, a);
+    await sentinel(page, frame, 'zu');
+    assert.equal(await dialogOpen(page), false);
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), []);
+    assert.equal(await page.evaluate(() => document.getElementById('feedback').classList.contains('fb-pad')), false);
+
+    await openFeedbackByKey(page, frame);
+    const start = await padState(page);
+    assert.equal(start.sel, 'fbMail', 'beim Öffnen ist "Mail öffnen" gewählt');
+    assert.equal(start.line, false, 'Hinweiszeile zunächst unsichtbar');
+    assert.notEqual(start.ring, RING, 'Rahmen zunächst unsichtbar');
+    assert.equal(start.lineText, PAD_LINE);
+
+    // Fremde Quellen.
+    for (const a of ['show', 'next', 'press']) await postFromForeign(page, { type: 'aether:dialog-input', action: a });
+    await sentinel(page, frame, 'fremd');
+    assert.deepEqual(await padState(page), start, 'fremde Quelle ändert nichts');
+    assert.equal(await dialogOpen(page), true);
+
+    // Unbekannte actions und falsche types.
+    for (const m of [
+      { type: 'aether:dialog-input', action: 'Next' },
+      { type: 'aether:dialog-input', action: 'next ' },
+      { type: 'aether:dialog-input', action: 'left' },
+      { type: 'aether:dialog-input', action: 'toString' },
+      { type: 'aether:dialog-input', action: 1 },
+      { type: 'aether:dialog-input', action: ['next'] },
+      { type: 'aether:dialog-input', action: null },
+      { type: 'aether:dialog-input' },
+      { type: 'aether:dialog-input ', action: 'next' },
+      { type: 'aether:Dialog-input', action: 'next' },
+      { aether: 'dialog-input', action: 'next' },
+      'aether:dialog-input'
+    ]) await post(frame, m);
+    await sentinel(page, frame, 'unbekannt');
+    assert.deepEqual(await padState(page), start, 'unbekannte action ändert nichts');
+    assert.equal(await dialogOpen(page), true);
+
+    // Zusätzliche Felder werden ignoriert, die action gilt.
+    await post(frame, { type: 'aether:dialog-input', action: 'next', extra: 'x', subject: 'egal' });
+    await page.waitForFunction(() => document.querySelector('#fbActions .fb-sel').id === 'fbCopy');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true]);
+    assert.equal(launched(log).length, 0);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('show/prev/next: Rahmen sichtbar, Auswahl wandert ohne Umlauf; Antippen blendet aus', async () => {
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    await openFeedbackByKey(page, frame);
+
+    await input(frame, 'show');
+    await page.waitForFunction(() => document.getElementById('feedback').classList.contains('fb-pad'));
+    let st = await padState(page);
+    assert.equal(st.sel, 'fbMail', 'show bewegt die Auswahl nicht');
+    assert.equal(st.ring, RING);
+    assert.equal(st.line, true, 'Hinweiszeile sichtbar');
+
+    const steps = [['prev', 'fbMail'], ['next', 'fbCopy'], ['next', 'fbClose'], ['next', 'fbClose'], ['next', 'fbClose'], ['prev', 'fbCopy'], ['prev', 'fbMail'], ['prev', 'fbMail'], ['next', 'fbCopy']];
+    for (const [i, [a, want]] of steps.entries()) {
+      await input(frame, a);
+      await sentinel(page, frame, 's' + i);
+      st = await padState(page);
+      assert.equal(st.sel, want, `${a} → ${want} (Schritt ${i})`);
+      assert.equal(st.ring, RING);
+      assert.equal(st.focus, want, 'Tastatur-Fokus folgt der Auswahl');
+      assert.equal(st.line, true);
+    }
+    assert.equal(await dialogOpen(page), true, 'prev/next lösen nichts aus');
+    assert.equal(launched(log).length, 0);
+
+    // Antippen/Klick im Dialog blendet Rahmen und Hinweiszeile aus; Dialog bleibt offen.
+    await page.click('#fbTitle');
+    await page.waitForFunction(() => !document.getElementById('feedback').classList.contains('fb-pad'));
+    st = await padState(page);
+    assert.notEqual(st.ring, RING);
+    assert.equal(st.line, false);
+    assert.equal(await dialogOpen(page), true);
+
+    // Neues Öffnen: wieder "Mail öffnen", Rahmen aus; next ohne show macht ihn gleich sichtbar.
+    await input(frame, 'show');
+    await input(frame, 'next');
+    await sentinel(page, frame, 'vor-zu');
+    await post(frame, { type: 'aether:feedback-close' });
+    await assertClosedAndFocused(page, frame, 1);
+    await openFeedbackByKey(page, frame);
+    st = await padState(page);
+    assert.equal(st.sel, 'fbMail');
+    assert.equal(st.line, false);
+    await input(frame, 'next');
+    await sentinel(page, frame, 'n');
+    st = await padState(page);
+    assert.equal(st.sel, 'fbCopy');
+    assert.equal(st.ring, RING);
+    assert.equal(st.line, true);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('press auf "Schließen" schließt wie der Knopf (open:false, Fokus im Spiel)', async () => {
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    await openFeedbackByKey(page, frame);
+    for (const a of ['next', 'next', 'press']) await input(frame, a);
+    await assertClosedAndFocused(page, frame, 1);
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false]);
+    assert.equal(await page.evaluate(() => document.getElementById('feedback').classList.contains('fb-pad')), false);
+    // Nach dem Schließen wirkt press nicht mehr.
+    await input(frame, 'press');
+    await sentinel(page, frame, 'danach');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false]);
+    assert.equal(launched(log).length, 0);
+    await context.close();
+  });
+
+  test('press auf "Text kopieren" und "Mail öffnen" ohne Nutzeraktion: Hinweis; Antippen und Enter gehen weiter', async () => {
+    const { context, page, log } = await newPage(null);
+    const cdp = await context.newCDPSession(page);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    const fb = await frame.evaluate(() => window.__fb);
+    await openFeedbackByKey(page, frame);
+
+    // Text kopieren: Zwischenablage verweigert (keine Nutzeraktivierung) → Hinweis, kein Markieren der Vorschau.
+    await input(frame, 'next');
+    await sentinel(page, frame, 'k');
+    await pressNoGesture(cdp, PAD_BLOCKED);
+    let st = await padState(page);
+    assert.equal(st.warn, true);
+    assert.equal(st.focus, 'fbCopy', 'Fokus bleibt auf dem Knopf');
+    assert.equal(await dialogOpen(page), true);
+
+    // Der Hinweis verschwindet bei der nächsten Eingabe.
+    await input(frame, 'show');
+    await page.waitForFunction(() => document.getElementById('fbStatus').textContent === '');
+
+    // Mail öffnen: Seite verliert weder Fokus noch Sichtbarkeit → nach PAD_MAIL_DETECT_MS Hinweis.
+    await input(frame, 'prev');
+    await sentinel(page, frame, 'm');
+    assert.equal((await padState(page)).sel, 'fbMail');
+    const ms = await pressNoGesture(cdp, PAD_BLOCKED);
+    // Der Hinweis kommt erst nach der Erkennungszeit (1500 ms ab Empfang; 1 ms Timer-Auflösung).
+    assert.ok(ms >= 1500 - 1, `Hinweis nach ${ms} ms`);
+    assert.equal(await dialogOpen(page), true);
+    const launchesAfterPress = launched(log).length;
+
+    // Antippen im Dialog blendet den Hinweis aus.
+    await page.click('#fbTitle');
+    await page.waitForFunction(() => document.getElementById('fbStatus').textContent === '');
+
+    // Hinweis verschwindet auch beim Schließen.
+    await input(frame, 'next');
+    await pressNoGesture(cdp, PAD_BLOCKED);
+    await post(frame, { type: 'aether:feedback-close' });
+    await assertClosedAndFocused(page, frame, 1);
+    assert.equal(await page.evaluate(() => document.getElementById('fbStatus').textContent), '');
+
+    // Antippen und Enter funktionieren weiter wie bisher.
+    await openFeedbackByKey(page, frame);
+    await input(frame, 'show');
+    await page.locator('#fbCopy').click();
+    await page.waitForFunction(() => document.getElementById('fbStatus').textContent === 'Kopiert');
+    const want = `Launched external handler for '${expectedMailto(fb.subject, fb.body)}'.`;
+    await page.locator('#fbMail').focus();
+    await page.keyboard.press('Enter');
+    await waitLaunch(page, log, launchesAfterPress + 1);
+    assert.equal(launched(log)[launchesAfterPress], want);
+    await page.locator('#fbMail').click();
+    await waitLaunch(page, log, launchesAfterPress + 2);
+    assert.equal(launched(log)[launchesAfterPress + 1], want);
+    assert.equal(await dialogOpen(page), true);
+    assert.equal((await padState(page)).status, 'Kopiert');
+
+    // Zwischenablage enthält den per Klick kopierten Text.
+    const reader = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    const rp = await reader.newPage();
+    await reader.route(/^https?:\/\/(?!localhost)/, (r) => r.abort());
+    await rp.goto(baseUrl + 'manifest.json');
+    assert.equal(await rp.evaluate(() => navigator.clipboard.readText()), `Betreff: ${fb.subject}\n\n${fb.body}`);
+    await reader.close();
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
 describe('Feedback-Dialog: Layout', () => {
@@ -581,6 +832,74 @@ describe('Feedback-Dialog: Layout', () => {
       await page.waitForSelector('#feedback', { state: 'hidden' });
       await frame.waitForFunction(() => window.__t.states.join() === 'true,false');
       await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === 'IFRAME');
+      await context.close();
+    });
+
+    test(`Controller-Rahmen und Hinweiszeile überdecken nichts, Knöpfe unverändert (${label})`, async () => {
+      const { context, page } = await newPage(dev);
+      await page.goto(baseUrl);
+      const frame = await startGame(page);
+      await frame.evaluate(() => { window.__fb.body = Array.from({ length: 120 }, (_, i) => 'Zeile ' + i).join('\n'); });
+      await openFeedbackByKey(page, frame);
+      const rects = () => page.evaluate(() => {
+        const r = (el) => el.getBoundingClientRect().toJSON();
+        const sel = document.querySelector('#fbActions .btn.fb-sel');
+        const cs = getComputedStyle(sel);
+        const grow = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
+        const b = r(sel);
+        return {
+          vw: window.innerWidth, vh: window.innerHeight,
+          box: r(document.querySelector('#feedback .fb-box')),
+          sel: sel.id, grow,
+          ring: { left: b.left - grow, top: b.top - grow, right: b.right + grow, bottom: b.bottom + grow },
+          parts: ['fbTitle', 'fbTo', 'fbText', 'fbMail', 'fbCopy', 'fbClose', 'fbPadHint'].map((id) => ({ id, ...r(document.getElementById(id)) }))
+            .concat([{ id: 'hint', ...r(document.querySelector('#feedback .fb-hint')) }, { id: 'fbStatus', ...r(document.getElementById('fbStatus')) }]),
+          bar: r(document.getElementById('gameBar')),
+          docScroll: document.documentElement.scrollWidth - window.innerWidth
+        };
+      });
+      const before = await rects();
+      const size = (g, id) => { const p = g.parts.find((x) => x.id === id); return [Math.round(p.width * 10) / 10, Math.round(p.height * 10) / 10]; };
+      const hit = (a, b) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+      await input(frame, 'show');
+      for (const [i, want] of ['fbMail', 'fbCopy', 'fbClose'].entries()) {
+        if (i) await input(frame, 'next');
+        await page.waitForFunction((id) => document.querySelector('#fbActions .fb-sel').id === id && document.getElementById('feedback').classList.contains('fb-pad'), want);
+        const g = await rects();
+        assert.equal(g.sel, want);
+        assert.ok(g.grow >= 3, `Rahmen sichtbar: ${g.grow}`);
+        for (const id of ['fbMail', 'fbCopy', 'fbClose']) assert.deepEqual(size(g, id), size(before, id), `${id}: Größe unverändert`);
+        for (const id of ['fbMail', 'fbCopy', 'fbClose']) assert.ok(g.parts.find((p) => p.id === id).height >= 44);
+        // Rahmen innerhalb des Dialogs (nicht abgeschnitten) und auf keinem anderen Element.
+        assert.ok(g.ring.left >= g.box.left && g.ring.right <= g.box.right && g.ring.top >= g.box.top && g.ring.bottom <= g.box.bottom, `Rahmen im Dialog: ${JSON.stringify(g.ring)} / ${JSON.stringify(g.box)}`);
+        for (const p of g.parts) {
+          if (p.id === want || p.height === 0) continue;
+          assert.equal(hit(g.ring, p), false, `Rahmen um ${want} überdeckt ${p.id}: ${JSON.stringify(g.ring)} / ${JSON.stringify(p)}`);
+        }
+        // Alle Teile (inkl. Hinweiszeile) vollständig sichtbar und überlappungsfrei.
+        const pad = g.parts.find((p) => p.id === 'fbPadHint');
+        assert.ok(pad.height > 0, 'Hinweiszeile sichtbar');
+        for (const p of [g.box, ...g.parts]) {
+          if (p.height === 0) continue;
+          assert.ok(p.left >= 0 && p.top >= 0 && p.right <= g.vw + 0.5 && p.bottom <= g.vh + 0.5, `${p.id || 'Dialog'} sichtbar: ${JSON.stringify(p)} in ${g.vw}×${g.vh}`);
+          assert.ok(p.top >= g.box.top - 0.5 && p.bottom <= g.box.bottom + 0.5, `${p.id || 'Dialog'} nicht abgeschnitten`);
+        }
+        const others = g.parts.filter((p) => p.height > 0);
+        for (let a = 0; a < others.length; a++) {
+          for (let b = a + 1; b < others.length; b++) assert.equal(hit(others[a], others[b]), false, `${others[a].id} überlappt ${others[b].id}`);
+        }
+        assert.ok(pad.top >= Math.max(...['fbMail', 'fbCopy', 'fbClose'].map((id) => g.parts.find((p) => p.id === id).bottom)), 'Hinweiszeile unter den Knöpfen');
+        assert.equal(hit(g.bar, g.box), false, 'Knöpfe oben links verdecken den Dialog nicht');
+        assert.ok(g.docScroll <= 0);
+      }
+      await page.screenshot({ path: path.join(OUT, `feedback-controller-${label.replace(/\W+/g, '_')}.png`) });
+      // Antippen im Dialog blendet Rahmen und Zeile aus.
+      const t = before.parts.find((p) => p.id === 'fbTitle');
+      if (dev) await page.touchscreen.tap(Math.round(t.left + 10), Math.round(t.top + t.height / 2)); else await page.mouse.click(Math.round(t.left + 10), Math.round(t.top + t.height / 2));
+      await page.waitForFunction(() => !document.getElementById('feedback').classList.contains('fb-pad') && document.getElementById('fbPadHint').hidden);
+      const after = await rects();
+      for (const id of ['fbMail', 'fbCopy', 'fbClose']) assert.deepEqual(size(after, id), size(before, id));
+      assert.equal(await dialogOpen(page), true);
       await context.close();
     });
   }
