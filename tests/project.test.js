@@ -520,6 +520,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
   mock.mode = 'ratelimit';
   await page.click('#projReload');
   await page.waitForSelector('#ciBody .msg[data-kind="ratelimit"]');
+  await waitProjectLoaded(page); // auch die Engine-Karte ist nach dem Neuladen fertig
   for (const id of ['ciBody', 'timelineBody', 'roadmapBody']) {
     assert.match(await text(page, `#${id} .msg`), /Rate-Limit erreicht.*Wieder möglich ab \d\d:\d\d Uhr/);
   }
