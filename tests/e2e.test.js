@@ -239,6 +239,25 @@ async function newPage(deviceName) {
 function gameFrame(page) {
   return page.frames().find((f) => f !== page.mainFrame());
 }
+// Start-Rahmen (iframe mit dem Knopf „Spielen“ an der Stelle des früheren Dashboard-Knopfs).
+async function startFrame(page) {
+  const handle = await page.waitForSelector('#game.slot:not([hidden]) iframe');
+  const frame = await handle.contentFrame();
+  await frame.waitForSelector('#aetherStart:not([disabled])');
+  return { handle, frame };
+}
+// „Spielen“ mit echter Eingabe IM iframe (Maus-Klick bzw. Touch-Tipp), nicht per evaluate.
+async function tapPlay(page, touch) {
+  const { frame } = await startFrame(page);
+  if (touch) await frame.tap('#aetherStart'); else await frame.click('#aetherStart');
+}
+// Nach dem Beenden: altes iframe entfernt, ein frischer Start-Rahmen steht bereit.
+async function assertFreshStartFrame(page, old) {
+  assert.equal(await old.evaluate((f) => f.isConnected), false, 'Spiel-iframe beim Beenden entfernt');
+  const { handle } = await startFrame(page);
+  assert.equal(await handle.evaluate((f, o) => f !== o, old), true, 'neuer Start-Rahmen');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#game iframe').length), 1);
+}
 async function waitGame(page) {
   await page.waitForFunction(() => {
     const f = document.querySelector('#game iframe');
@@ -361,8 +380,8 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       assert.ok(overflow <= 0, `horizontaler Überlauf: ${overflow}px`);
 
       if (process.env.AETHER_REAL_BUILD) {
-        await page.click('#playBtn');
-        await page.waitForFunction(() => !document.getElementById('game').hidden, null, { timeout: 30000 });
+        await tapPlay(page, !!deviceName);
+        await page.waitForFunction(() => !document.getElementById('game').hidden && !document.getElementById('game').classList.contains('slot'), null, { timeout: 30000 });
         const frame = await (async () => { for (;;) { const f = gameFrame(page); if (f) return f; await page.waitForTimeout(50); } })();
         // Die index.html des Builds blendet #status aus, sobald onRuntimeInitialized lief.
         await frame.waitForFunction(() => { const s = document.getElementById('status'); return s && s.style.display === 'none'; }, null, { timeout: 30000 });
@@ -379,7 +398,7 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       await page.evaluate(() => new MutationObserver(() => window.__progress(document.getElementById('progressBar').getAttribute('aria-valuenow')))
         .observe(document.getElementById('progressBar'), { attributes: true }));
 
-      await page.click('#playBtn');
+      await tapPlay(page, !!deviceName);
       const result = await waitGame(page);
       assert.equal(result.step, 'done', result.error);
       assert.equal(result.sum, 5, 'WASM geladen und ausgeführt');
@@ -436,11 +455,12 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       await page.evaluate(() => document.fullscreenElement && document.exitFullscreen());
 
       // Zurück und Build ohne HTML starten.
+      const oldFrame = await page.$('#game iframe');
       await page.click('#exitBtn');
       await page.waitForSelector('#buildsView:not([hidden])');
-      assert.equal(await page.$('#game iframe'), null, 'Spiel wird beim Beenden entfernt');
+      await assertFreshStartFrame(page, oldFrame);
       await page.click(`#buildList label:has-text("bbb2222")`);
-      await page.click('#playBtn');
+      await tapPlay(page, !!deviceName);
       const resultB = await waitGame(page);
       assert.equal(resultB.step, 'done', resultB.error);
       assert.equal(resultB.sum, 5);
@@ -449,7 +469,7 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       // Erneuter Start desselben Builds kommt aus dem Cache.
       const before = mock.blobRequests;
       await page.click(`#buildList label:has-text("aaa1111")`);
-      await page.click('#playBtn');
+      await tapPlay(page, !!deviceName);
       const again = await waitGame(page);
       assert.equal(again.step, 'done');
       assert.equal(mock.blobRequests, before, 'zweiter Start ohne erneuten Download');
@@ -457,7 +477,7 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
 
       // Fehlender Build.
       await page.click(`#buildList label:has-text("ccc3333")`);
-      await page.click('#playBtn');
+      await tapPlay(page, !!deviceName);
       await page.waitForSelector('#message:not([hidden])');
       assert.match(await page.textContent('#message'), /Build ccc3333 fehlt/);
       assert.ok(await page.isVisible('#buildsView'));
@@ -523,10 +543,11 @@ test('Spiel meldet "aether:quit": Dashboard schließt das Spiel, fremde Nachrich
   await enterToken(page, TOKEN);
   await page.waitForSelector('#buildsView:not([hidden])');
   await page.click('#buildList label:has-text("aaa1111")');
-  await page.click('#playBtn');
+  await tapPlay(page);
   assert.equal((await waitGame(page)).step, 'done');
   const frame = gameFrame(page);
-  const gameOpen = () => page.evaluate(() => !!document.querySelector('#game iframe') && !document.getElementById('game').hidden);
+  const gameIframe = await page.$('#game iframe');
+  const gameOpen = () => page.evaluate(() => !!document.querySelector('#game iframe') && !document.getElementById('game').hidden && document.documentElement.classList.contains('playing'));
 
   // Richtige Quelle, falscher type (bzw. falsche Form): wird ignoriert.
   await frame.evaluate(() => {
@@ -556,13 +577,13 @@ test('Spiel meldet "aether:quit": Dashboard schließt das Spiel, fremde Nachrich
   await frame.evaluate(() => window.parent.postMessage({ type: 'aether:quit' }, '*'));
   await page.waitForSelector('#buildsView:not([hidden])');
   await page.waitForFunction(() => !document.fullscreenElement);
-  assert.equal(await page.$('#game iframe'), null, 'Spiel entfernt');
-  assert.ok(await page.isHidden('#game'));
+  await assertFreshStartFrame(page, gameIframe); // Spiel entfernt, frischer Start-Rahmen
+  assert.ok(await page.evaluate(() => document.getElementById('game').classList.contains('slot')), 'Spielansicht zu, nur der Start-Rahmen');
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('playing')), false);
   assert.deepEqual(dialogs, [], 'keine Rückfrage beim Beenden aus dem Spiel');
 
   // Danach lässt sich wieder ein Spiel starten.
-  await page.click('#playBtn');
+  await tapPlay(page);
   assert.equal((await waitGame(page)).step, 'done');
   await assertNoLeak(log, page);
   await context.close();
@@ -605,7 +626,7 @@ describe('Offline', () => {
 
     // D startet ohne weiteren Download, auch ohne API-Aufruf für die Dateiliste.
     const reqBefore = mock.requests.length;
-    await page.click('#playBtn');
+    await tapPlay(page);
     const d = await waitGame(page);
     assert.equal(d.step, 'done', d.error);
     assert.equal(d.sum, 5);
@@ -617,7 +638,7 @@ describe('Offline', () => {
 
     // B starten: Speicherumfang 2 → A fliegt raus, D (neuester) und B (zuletzt gestartet) bleiben.
     await page.click('#buildList label:has-text("bbb2222")');
-    await page.click('#playBtn');
+    await tapPlay(page);
     assert.equal((await waitGame(page)).step, 'done');
     await page.click('#exitBtn');
     await page.waitForSelector('#buildsView:not([hidden])');
@@ -667,12 +688,14 @@ describe('Offline', () => {
       ['ccc3333', true, true, false]
     ]);
     assert.ok(rows[1].opacity < 0.6 && rows[0].opacity === 1, 'nicht gespeicherte Builds sichtbar ausgegraut');
-    assert.equal(await page.isDisabled('#playBtn'), false);
+    // Startbarer Rahmen nur für den gespeicherten Build; kein ausgegrauter Ersatzknopf.
+    assert.equal(await (await startFrame(page)).handle.getAttribute('title'), 'Aether aaa1111');
+    assert.ok(await page.isHidden('#playOff'));
     await page.screenshot({ path: path.join(OUT, 'offline-builds.png') });
 
     // Gespeicherter Build startet ohne Netz.
     const reqBefore = mock.requests.length;
-    await page.click('#playBtn');
+    await tapPlay(page);
     const r = await waitGame(page);
     assert.equal(r.step, 'done', r.error);
     assert.equal(r.sum, 5);
@@ -682,6 +705,16 @@ describe('Offline', () => {
     await page.click('#exitBtn');
     await page.waitForSelector('#buildsView:not([hidden])');
     assert.ok(await page.isVisible('#offlineHint'));
+
+    // Nicht gespeicherte Builds bekommen keinen startbaren Rahmen: Antippen ändert die Auswahl nicht,
+    // und ohne gespeicherten Build gibt es gar keinen Rahmen, nur den ausgegrauten Knopf.
+    await page.click('#buildList label:has-text("bbb2222")', { force: true }); // ausgegraut: echter Klick ohne Wartebedingung
+    assert.equal(await (await startFrame(page)).handle.getAttribute('title'), 'Aether aaa1111');
+    await page.click('#clearCacheBtn');
+    await page.waitForSelector('#playOff:not([hidden])');
+    assert.equal(await page.$('#game iframe'), null, 'kein Start-Rahmen ohne gespeicherten Build');
+    assert.ok(await page.isDisabled('#playOff'));
+    assert.ok((await buildRows(page)).every((x) => x.unavailable && x.disabled && !x.checked), 'alles ausgegraut');
 
     // Projektansicht: ein klarer Hinweis statt Fehlerkarten.
     await page.click('#tabProject');
@@ -733,7 +766,7 @@ describe('Offline', () => {
     assert.match(hint, /antwortet nicht/);
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);
-    await page.click('#playBtn');
+    await tapPlay(page);
     assert.equal((await waitGame(page)).step, 'done');
     await page.click('#exitBtn');
     await page.waitForSelector('#buildsView:not([hidden])');

@@ -232,7 +232,8 @@ async function newPage(deviceName, { withToken = true, timezoneId = 'Europe/Berl
   page.on('pageerror', (e) => log.errors.push(String(e)));
   context.on('request', (r) => log.urls.push(r.url()));
   page.on('dialog', (d) => d.accept());
-  if (withToken) await context.addInitScript((t) => localStorage.setItem('aether.githubToken', t), TOKEN);
+  // Nur im Dashboard selbst: Das Spiel-iframe (Start-Rahmen) hat keinen Speicherzugriff.
+  if (withToken) await context.addInitScript((t) => { if (window === window.top) localStorage.setItem('aether.githubToken', t); }, TOKEN);
   await context.route('https://api.github.com/**', githubApi);
   await context.route(/^https?:\/\/(?!localhost|api\.github\.com)/, (r) => r.abort());
   return { context, page, log };
@@ -433,7 +434,7 @@ test('Spielansicht bleibt unverändert erreichbar', async () => {
   await page.waitForSelector('#buildsView:not([hidden])');
   assert.equal(await page.getAttribute('#tabPlay', 'aria-selected'), 'true');
   assert.match(await text(page, '#buildList'), /Ein Build/);
-  assert.ok(await page.isEnabled('#playBtn'));
+  assert.ok(await page.isVisible('#game.slot iframe'), 'Start-Rahmen mit „Spielen“ bereit');
   assert.ok(await page.isHidden('#projectView'));
   assert.equal(await page.evaluate(() => location.hash), '');
   await context.close();
