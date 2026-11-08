@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0e14">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<!-- Wird beim Veröffentlichen (GitHub Actions) durch den Commit des Dashboards ersetzt. -->
+<meta name="aether-commit" content="__AETHER_COMMIT__">
+<title>Aether – WebGPU-Check</title>
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #141925;
+    --panel-2: #1b2232;
+    --line: #2a3347;
+    --text: #e6e9f0;
+    --muted: #8d97ad;
+    --accent: #7c9cff;
+    --accent-2: #a78bfa;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --radius: 14px;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { min-height: 100vh; min-height: 100dvh; }
+  [hidden] { display: none !important; }
+  a { color: var(--accent); }
+  button { font: inherit; color: inherit; }
+
+  .app {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(24px + var(--safe-b)) calc(16px + var(--safe-l));
+  }
+  header.top { display: flex; align-items: center; gap: 12px; margin: 4px 0 20px; flex-wrap: wrap; }
+  header.top img { width: 40px; height: 40px; border-radius: 10px; }
+  header.top h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  header.top .sub { color: var(--muted); font-size: 13px; }
+  header.top .spacer { flex: 1; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 16px;
+    min-width: 0;
+  }
+  .card h2 { font-size: 18px; margin: 0 0 10px; }
+  .card h3 { font-size: 15px; margin: 16px 0 8px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border: 0; color: #0b0e14; font-weight: 700;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+  /* Ergebnis */
+  .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .checks li { display: flex; gap: 10px; align-items: baseline; font-size: 17px; }
+  .checks .ic { flex: none; width: 1.4em; text-align: center; font-weight: 700; }
+  .checks .detail { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  [data-state="ok"] .ic { color: var(--ok); }
+  [data-state="teil"] .ic { color: var(--warn); }
+  [data-state="nein"] .ic { color: var(--err); }
+  [data-state="läuft"] .ic { color: var(--muted); }
+  .path { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
+  .path b { color: var(--accent); }
+
+  /* Schlüssel/Wert-Listen */
+  dl.kv { margin: 0; display: grid; gap: 6px; }
+  .kv-row { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); gap: 2px 12px; padding: 4px 0; border-bottom: 1px solid #1f2738; }
+  .kv-row:last-child { border-bottom: 0; }
+  .kv-row dt { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .kv-row dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; word-break: break-word; }
+  dl.mono .kv-row dt, dl.mono .kv-row dd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; max-width: 100%; }
+  .v-ok { color: var(--ok); }
+  .v-warn { color: var(--warn); }
+  .v-err { color: var(--err); }
+
+  /* Probe-Tabelle */
+  table.probe { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  table.probe th, table.probe td { text-align: left; vertical-align: top; padding: 6px 6px 6px 0; border-bottom: 1px solid #1f2738; overflow-wrap: anywhere; word-break: break-word; }
+  table.probe th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  table.probe th:first-child, table.probe td:first-child { width: 34%; color: var(--muted); }
+  table.probe .ms { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  /* Bildtakt */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 12px; }
+  .stage figure { margin: 0; min-width: 0; }
+  .stage figcaption { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .stage .box { height: 180px; border-radius: 10px; border: 1px solid var(--line); background: #05070b; overflow: hidden; }
+  .stage .box canvas { width: 100%; height: 100%; display: block; }
+  .stage iframe { display: block; width: 100%; height: 180px; border: 1px solid var(--line); border-radius: 10px; background: #05070b; }
+  .fps-stage { padding: 12px 0; border-top: 1px solid var(--line); }
+  .fps-stage h3 { margin: 0 0 6px; }
+  .fps-stage .status { font-size: 14px; color: var(--muted); margin: 0 0 8px; overflow-wrap: anywhere; }
+  .fps-stage .hint { font-size: 14px; color: #fde68a; margin: 0 0 8px; }
+  .fps-stage canvas.chart { display: block; width: 100%; height: 90px; margin-top: 8px; border-radius: 8px; background: var(--panel-2); }
+  .interp { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; background: #142033; border: 1px solid #24406b; color: #cfe0ff; font-size: 14px; }
+  .interp p { margin: 0 0 6px; }
+  .interp p:last-child { margin-bottom: 0; }
+
+  /* Weitergabe */
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .copy-status { min-height: 1.4em; font-size: 14px; margin: 10px 0 0; }
+  pre.result {
+    margin: 12px 0 0; padding: 12px; border-radius: 10px;
+    background: #0e121b; border: 1px solid var(--line);
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+    user-select: text; -webkit-user-select: text;
+  }
+  #safeProbe {
+    position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  @media (max-width: 560px) {
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .actions { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 420px) {
+    .kv-row { grid-template-columns: minmax(0, 1fr); }
+    .card { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<div id="safeProbe" aria-hidden="true"></div>
+<main class="app">
+  <header class="top">
+    <img src="icons/icon.svg" alt="" width="40" height="40">
+    <div>
+      <h1>WebGPU-Check</h1>
+      <div class="sub">Aether · Gerät und Grafik prüfen</div>
+    </div>
+    <div class="spacer"></div>
+    <a class="btn" id="backLink" href="./">Zum Dashboard</a>
+  </header>
+
+  <section class="card" id="secResult" data-section="Ergebnis" aria-labelledby="hResult">
+    <h2 id="hResult">Ergebnis</h2>
+    <ul class="checks">
+      <li id="chkDirect" data-state="läuft"><span class="ic">…</span><span><span>WebGPU direkt</span> <span class="detail"></span></span></li>
+      <li id="chkFrame" data-state="läuft"><span class="ic">…</span><span><span>WebGPU im Dashboard-iframe</span> <span class="detail"></span></span></li>
+      <li id="chkGl2" data-state="läuft"><span class="ic">…</span><span><span>WebGL 2</span> <span class="detail"></span></span></li>
+    </ul>
+    <p class="path">Grafikweg fürs Spiel: <b id="gfxPath">wird geprüft …</b></p>
+  </section>
+
+  <section class="card" id="secDevice" data-section="Gerät" aria-labelledby="hDevice">
+    <h2 id="hDevice">Gerät</h2>
+    <dl class="kv" id="listDevice"></dl>
+    <p class="note">Controller erscheinen erst, nachdem auf dem Controller eine Taste gedrückt wurde.</p>
+  </section>
+
+  <section class="card" id="secWebgpu" data-section="Grafik (WebGPU)" aria-labelledby="hWebgpu">
+    <h2 id="hWebgpu">Grafik (WebGPU)</h2>
+    <dl class="kv" id="listWebgpu"></dl>
+    <h3>Features</h3>
+    <div class="chips" id="gpuFeatures"></div>
+    <h3>Limits</h3>
+    <dl class="kv mono" id="gpuLimits"></dl>
+  </section>
+
+  <section class="card" id="secWebgl" data-section="Grafik (WebGL 2)" aria-labelledby="hWebgl">
+    <h2 id="hWebgl">Grafik (WebGL 2)</h2>
+    <dl class="kv" id="listWebgl"></dl>
+  </section>
+
+  <section class="card" id="secProbe" data-section="Probe" aria-labelledby="hProbe">
+    <h2 id="hProbe">Probe</h2>
+    <table class="probe" id="probeTable">
+      <thead><tr><th scope="col">Schritt</th><th scope="col">direkt</th><th scope="col">im Dashboard-iframe</th></tr></thead>
+      <tbody id="probeBody"></tbody>
+    </table>
+    <div class="row note"><span id="directProbe" aria-hidden="true"></span><span>Der iframe hat genau die Attribute des Spiel-iframes im Dashboard (Sandbox ohne gleichen Ursprung).</span></div>
+  </section>
+
+  <section class="card" id="secFps" data-section="Bildtakt" aria-labelledby="hFps">
+    <h2 id="hFps">Bildtakt</h2>
+    <p class="muted small" style="margin-top:0">Jede Stufe misst 5 s lang mit requestAnimationFrame, während die Testszene läuft. Stufen nacheinander starten; während der Messung das Gerät nicht bedienen (außer wo verlangt).</p>
+    <div class="stage">
+      <figure><figcaption>direkt in der Seite</figcaption><div class="box" id="directStage"></div></figure>
+      <figure><figcaption>Dashboard-iframe</figcaption><div id="frameHost"></div></figure>
+    </div>
+    <div id="fpsStages"></div>
+    <div class="interp" id="fpsInterp"></div>
+  </section>
+
+  <section class="card" id="secMore" data-section="Weitere Fähigkeiten" aria-labelledby="hMore">
+    <h2 id="hMore">Weitere Fähigkeiten</h2>
+    <dl class="kv" id="listMore"></dl>
+  </section>
+
+  <section class="card" id="secShare" aria-labelledby="hShare">
+    <h2 id="hShare">Weitergabe</h2>
+    <div class="actions">
+      <button class="btn" id="rerunBtn" type="button">Erneut prüfen</button>
+      <button class="btn primary" id="copyBtn" type="button">Ergebnis kopieren</button>
+      <button class="btn" id="mailBtn" type="button">Per Mail senden</button>
+    </div>
+    <p class="note">Nichts wird automatisch gesendet.</p>
+    <p class="copy-status" id="copyStatus" aria-live="polite"></p>
+    <pre class="result" id="resultText" tabindex="0" aria-label="Komplettes Ergebnis"></pre>
+  </section>
+</main>
+
+<!-- Gemeinsamer Code: läuft direkt in dieser Seite UND wörtlich kopiert im Probe-iframe. -->
+<script id="wgcShared">
+var WGC = (function () {
+  'use strict';
+  var W = {};
+  var CLEAR = [0.0, 0.25, 0.75];      // erwartet ≈ rgb(0, 64, 191)
+  var TRI = [1.0, 0.5, 0.0];          // erwartet ≈ rgb(255, 128, 0)
+  var TOL = 12;
+
+  function now() { return performance.now(); }
+  function since(t) { return Math.round((now() - t) * 10) / 10; }
+  function msg(e) { return String((e && e.message) || e || 'unbekannter Fehler'); }
+  function withTimeout(p, ms, what) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('Zeitüberschreitung (' + what + ', ' + ms + ' ms)')); }, ms);
+      Promise.resolve(p).then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+  function near(px, rgb) {
+    return Math.abs(px[0] - Math.round(rgb[0] * 255)) <= TOL && Math.abs(px[1] - Math.round(rgb[1] * 255)) <= TOL && Math.abs(px[2] - Math.round(rgb[2] * 255)) <= TOL;
+  }
+  function rgbText(px) { return 'rgb(' + px[0] + ', ' + px[1] + ', ' + px[2] + ')'; }
+  W.withTimeout = withTimeout;
+  W.msg = msg;
+
+  W.env = function () {
+    return {
+      isSecureContext: !!window.isSecureContext,
+      crossOriginIsolated: !!window.crossOriginIsolated,
+      gpu: !!navigator.gpu
+    };
+  };
+
+  // Adapter-Angaben, alles optional (fehlende Felder bleiben undefined).
+  W.adapterSummary = async function (adapter) {
+    var info = adapter.info;
+    if (!info && typeof adapter.requestAdapterInfo === 'function') {
+      try { info = await adapter.requestAdapterInfo(); } catch (e) { info = null; }
+    }
+    info = info || {};
+    var fb = info.isFallbackAdapter;
+    if (fb === undefined) fb = adapter.isFallbackAdapter;
+    var limits = {};
+    try { for (var k in adapter.limits) { var v = adapter.limits[k]; if (typeof v === 'number') limits[k] = v; } } catch (e) { /* egal */ }
+    var features = [];
+    try { adapter.features.forEach(function (f) { features.push(String(f)); }); } catch (e) { /* egal */ }
+    features.sort();
+    return {
+      vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description,
+      isFallbackAdapter: fb, subgroupMinSize: info.subgroupMinSize, subgroupMaxSize: info.subgroupMaxSize,
+      features: features, limits: limits
+    };
+  };
+
+  var PROBE_WGSL =
+    '@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {\n' +
+    '  var p = array<vec2<f32>, 3>(vec2<f32>(-0.8, -0.8), vec2<f32>(0.8, -0.8), vec2<f32>(0.0, 0.8));\n' +
+    '  return vec4<f32>(p[i], 0.0, 1.0);\n}\n' +
+    '@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(' + TRI.join(', ') + ', 1.0); }\n';
+  var COMPUTE_WGSL =
+    '@group(0) @binding(0) var<storage, read_write> d: array<u32>;\n' +
+    '@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>) { d[id.x] = id.x * 3u + 7u; }\n';
+
+  W.STEPS = ['navigator.gpu', 'requestAdapter', 'requestDevice', 'Canvas konfigurieren', '5 Frames (Löschen + Dreieck)',
+    'Pixel Mitte', 'Pixel Ecke', 'Compute + mapAsync', 'destroy → lost „destroyed“', 'WebGL 2: Löschen + readPixels'];
+
+  // Mini-Probe: liefert pro Schritt { name, status: ok|fehler|nein|skip, ms, detail }.
+  W.runProbe = async function (host) {
+    var r = { env: W.env(), adapter: null, steps: [], webgpuOk: false, webgpuCore: false, webglOk: false, uncaptured: [], reason: '' };
+    var done = {};
+    function step(name, status, ms, detail) { done[name] = true; r.steps.push({ name: name, status: status, ms: ms, detail: detail || '' }); }
+    function skipRest() { W.STEPS.slice(0, -1).forEach(function (n) { if (!done[n]) step(n, 'skip', null, ''); }); }
+    var t, device = null, gpu = navigator.gpu;
+    try {
+      if (!gpu) { step('navigator.gpu', 'nein', null, 'WebGPU fehlt'); r.reason = 'WebGPU fehlt'; skipRest(); throw null; }
+      step('navigator.gpu', 'ok', null, 'vorhanden');
+      t = now();
+      var adapter;
+      try { adapter = await withTimeout(gpu.requestAdapter(), 10000, 'requestAdapter'); }
+      catch (e) { step('requestAdapter', 'fehler', since(t), msg(e)); r.reason = 'requestAdapter: ' + msg(e); skipRest(); throw null; }
+      if (!adapter) { step('requestAdapter', 'nein', since(t), 'kein Adapter'); r.reason = 'kein Adapter'; skipRest(); throw null; }
+      step('requestAdapter', 'ok', since(t), '');
+      try { r.adapter = await W.adapterSummary(adapter); } catch (e) { r.adapter = null; }
+      t = now();
+      try { device = await withTimeout(adapter.requestDevice(), 10000, 'requestDevice'); }
+      catch (e) { step('requestDevice', 'fehler', since(t), msg(e)); r.reason = 'requestDevice: ' + msg(e); skipRest(); throw null; }
+      step('requestDevice', 'ok', since(t), '');
+      device.addEventListener('uncapturederror', function (ev) { r.uncaptured.push(msg(ev.error)); });
+
+      // Canvas
+      var canvas = document.createElement('canvas');
+      canvas.width = 64; canvas.height = 64;
+      canvas.style.cssText = 'width:32px;height:32px;display:block';
+      if (host) host.appendChild(canvas);
+      var ctx, format;
+      t = now();
+      try {
+        ctx = canvas.getContext('webgpu');
+        if (!ctx) throw new Error('getContext("webgpu") liefert null');
+        format = gpu.getPreferredCanvasFormat();
+        ctx.configure({ device: device, format: format, alphaMode: 'opaque' });
+        step('Canvas konfigurieren', 'ok', since(t), format);
+      } catch (e) { step('Canvas konfigurieren', 'fehler', since(t), msg(e)); ctx = null; }
+
+      if (ctx) {
+        // 5 Frames: Löschen + Dreieck; Pixel des letzten Frames noch in derselben Aufgabe auslesen.
+        var mid = null, corner = null;
+        t = now();
+        try {
+          device.pushErrorScope('validation');
+          var mod = device.createShaderModule({ code: PROBE_WGSL });
+          var pipe = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: { module: mod, entryPoint: 'vs' },
+            fragment: { module: mod, entryPoint: 'fs', targets: [{ format: format }] },
+            primitive: { topology: 'triangle-list' }
+          });
+          for (var i = 0; i < 5; i++) {
+            var enc = device.createCommandEncoder();
+            var pass = enc.beginRenderPass({ colorAttachments: [{
+              view: ctx.getCurrentTexture().createView(),
+              clearValue: { r: CLEAR[0], g: CLEAR[1], b: CLEAR[2], a: 1 }, loadOp: 'clear', storeOp: 'store'
+            }] });
+            pass.setPipeline(pipe);
+            pass.draw(3);
+            pass.end();
+            device.queue.submit([enc.finish()]);
+            if (i < 4) await withTimeout(device.queue.onSubmittedWorkDone(), 5000, 'onSubmittedWorkDone');
+          }
+          try {
+            var c2 = document.createElement('canvas');
+            c2.width = 64; c2.height = 64;
+            var g = c2.getContext('2d', { willReadFrequently: true });
+            g.drawImage(canvas, 0, 0);
+            mid = Array.prototype.slice.call(g.getImageData(32, 32, 1, 1).data);
+            corner = Array.prototype.slice.call(g.getImageData(2, 2, 1, 1).data);
+          } catch (e) { mid = corner = msg(e); }
+          var verr = await withTimeout(device.popErrorScope(), 5000, 'popErrorScope');
+          if (verr) throw new Error(msg(verr));
+          await withTimeout(device.queue.onSubmittedWorkDone(), 5000, 'onSubmittedWorkDone');
+          step('5 Frames (Löschen + Dreieck)', 'ok', since(t), '');
+          r.webgpuCore = true;
+        } catch (e) { step('5 Frames (Löschen + Dreieck)', 'fehler', since(t), msg(e)); }
+        if (typeof mid === 'string') {
+          step('Pixel Mitte', 'fehler', null, 'drawImage: ' + mid);
+          step('Pixel Ecke', 'fehler', null, 'drawImage: ' + corner);
+        } else if (mid) {
+          step('Pixel Mitte', near(mid, TRI) ? 'ok' : 'fehler', null, rgbText(mid) + (near(mid, TRI) ? '' : ' (erwartet ≈ ' + rgbText(TRI.map(function (x) { return Math.round(x * 255); })) + ')'));
+          step('Pixel Ecke', near(corner, CLEAR) ? 'ok' : 'fehler', null, rgbText(corner) + (near(corner, CLEAR) ? '' : ' (erwartet ≈ ' + rgbText(CLEAR.map(function (x) { return Math.round(x * 255); })) + ')'));
+        }
+      }
+
+      // Compute-Shader mit Rücklesen
+      t = now();
+      try {
+        var N = 64;
+        var sb = device.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+        var rb = device.createBuffer({ size: N * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        var cp = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: COMPUTE_WGSL }), entryPoint: 'main' } });
+        var bg = device.createBindGroup({ layout: cp.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: sb } }] });
+        var ce = device.createCommandEncoder();
+        var cpass = ce.beginComputePass();
+        cpass.setPipeline(cp); cpass.setBindGroup(0, bg); cpass.dispatchWorkgroups(1); cpass.end();
+        ce.copyBufferToBuffer(sb, 0, rb, 0, N * 4);
+        device.queue.submit([ce.finish()]);
+        await withTimeout(rb.mapAsync(GPUMapMode.READ), 5000, 'mapAsync');
+        var arr = new Uint32Array(rb.getMappedRange().slice(0));
+        rb.unmap();
+        var bad = -1;
+        for (var j = 0; j < N; j++) if (arr[j] !== j * 3 + 7) { bad = j; break; }
+        if (bad >= 0) step('Compute + mapAsync', 'fehler', since(t), 'falscher Wert an Stelle ' + bad + ': ' + arr[bad]);
+        else step('Compute + mapAsync', 'ok', since(t), N + ' Werte richtig');
+      } catch (e) { step('Compute + mapAsync', 'fehler', since(t), msg(e)); }
+
+      t = now();
+      try {
+        device.destroy();
+        var info = await withTimeout(device.lost, 3000, 'device.lost');
+        var reason = info && info.reason;
+        step('destroy → lost „destroyed“', reason === 'destroyed' ? 'ok' : 'fehler', since(t), 'reason: ' + String(reason));
+      } catch (e) { step('destroy → lost „destroyed“', 'fehler', since(t), msg(e)); }
+      device = null;
+      r.webgpuOk = r.steps.every(function (s) { return s.status === 'ok'; });
+      if (!r.webgpuOk && !r.reason) r.reason = 'Fehler bei: ' + r.steps.filter(function (s) { return s.status !== 'ok'; }).map(function (s) { return s.name; }).join(', ');
+    } catch (e) {
+      if (e !== null) { r.reason = msg(e); skipRest(); }
+      if (device) { try { device.destroy(); } catch (x) { /* egal */ } }
+    }
+    if (r.uncaptured.length && r.webgpuOk) { r.webgpuOk = false; r.reason = 'uncapturederror: ' + r.uncaptured[0]; }
+    var gl = W.webglProbe();
+    r.steps.push({ name: W.STEPS[W.STEPS.length - 1], status: gl.status, ms: gl.ms, detail: gl.detail });
+    r.webglOk = gl.status === 'ok';
+    return r;
+  };
+
+  // WebGL 2: Löschen + readPixels
+  W.webglProbe = function () {
+    var t = now();
+    var c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    var gl = null;
+    try { gl = c.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false }); } catch (e) { gl = null; }
+    if (!gl) return { status: 'nein', ms: since(t), detail: 'WebGL 2 nicht verfügbar' };
+    try {
+      gl.viewport(0, 0, 16, 16);
+      gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      var px = new Uint8Array(4);
+      gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      var ok = near(px, CLEAR);
+      return { status: ok ? 'ok' : 'fehler', ms: since(t), detail: rgbText(px) };
+    } catch (e) {
+      return { status: 'fehler', ms: since(t), detail: msg(e) };
+    } finally {
+      try { var lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (e) { /* egal */ }
+    }
+  };
+
+  // Bildtakt-Statistik aus den Abständen aufeinanderfolgender rAF-Zeitstempel (ms).
+  var RATES = [24, 30, 40, 48, 50, 60, 72, 75, 80, 90, 100, 120, 144, 165, 240];
+  W.snapRate = function (fps) {
+    var best = null;
+    RATES.forEach(function (r) { if (Math.abs(fps - r) / r <= 0.08 && (best === null || Math.abs(fps - r) < Math.abs(fps - best))) best = r; });
+    return best === null ? Math.round(fps) : best;
+  };
+  W.stats = function (d) {
+    var n = d.length;
+    if (!n) return null;
+    var sum = 0, s = d.slice().sort(function (a, b) { return a - b; });
+    d.forEach(function (x) { sum += x; });
+    var median = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    var k = Math.max(1, Math.ceil(n * 0.01));
+    var slow = s.slice(n - k), slowSum = 0;
+    slow.forEach(function (x) { slowSum += x; });
+    var cap = W.snapRate(1000 / median);
+    return {
+      frames: n,
+      meanFps: 1000 * n / sum,
+      medianMs: median,
+      low1Fps: 1000 / (slowSum / k),
+      maxMs: s[n - 1],
+      over20: d.filter(function (x) { return x > 20; }).length,
+      over33: d.filter(function (x) { return x > 33.4; }).length,
+      cap: cap
+    };
+  };
+
+  var SCENE_WGSL =
+    'struct U { t: f32, asp: f32, a: f32, b: f32 };\n' +
+    '@group(0) @binding(0) var<uniform> u: U;\n' +
+    '@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {\n' +
+    '  let a = u.t * 2.0 + f32(i) * 2.0943951;\n' +
+    '  return vec4<f32>(0.7 * cos(a) / max(u.asp, 1.0), 0.7 * sin(a) * min(u.asp, 1.0), 0.0, 1.0);\n}\n' +
+    '@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(0.486, 0.612, 1.0, 1.0); }\n';
+  var SCENE_VS = '#version 300 es\nuniform float t; uniform float asp;\nvoid main() {\n  float a = t * 2.0 + float(gl_VertexID) * 2.0943951;\n  gl_Position = vec4(0.7 * cos(a) / max(asp, 1.0), 0.7 * sin(a) * min(asp, 1.0), 0.0, 1.0);\n}\n';
+  var SCENE_FS = '#version 300 es\nprecision mediump float;\nout vec4 o;\nvoid main() { o = vec4(0.486, 0.612, 1.0, 1.0); }\n';
+
+  async function sceneWebGPU(canvas) {
+    var adapter = await withTimeout(navigator.gpu.requestAdapter(), 10000, 'requestAdapter');
+    if (!adapter) throw new Error('kein Adapter');
+    var device = await withTimeout(adapter.requestDevice(), 10000, 'requestDevice');
+    var lost = null;
+    device.lost.then(function (i) { lost = i; });
+    var ctx = canvas.getContext('webgpu');
+    if (!ctx) { device.destroy(); throw new Error('getContext("webgpu") liefert null'); }
+    var format = navigator.gpu.getPreferredCanvasFormat();
+    ctx.configure({ device: device, format: format, alphaMode: 'opaque' });
+    var mod = device.createShaderModule({ code: SCENE_WGSL });
+    var pipe = device.createRenderPipeline({ layout: 'auto', vertex: { module: mod, entryPoint: 'vs' }, fragment: { module: mod, entryPoint: 'fs', targets: [{ format: format }] }, primitive: { topology: 'triangle-list' } });
+    var ub = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    var bg = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: ub } }] });
+    var u = new Float32Array(4);
+    return {
+      api: 'WebGPU',
+      draw: function (sec) {
+        u[0] = sec; u[1] = canvas.width / canvas.height;
+        device.queue.writeBuffer(ub, 0, u);
+        var enc = device.createCommandEncoder();
+        var g = 0.05 + 0.04 * Math.sin(sec * 3);
+        var pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0.02, g: g, b: 0.08, a: 1 }, loadOp: 'clear', storeOp: 'store' }] });
+        pass.setPipeline(pipe); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+        device.queue.submit([enc.finish()]);
+      },
+      lostInfo: function () { return lost && lost.reason !== 'destroyed' ? ('device.lost: ' + lost.reason + ' ' + (lost.message || '')) : ''; },
+      stop: function () { try { device.destroy(); } catch (e) { /* egal */ } }
+    };
+  }
+  function sceneWebGL(canvas) {
+    var gl = canvas.getContext('webgl2', { antialias: false });
+    if (!gl) throw new Error('WebGL 2 nicht verfügbar');
+    function sh(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+    var p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, SCENE_VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, SCENE_FS));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    var lt = gl.getUniformLocation(p, 't'), la = gl.getUniformLocation(p, 'asp');
+    var vao = gl.createVertexArray();
+    return {
+      api: 'WebGL 2',
+      draw: function (sec) {
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0.02, 0.05 + 0.04 * Math.sin(sec * 3), 0.08, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(p); gl.bindVertexArray(vao);
+        gl.uniform1f(lt, sec); gl.uniform1f(la, canvas.width / canvas.height);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      },
+      lostInfo: function () { return gl.isContextLost() ? 'WebGL-Kontext verloren' : ''; },
+      stop: function () { try { var l = gl.getExtension('WEBGL_lose_context'); if (l) l.loseContext(); } catch (e) { /* egal */ } }
+    };
+  }
+
+  // Testszene in host zeichnen und `seconds` lang die rAF-Abstände messen.
+  // onState('stalled') meldet, wenn längere Zeit kein Frame kommt (z. B. iframe nicht sichtbar).
+  W.runScene = async function (host, seconds, onState) {
+    host.textContent = '';
+    var canvas = document.createElement('canvas');
+    host.appendChild(canvas);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(64, Math.min(1024, Math.round((host.clientWidth || 300) * dpr)));
+    canvas.height = Math.max(64, Math.min(1024, Math.round((host.clientHeight || 180) * dpr)));
+    var scene = null, note = '';
+    if (navigator.gpu) {
+      try { scene = await sceneWebGPU(canvas); } catch (e) { note = 'WebGPU-Szene: ' + msg(e); }
+    }
+    if (!scene) {
+      if (note) { host.textContent = ''; canvas = document.createElement('canvas'); canvas.width = 300; canvas.height = 180; host.appendChild(canvas); }
+      try { scene = sceneWebGL(canvas); } catch (e) { return { api: 'keiner', error: (note ? note + '; ' : '') + 'WebGL-2-Szene: ' + msg(e), deltas: [], stats: null }; }
+    }
+    return new Promise(function (resolve) {
+      var stamps = [], start = null, drawErr = '', finished = false;
+      var t0 = now();
+      var stall = setInterval(function () {
+        if (!stamps.length && now() - t0 > 3000 && onState) onState('stalled');
+        if (now() - t0 > seconds * 1000 + 15000) finish('Messung abgebrochen: zu wenige Frames (Seite/iframe sichtbar?)');
+      }, 500);
+      function finish(err) {
+        if (finished) return;
+        finished = true;
+        clearInterval(stall);
+        var lostNote = scene.lostInfo();
+        scene.stop();
+        var deltas = [];
+        for (var i = 1; i < stamps.length; i++) deltas.push(Math.round((stamps[i] - stamps[i - 1]) * 100) / 100);
+        var parts = [note, drawErr, lostNote, err || ''].filter(Boolean);
+        resolve({ api: scene.api, deltas: deltas, stats: W.stats(deltas), error: deltas.length ? '' : (parts.join('; ') || 'keine Frames'), note: parts.join('; ') });
+      }
+      function frame(ts) {
+        if (finished) return;
+        if (start === null) { start = ts; if (onState) onState('running'); }
+        stamps.push(ts);
+        try { scene.draw((ts - start) / 1000); } catch (e) { if (!drawErr) drawErr = 'Zeichnen: ' + msg(e); }
+        if (ts - start < seconds * 1000) requestAnimationFrame(frame); else finish('');
+      }
+      requestAnimationFrame(frame);
+    });
+  };
+
+  return W;
+})();
+</script>
+
+<!-- Inhalt des Probe-iframes (wird zusammen mit dem gemeinsamen Code als srcdoc eingesetzt). -->
+<script type="text/plain" id="wgcFrameBody">
+<style>
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: #05070b; color: #e6e9f0; font: 13px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; overflow: hidden; }
+  #scene { position: absolute; inset: 0; }
+  #scene canvas { width: 100%; height: 100%; display: block; }
+  #status { position: absolute; left: 8px; top: 6px; right: 8px; color: #8d97ad; font-size: 12px; pointer-events: none; }
+  #probe { position: absolute; right: 6px; bottom: 6px; opacity: .6; }
+  #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10px; background: rgba(11, 14, 20, .88); }
+  #tap { width: 100%; height: 100%; border-radius: 12px; border: 2px dashed #7c9cff; background: #141925; color: #e6e9f0; font: 700 20px/1.3 inherit; font-family: inherit; touch-action: manipulation; }
+  #padHint { text-align: center; font-size: 16px; font-weight: 600; color: #fde68a; }
+</style>
+<div id="scene"></div>
+<div id="status">Dashboard-iframe · Probe läuft …</div>
+<div id="probe"></div>
+<div id="overlay" hidden><button id="tap" type="button" hidden>Hier einmal antippen</button><div id="padHint" hidden>Controller verbinden und eine Taste drücken</div></div>
+</script>
+
+<script type="text/plain" id="wgcFrameScript">
+(function () {
+  'use strict';
+  var P = window.parent;
+  var interacted = false, pending = null, padTimer = null;
+  ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function () { interacted = true; }, true);
+  });
+  function send(m) { P.postMessage(m, '*'); }
+  function $(id) { return document.getElementById(id); }
+  function status(t) { $('status').textContent = 'Dashboard-iframe · ' + t; }
+
+  WGC.runProbe($('probe')).then(function (r) {
+    status('Probe fertig');
+    send({ type: 'wgc:probe', result: r });
+  }, function (e) {
+    status('Probe-Fehler');
+    send({ type: 'wgc:probe', result: { error: WGC.msg(e), steps: [], env: WGC.env() } });
+  });
+
+  function hideOverlay() {
+    $('overlay').hidden = true; $('tap').hidden = true; $('padHint').hidden = true;
+    clearInterval(padTimer); padTimer = null;
+  }
+  function measure(stage, how) {
+    hideOverlay();
+    var before = interacted;
+    status('Messung ' + stage + ' läuft …');
+    send({ type: 'wgc:fps-state', stage: stage, state: 'running' });
+    WGC.runScene($('scene'), 5, function (s) { send({ type: 'wgc:fps-state', stage: stage, state: s }); }).then(function (res) {
+      res.how = how;
+      res.interactedBefore = before;
+      status('Messung ' + stage + ' fertig');
+      send({ type: 'wgc:fps-result', stage: stage, result: res });
+    });
+  }
+  function anyButton() {
+    var pads = [];
+    try { pads = navigator.getGamepads ? Array.prototype.slice.call(navigator.getGamepads()) : []; } catch (e) { pads = []; }
+    for (var i = 0; i < pads.length; i++) {
+      var p = pads[i];
+      if (!p) continue;
+      for (var b = 0; b < p.buttons.length; b++) if (p.buttons[b].pressed || p.buttons[b].value > 0.5) return p.id || ('Controller ' + i);
+    }
+    return null;
+  }
+  window.addEventListener('message', function (e) {
+    if (e.source !== P || !e.data || typeof e.data.type !== 'string') return;
+    if (e.data.type === 'wgc:cancel') { pending = null; hideOverlay(); status('bereit'); return; }
+    if (e.data.type !== 'wgc:fps') return;
+    var stage = String(e.data.stage);
+    pending = stage;
+    if (e.data.trigger === 'none') { measure(stage, 'ohne Interaktion'); return; }
+    $('overlay').hidden = false;
+    if (e.data.trigger === 'tap') {
+      $('tap').hidden = false;
+      send({ type: 'wgc:fps-state', stage: stage, state: 'waiting' });
+    } else if (e.data.trigger === 'gamepad') {
+      $('padHint').hidden = false;
+      send({ type: 'wgc:fps-state', stage: stage, state: 'waiting' });
+      padTimer = setInterval(function () {
+        var id = anyButton();
+        if (id && pending === stage) { pending = null; measure(stage, 'nach Controller-Taste (' + id + ')'); }
+      }, 50);
+    }
+  });
+  $('tap').addEventListener('click', function () {
+    if (!pending) return;
+    var stage = pending;
+    pending = null;
+    measure(stage, 'nach Antippen');
+  });
+  status('Probe läuft …');
+})();
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  // Genau die Attribute, die startGame() in index.html dem Spiel-iframe gibt (Test prüft die Übereinstimmung).
+  var FRAME_ATTRS = {
+    sandbox: 'allow-scripts allow-pointer-lock',
+    allow: 'gamepad *; fullscreen *; autoplay *',
+    referrerpolicy: 'no-referrer'
+  };
+  var MAIL_TO = 'feedback.aether@gmail.com';
+  var MAILTO_MAX = 2000;
+  var CUT_NOTE = "(gekürzt - vollständig über 'Ergebnis kopieren')";
+  var NA = 'vom Browser nicht angegeben';
+  var NV = 'nicht verfügbar';
+  var FPS_SECONDS = 5;
+  var SAFARI_VERSION_RE = /Version\/(\d+(?:\.\d+)*)/;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function given(v) { return v !== undefined && v !== null && v !== ''; }
+  function val(v) { return given(v) ? String(v) : NA; }
+  function yn(b) { return b ? 'ja' : 'nein'; }
+  function fmt(n, d) { return Number(n).toFixed(d).replace('.', ','); }
+  function mq(q) { try { return window.matchMedia(q).matches; } catch (e) { return false; } }
+
+  // ---------------------------------------------------------------------------
+  // User-Agent auswerten (die Safari-Version kommt aus "Version/…", nie aus dem eingefrorenen OS-Feld)
+  // ---------------------------------------------------------------------------
+  function parseUA(ua) {
+    ua = String(ua || '');
+    var m, name = '', version = '', note = '';
+    if ((m = /CriOS\/([\d.]+)/.exec(ua))) { name = 'Chrome (iOS)'; version = m[1]; }
+    else if ((m = /FxiOS\/([\d.]+)/.exec(ua))) { name = 'Firefox (iOS)'; version = m[1]; }
+    else if ((m = /EdgiOS\/([\d.]+)/.exec(ua))) { name = 'Edge (iOS)'; version = m[1]; }
+    else if ((m = /Edg(?:A)?\/([\d.]+)/.exec(ua))) { name = 'Edge'; version = m[1]; }
+    else if ((m = /OPR\/([\d.]+)/.exec(ua))) { name = 'Opera'; version = m[1]; }
+    else if ((m = /SamsungBrowser\/([\d.]+)/.exec(ua))) { name = 'Samsung Internet'; version = m[1]; }
+    else if ((m = /(?:HeadlessChrome|Chrome|Chromium)\/([\d.]+)/.exec(ua))) { name = 'Chrome'; version = m[1]; }
+    else if ((m = /Firefox\/([\d.]+)/.exec(ua))) { name = 'Firefox'; version = m[1]; }
+    else if (/AppleWebKit/.test(ua)) {
+      m = SAFARI_VERSION_RE.exec(ua);
+      if (m) { name = 'Safari'; version = m[1]; }
+      else { name = 'Safari/WebKit'; note = 'Version vom Browser nicht angegeben'; }
+    }
+    var os = /(iPhone OS|CPU OS|Mac OS X|Android|Windows NT|CrOS [\w_]+) ?([\d_.]*)/.exec(ua);
+    return {
+      name: name || 'unbekannt', version: version, note: note,
+      label: (name || 'unbekannter Browser') + (version ? ' ' + version : ''),
+      osField: os ? (os[1] + (os[2] ? ' ' + os[2] : '')) : ''
+    };
+  }
+  function deviceType(ua, maxTouch) {
+    ua = String(ua || '');
+    if (/iPhone|iPod/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua)) return 'iPad';
+    if (/Macintosh/.test(ua)) return maxTouch > 1 ? 'iPad' : 'Mac';
+    if (/Android/.test(ua)) return 'Android';
+    if (/Windows/.test(ua)) return 'Windows';
+    if (/Linux|X11|CrOS/.test(ua)) return 'Linux';
+    return 'unbekannt';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zustand
+  // ---------------------------------------------------------------------------
+  var S;
+  var STAGES = [
+    { id: 'a', key: 'Bildtakt a (direkt)', title: 'a) direkt in der Seite', where: 'direkt' },
+    { id: 'b', key: 'Bildtakt b (iframe ohne Interaktion)', title: 'b) im iframe ohne Interaktion', where: 'iframe', trigger: 'none' },
+    { id: 'c', key: 'Bildtakt c (iframe nach Controller-Taste)', title: 'c) im iframe nach Controller-Taste (optional)', where: 'iframe', trigger: 'gamepad', optional: true },
+    { id: 'd', key: 'Bildtakt d (iframe nach Antippen)', title: 'd) im iframe nach Antippen', where: 'iframe', trigger: 'tap' }
+  ];
+  var frameEl = null, keepDevice = null, run = 0;
+
+  function freshState() {
+    return {
+      run: ++run,
+      started: new Date(),
+      device: null, storage: null, gpu: null, gl: null, more: null,
+      direct: null, frame: null,
+      fps: { a: { status: 'offen' }, b: { status: 'offen' }, c: { status: 'offen' }, d: { status: 'offen' } },
+      fpsNext: 0, fpsBusy: false
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gerätedaten
+  // ---------------------------------------------------------------------------
+  function collectDevice() {
+    var ua = navigator.userAgent;
+    var mt = navigator.maxTouchPoints || 0;
+    var b = parseUA(ua);
+    var type = deviceType(ua, mt);
+    var uad = navigator.userAgentData;
+    var uadText = NV;
+    if (uad) {
+      var brands = (uad.brands || []).filter(function (x) { return !/not.?a.?brand/i.test(x.brand); }).map(function (x) { return x.brand + ' ' + x.version; });
+      uadText = 'brands: ' + (brands.length ? brands.join(', ') : NA) + '; platform: ' + val(uad.platform) + '; mobile: ' + (typeof uad.mobile === 'boolean' ? yn(uad.mobile) : NA);
+    }
+    var modes = ['standalone', 'fullscreen', 'minimal-ui'].filter(function (m) { return mq('(display-mode: ' + m + ')'); });
+    var standalone = modes.length > 0 || navigator.standalone === true;
+    var ios = type === 'iPhone' || type === 'iPad';
+    var sc = window.screen || {};
+    var orient = (sc.orientation && sc.orientation.type) || (mq('(orientation: portrait)') ? 'hochkant (matchMedia)' : mq('(orientation: landscape)') ? 'quer (matchMedia)' : '');
+    var vv = window.visualViewport;
+    var sp = getComputedStyle($('safeProbe'));
+    var pads = [];
+    try { pads = navigator.getGamepads ? Array.prototype.slice.call(navigator.getGamepads()).filter(Boolean) : null; } catch (e) { pads = null; }
+    return {
+      ua: ua, browser: b, type: type, iPadAsMac: type === 'iPad' && /Macintosh/.test(ua),
+      uad: uadText, standalone: standalone, modes: modes, navStandalone: navigator.standalone,
+      ios: ios,
+      screen: given(sc.width) ? sc.width + ' × ' + sc.height : '',
+      avail: given(sc.availWidth) ? sc.availWidth + ' × ' + sc.availHeight : '',
+      orient: orient,
+      dpr: window.devicePixelRatio,
+      inner: window.innerWidth + ' × ' + window.innerHeight,
+      vv: vv ? Math.round(vv.width) + ' × ' + Math.round(vv.height) + (vv.scale && vv.scale !== 1 ? ' (Zoom ' + fmt(vv.scale, 2) + ')' : '') : '',
+      safe: 'oben ' + parseFloat(sp.paddingTop) + ' px, rechts ' + parseFloat(sp.paddingRight) + ' px, unten ' + parseFloat(sp.paddingBottom) + ' px, links ' + parseFloat(sp.paddingLeft) + ' px',
+      touch: mt,
+      pointer: mq('(pointer: coarse)') ? 'coarse' : mq('(pointer: fine)') ? 'fine' : mq('(pointer: none)') ? 'none' : '',
+      hover: mq('(hover: hover)') ? 'ja' : mq('(hover: none)') ? 'nein' : '',
+      pads: pads
+    };
+  }
+
+  function collectMore() {
+    var simd = false, wasm = typeof WebAssembly === 'object';
+    if (wasm) {
+      try { simd = WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11])); } catch (e) { simd = false; }
+    }
+    return {
+      secure: !!window.isSecureContext,
+      coi: !!window.crossOriginIsolated,
+      sab: typeof SharedArrayBuffer,
+      cores: navigator.hardwareConcurrency,
+      mem: navigator.deviceMemory,
+      reduced: mq('(prefers-reduced-motion: reduce)') ? 'ja' : 'nein',
+      wasm: wasm, simd: simd,
+      jspi: wasm && typeof WebAssembly.Suspending === 'function',
+      threads: !!window.crossOriginIsolated && typeof SharedArrayBuffer === 'function'
+    };
+  }
+
+  async function collectStorage() {
+    var r = { quota: null, usage: null, persisted: null, err: '' };
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        var e = await navigator.storage.estimate();
+        r.quota = e.quota; r.usage = e.usage;
+      }
+    } catch (e) { r.err = WGC.msg(e); }
+    try {
+      if (navigator.storage && navigator.storage.persisted) r.persisted = await navigator.storage.persisted();
+    } catch (e) { r.err = r.err || WGC.msg(e); }
+    return r;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Grafik
+  // ---------------------------------------------------------------------------
+  async function collectGpu(state) {
+    var r = { present: !!navigator.gpu, format: '', wgsl: null, adapterMs: null, adapter: null, noAdapter: false, err: '', deviceMs: null, lost: '', uncaptured: [] };
+    if (!navigator.gpu) return r;
+    try { r.format = navigator.gpu.getPreferredCanvasFormat(); } catch (e) { r.format = ''; }
+    try { if (navigator.gpu.wgslLanguageFeatures) { r.wgsl = []; navigator.gpu.wgslLanguageFeatures.forEach(function (f) { r.wgsl.push(String(f)); }); r.wgsl.sort(); } } catch (e) { r.wgsl = null; }
+    var t = performance.now(), adapter;
+    try { adapter = await WGC.withTimeout(navigator.gpu.requestAdapter(), 10000, 'requestAdapter'); }
+    catch (e) { r.err = 'requestAdapter: ' + WGC.msg(e); return r; }
+    r.adapterMs = Math.round((performance.now() - t) * 10) / 10;
+    if (!adapter) { r.noAdapter = true; return r; }
+    try { r.adapter = await WGC.adapterSummary(adapter); } catch (e) { r.err = WGC.msg(e); }
+    t = performance.now();
+    var device;
+    try { device = await WGC.withTimeout(adapter.requestDevice(), 10000, 'requestDevice'); }
+    catch (e) { r.err = 'requestDevice: ' + WGC.msg(e); return r; }
+    r.deviceMs = Math.round((performance.now() - t) * 10) / 10;
+    // Gerät bleibt bis "Erneut prüfen" bestehen; device.lost und uncapturederror werden beobachtet.
+    keepDevice = device;
+    device.addEventListener('uncapturederror', function (ev) {
+      r.uncaptured.push(WGC.msg(ev.error));
+      if (S && S.run === state.run) render();
+    });
+    device.lost.then(function (info) {
+      if (device.__expected) return;
+      r.lost = String(info && info.reason) + (info && info.message ? ': ' + info.message : '');
+      if (S && S.run === state.run) render();
+    });
+    return r;
+  }
+
+  function collectWebgl() {
+    var c = document.createElement('canvas');
+    var gl = null;
+    try { gl = c.getContext('webgl2'); } catch (e) { gl = null; }
+    if (!gl) return { ok: false };
+    var r = { ok: true };
+    var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    r.rendererSrc = dbg ? 'WEBGL_debug_renderer_info' : 'Standardwerte';
+    r.renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    r.vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+    r.version = gl.getParameter(gl.VERSION);
+    r.glsl = gl.getParameter(gl.SHADING_LANGUAGE_VERSION);
+    r.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    r.maxSamples = gl.getParameter(gl.MAX_SAMPLES);
+    var ext = gl.getSupportedExtensions() || [];
+    r.extCount = ext.length;
+    r.cbf = ext.indexOf('EXT_color_buffer_float') >= 0;
+    try { var l = gl.getExtension('WEBGL_lose_context'); if (l) l.loseContext(); } catch (e) { /* egal */ }
+    return r;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zeilen (eine Quelle für Anzeige und Ergebnistext)
+  // ---------------------------------------------------------------------------
+  function probeVerdict(p) {
+    if (!p) return { state: 'läuft', text: 'läuft …', detail: '' };
+    if (p.error) return { state: 'nein', text: 'nein', detail: p.error };
+    if (p.webgpuOk) return { state: 'ok', text: 'ja', detail: '' };
+    if (p.webgpuCore) return { state: 'teil', text: 'teilweise', detail: p.reason };
+    return { state: 'nein', text: 'nein', detail: p.reason };
+  }
+  function graphicsPath() {
+    if (!S.frame) return '';
+    if (S.frame.webgpuOk) return 'WebGPU';
+    if (S.frame.webglOk) return 'WebGL-Rückfall';
+    return 'keiner';
+  }
+  function glVerdict() {
+    if (!S.gl) return { state: 'läuft', text: 'läuft …', detail: '' };
+    var probeOk = S.direct ? S.direct.webglOk : null;
+    if (!S.gl.ok) return { state: 'nein', text: 'nein', detail: 'nicht verfügbar' };
+    if (probeOk === false) return { state: 'teil', text: 'teilweise', detail: 'Löschen + readPixels fehlgeschlagen' };
+    return { state: 'ok', text: 'ja', detail: '' };
+  }
+  function vtext(v) { return v.text + (v.detail ? ' (' + v.detail + ')' : ''); }
+
+  function rowsResult() {
+    var p = graphicsPath();
+    return [
+      ['WebGPU direkt', vtext(probeVerdict(S.direct))],
+      ['WebGPU im Dashboard-iframe', vtext(probeVerdict(S.frame))],
+      ['WebGL 2', vtext(glVerdict())],
+      ['Grafikweg fürs Spiel', p || 'läuft …']
+    ];
+  }
+
+  function rowsDevice() {
+    var d = S.device;
+    var rows = [
+      ['User-Agent', d.ua || NA],
+      ['Browser', d.browser.label + (d.browser.note ? ' (' + d.browser.note + ')' : '')],
+      ['OS-Feld im User-Agent', d.browser.osField ? d.browser.osField + (d.ios ? ' (von Safari eingefroren, nicht verlässlich)' : '') : NA],
+      ['userAgentData', d.uad],
+      ['Gerätetyp', d.type + (d.iPadAsMac ? ' (meldet sich als Mac, maxTouchPoints ' + d.touch + ')' : '')],
+      ['Modell', 'Modell im Browser nicht ermittelbar'],
+      ['Home-Bildschirm-App', yn(d.standalone) + ' (display-mode: ' + (d.modes.length ? d.modes.join(', ') : 'browser') + '; navigator.standalone: ' + (typeof d.navStandalone === 'boolean' ? yn(d.navStandalone) : NV) + ')'],
+      ['Bildschirm (screen)', d.screen ? d.screen + ' CSS-px' + (d.ios ? ' (Safari meldet auf iOS vermutlich immer hochkant)' : '') : NA],
+      ['Verfügbar (availWidth × availHeight)', d.avail ? d.avail + ' CSS-px' : NA],
+      ['Ausrichtung', val(d.orient)],
+      ['devicePixelRatio', val(d.dpr)],
+      ['Fenster (innerWidth × innerHeight)', d.inner + ' CSS-px'],
+      ['visualViewport', d.vv ? d.vv + ' CSS-px' : NV],
+      ['Sichere Ränder', d.safe],
+      ['Touchpunkte (maxTouchPoints)', String(d.touch)],
+      ['Zeiger', val(d.pointer)],
+      ['Hover', val(d.hover)]
+    ];
+    if (d.pads === null) rows.push(['Controller', NV]);
+    else {
+      rows.push(['Controller', d.pads.length ? String(d.pads.length) : '0 (erst nach Tastendruck sichtbar)']);
+      d.pads.forEach(function (p, i) {
+        rows.push(['Controller ' + (i + 1), val(p.id) + '; mapping: ' + (p.mapping || 'keins') + '; ' + p.buttons.length + ' Tasten, ' + p.axes.length + ' Achsen; vibrationActuator: ' + yn(!!p.vibrationActuator)]);
+      });
+    }
+    return rows;
+  }
+
+  function rowsWebgpu() {
+    var g = S.gpu;
+    if (!g) return [['navigator.gpu', 'läuft …']];
+    if (!g.present) return [['navigator.gpu', 'fehlt (WebGPU fehlt)']];
+    var a = g.adapter || {};
+    var rows = [
+      ['navigator.gpu', 'vorhanden'],
+      ['Bevorzugtes Canvas-Format', val(g.format)],
+      ['WGSL-Sprachfeatures', g.wgsl ? (g.wgsl.length ? g.wgsl.join(', ') : 'keine') : NV, true],
+      ['requestAdapter', g.noAdapter ? 'kein Adapter (' + fmt(g.adapterMs, 1) + ' ms)' : g.adapterMs != null ? 'ok (' + fmt(g.adapterMs, 1) + ' ms)' : (g.err || NA)]
+    ];
+    if (g.adapter) {
+      rows.push(['Adapter vendor', val(a.vendor)]);
+      rows.push(['Adapter architecture', val(a.architecture)]);
+      rows.push(['Adapter device', val(a.device)]);
+      rows.push(['Adapter description', val(a.description)]);
+      rows.push(['isFallbackAdapter', typeof a.isFallbackAdapter === 'boolean' ? yn(a.isFallbackAdapter) : NA]);
+      rows.push(['subgroupMinSize / subgroupMaxSize', given(a.subgroupMinSize) || given(a.subgroupMaxSize) ? val(a.subgroupMinSize) + ' / ' + val(a.subgroupMaxSize) : NA]);
+      rows.push(['requestDevice', g.deviceMs != null ? 'ok (' + fmt(g.deviceMs, 1) + ' ms)' : (g.err || NA)]);
+      rows.push(['device.lost', g.lost ? g.lost : (g.deviceMs != null ? 'nicht verloren' : NV)]);
+      rows.push(['uncapturederror', g.uncaptured.length ? g.uncaptured.length + ': ' + g.uncaptured.join(' | ') : 'keine']);
+      rows.push(['Features (' + a.features.length + ')', a.features.length ? a.features.join(', ') : 'keine', true]);
+      var keys = Object.keys(a.limits).sort();
+      rows.push(['Limits (Anzahl)', String(keys.length)]);
+      keys.forEach(function (k) { rows.push(['Limit ' + k, String(a.limits[k]), true]); });
+    } else if (g.err) rows.push(['Fehler', g.err]);
+    return rows;
+  }
+
+  function rowsWebgl() {
+    var g = S.gl;
+    if (!g) return [['WebGL 2', 'läuft …']];
+    if (!g.ok) return [['WebGL 2', 'nicht verfügbar']];
+    return [
+      ['WebGL 2', 'verfügbar'],
+      ['WebGL 2 Renderer', val(g.renderer) + ' (Quelle: ' + g.rendererSrc + ')'],
+      ['WebGL 2 Vendor', val(g.vendor)],
+      ['WebGL 2 VERSION', val(g.version)],
+      ['WebGL 2 GLSL', val(g.glsl)],
+      ['MAX_TEXTURE_SIZE', val(g.maxTex)],
+      ['MAX_SAMPLES', val(g.maxSamples)],
+      ['Erweiterungen (Anzahl)', val(g.extCount)],
+      ['EXT_color_buffer_float', yn(g.cbf)]
+    ];
+  }
+
+  function stepCell(p, name) {
+    if (!p) return { text: 'läuft …', cls: '' };
+    if (p.error && !p.steps.length) return { text: 'Fehler: ' + p.error, cls: 'v-err' };
+    var s = p.steps.filter(function (x) { return x.name === name; })[0];
+    if (!s) return { text: '–', cls: '' };
+    var ms = s.ms != null ? ' (' + fmt(s.ms, 1) + ' ms)' : '';
+    if (s.status === 'skip') return { text: '–', cls: '' };
+    if (s.status === 'ok') return { text: 'ok' + (s.detail ? ': ' + s.detail : '') + ms, cls: 'v-ok' };
+    if (s.status === 'nein') return { text: s.detail + ms, cls: 'v-warn' };
+    return { text: 'Fehler: ' + s.detail + ms, cls: 'v-err' };
+  }
+  function envCells(p) {
+    if (!p) return null;
+    var a = p.adapter;
+    return [
+      ['isSecureContext', p.env ? yn(p.env.isSecureContext) : NA],
+      ['crossOriginIsolated', p.env ? yn(p.env.crossOriginIsolated) : NA],
+      ['Adapter', a ? [a.vendor, a.architecture, a.device, a.description].filter(given).join(' · ') || NA : NV],
+      ['isFallbackAdapter', a && typeof a.isFallbackAdapter === 'boolean' ? yn(a.isFallbackAdapter) : (a ? NA : NV)],
+      ['Features / Limits (Anzahl)', a ? a.features.length + ' / ' + Object.keys(a.limits).length : NV],
+      ['uncapturederror', p.uncaptured && p.uncaptured.length ? p.uncaptured.join(' | ') : 'keine']
+    ];
+  }
+  function probeTable() {
+    var rows = [];
+    WGC.STEPS.forEach(function (n) { rows.push({ name: n, d: stepCell(S.direct, n), f: stepCell(S.frame, n) }); });
+    var ed = envCells(S.direct), ef = envCells(S.frame);
+    ['isSecureContext', 'crossOriginIsolated', 'Adapter', 'isFallbackAdapter', 'Features / Limits (Anzahl)', 'uncapturederror'].forEach(function (k, i) {
+      rows.push({ name: k, d: { text: ed ? ed[i][1] : 'läuft …', cls: '' }, f: { text: ef ? ef[i][1] : 'läuft …', cls: '' } });
+    });
+    return rows;
+  }
+  function rowsProbe() {
+    var out = [];
+    probeTable().forEach(function (r) {
+      out.push(['Probe direkt – ' + r.name, r.d.text]);
+      out.push(['Probe iframe – ' + r.name, r.f.text]);
+    });
+    return out;
+  }
+
+  function fpsSummary(st) {
+    var f = st.result;
+    if (!f) return st.status;
+    if (!f.stats) return 'Fehler: ' + (f.error || 'keine Frames');
+    var s = f.stats;
+    return s.frames + ' Frames, ' + fmt(s.meanFps, 1) + ' fps, Median ' + fmt(s.medianMs, 1) + ' ms, 1 %-Tief ' + fmt(s.low1Fps, 1) + ' fps, längster ' + fmt(s.maxMs, 1) +
+      ' ms, > 20 ms: ' + s.over20 + ', > 33,4 ms: ' + s.over33 + ', Obergrenze ≈ ' + s.cap + ' fps, ' + f.api +
+      (f.how ? ', ' + f.how : '') + (typeof f.interactedBefore === 'boolean' ? ', iframe vorher berührt: ' + yn(f.interactedBefore) : '') + (f.note ? ' (' + f.note + ')' : '');
+  }
+  function capOf(id) { var st = S.fps[id]; return st.result && st.result.stats ? st.result.stats.cap : null; }
+  function interpretation() {
+    var out = [];
+    out.push('Fakt (WebKit): Safari drosselt requestAnimationFrame in fremden (cross-origin) iframes auf 30 fps, bis man mit dem iframe interagiert. Der Spiel-iframe hat als Sandbox ohne allow-same-origin einen fremden Ursprung.');
+    out.push('Fakt (WebKit/iOS): Im Stromsparmodus drosselt iOS überall auf 30 fps.');
+    out.push('Vermutung: Wischen zählt evtl. nicht als Interaktion, nur Antippen.');
+    var a = capOf('a'), b = capOf('b'), c = capOf('c'), d = capOf('d');
+    var low = function (x) { return x !== null && x <= 36; };
+    var high = function (x) { return x !== null && x >= 48; };
+    if (a === null && b === null && d === null && S.fps.c.status !== 'übersprungen' && c === null) { out.push('Noch keine Messung.'); return out; }
+    if (low(a)) out.push('Beobachtung: Auch direkt nur ≈ ' + a + ' fps – Stromsparmodus aktiv?');
+    if (low(b) && high(d)) out.push('Beobachtung: Drosselung im iframe bis zum Antippen bestätigt (b ≈ ' + b + ' fps, d ≈ ' + d + ' fps).');
+    else if (b !== null && a !== null && Math.abs(b - a) / a <= 0.1) out.push('Beobachtung: Keine Drosselung im iframe ohne Interaktion (b ≈ a ≈ ' + b + ' fps).');
+    else if (b !== null && d !== null && low(b) && low(d)) out.push('Beobachtung: Auch nach dem Antippen nur ≈ ' + d + ' fps im iframe.');
+    if (S.fps.c.status === 'übersprungen') out.push('Stufe c übersprungen – ob ein Controller-Tastendruck reicht, ist offen.');
+    else if (c !== null) {
+      if (low(b) && high(c)) out.push('Beobachtung: Ein Controller-Tastendruck hebt die Drosselung auf (c ≈ ' + c + ' fps).');
+      else if (low(b) && low(c)) out.push('Beobachtung: Ein Controller-Tastendruck reicht nicht (c ≈ ' + c + ' fps); Antippen nötig.');
+      else out.push('Beobachtung: Stufe c ≈ ' + c + ' fps.');
+    }
+    return out;
+  }
+  function rowsFps() {
+    var rows = [];
+    STAGES.forEach(function (st) { rows.push([st.key, fpsSummary(S.fps[st.id])]); });
+    rows.push(['Bildtakt Deutung', interpretation().filter(function (l) { return /^Beobachtung|^Stufe c|^Noch/.test(l); }).join(' ') || 'keine Auffälligkeit']);
+    return rows;
+  }
+
+  function rowsMore() {
+    var m = S.more, st = S.storage;
+    var mb = function (x) { return given(x) ? fmt(x / 1048576, 1) + ' MB' : NA; };
+    return [
+      ['isSecureContext', yn(m.secure)],
+      ['crossOriginIsolated', yn(m.coi)],
+      ['typeof SharedArrayBuffer', m.sab],
+      ['hardwareConcurrency', val(m.cores)],
+      ['deviceMemory', given(m.mem) ? m.mem + ' GB' : NV],
+      ['prefers-reduced-motion', m.reduced],
+      ['Speicher-Kontingent', st ? (st.quota != null ? mb(st.quota) : NV) : 'läuft …'],
+      ['Speicher-Belegung', st ? (st.usage != null ? mb(st.usage) : NV) : 'läuft …'],
+      ['Speicher dauerhaft (persisted)', st ? (typeof st.persisted === 'boolean' ? yn(st.persisted) : NV) : 'läuft …'],
+      ['WebAssembly', m.wasm ? 'vorhanden' : NV],
+      ['WebAssembly SIMD', yn(m.simd)],
+      ['WebAssembly JSPI (Suspending)', yn(m.jspi)],
+      ['WebAssembly Threads möglich', m.threads ? 'ja' : 'nein (braucht crossOriginIsolated und SharedArrayBuffer)']
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ergebnistext und Mail
+  // ---------------------------------------------------------------------------
+  function commitText() {
+    var m = document.querySelector('meta[name="aether-commit"]');
+    var c = m ? String(m.getAttribute('content') || '') : '';
+    return /^[0-9a-f]{7,40}$/i.test(c) ? c.slice(0, 12).toLowerCase() : 'nicht bekannt';
+  }
+  function timeText(d) {
+    try {
+      return d.toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' (deutsche Ortszeit)';
+    } catch (e) { return d.toISOString(); }
+  }
+  function sections() {
+    return [
+      ['Ergebnis', rowsResult()],
+      ['Gerät', rowsDevice()],
+      ['Grafik (WebGPU)', rowsWebgpu()],
+      ['Grafik (WebGL 2)', rowsWebgl()],
+      ['Probe', rowsProbe()],
+      ['Bildtakt', rowsFps()],
+      ['Weitere Fähigkeiten', rowsMore()]
+    ];
+  }
+  function headLines() {
+    return ['AETHER-CHECK v1', 'Zeitpunkt: ' + timeText(S.started), 'Dashboard-Commit: ' + commitText(), 'Seite: ' + location.origin + location.pathname];
+  }
+  function line(k, v) { return k + ': ' + String(v).replace(/\s*\n\s*/g, ' '); }
+  function buildText() {
+    var out = headLines();
+    sections().forEach(function (s) {
+      out.push('');
+      out.push('Abschnitt: ' + s[0]);
+      s[1].forEach(function (r) { out.push(line(r[0], r[1])); });
+    });
+    return out.join('\n');
+  }
+  function probeShort(p) {
+    if (!p) return 'läuft …';
+    if (p.error && !p.steps.length) return 'Fehler: ' + p.error;
+    var bad = p.steps.filter(function (x) { return x.status !== 'ok' && x.status !== 'skip'; });
+    var skipped = p.steps.filter(function (x) { return x.status === 'skip'; }).length;
+    if (!bad.length && !skipped) return 'alle ' + p.steps.length + ' Schritte ok';
+    return bad.map(function (x) { return x.name + ': ' + (x.status === 'nein' ? '' : 'Fehler ') + x.detail; }).join('; ') + (skipped ? '; ' + skipped + ' Schritte –' : '');
+  }
+  function fpsShort() {
+    return STAGES.map(function (st) {
+      var f = S.fps[st.id];
+      if (!f.result) return st.id + ' ' + f.status;
+      if (!f.result.stats) return st.id + ' Fehler';
+      var x = f.result.stats;
+      return st.id + ' ≈ ' + x.cap + ' fps (Ø ' + fmt(x.meanFps, 1) + '; 1 %-Tief ' + fmt(x.low1Fps, 1) + '; > 33,4 ms: ' + x.over33 + '; ' + f.result.api + ')';
+    }).join(' | ');
+  }
+  // Für die Mail: Zusammenfassung zuerst, dann der Rest, lange Listen (Features, Limits) zuletzt.
+  var MAIL_SUMMARY_KEYS = ['Browser', 'Gerätetyp', 'Home-Bildschirm-App', 'Bildschirm (screen)', 'devicePixelRatio', 'Adapter vendor', 'Adapter architecture', 'Bildtakt Deutung'];
+  function mailText() {
+    var secs = sections(), all = {};
+    secs.forEach(function (s) { s[1].forEach(function (r) { all[r[0]] = r; }); });
+    var main = headLines().concat(['Abschnitt: Zusammenfassung']);
+    rowsResult().forEach(function (r) { main.push(line(r[0], r[1])); });
+    main.push(line('Probe direkt', probeShort(S.direct)));
+    main.push(line('Probe iframe', probeShort(S.frame)));
+    main.push(line('Bildtakt', fpsShort()));
+    MAIL_SUMMARY_KEYS.forEach(function (k) { if (all[k]) main.push(line(k, all[k][1])); });
+    var bulk = [];
+    secs.forEach(function (s) {
+      if (s[0] === 'Ergebnis') return;
+      main.push('Abschnitt: ' + s[0]);
+      s[1].forEach(function (r) {
+        if (MAIL_SUMMARY_KEYS.indexOf(r[0]) >= 0) return;
+        (r[2] ? bulk : main).push(line(r[0], r[1]));
+      });
+    });
+    return main.concat(bulk).join('\n');
+  }
+  function mailSubject() { return 'Aether WebGPU-Check - ' + S.device.type + ' ' + S.device.browser.label; }
+  // Streng kodieren (auch ! ' ( ) *), sonst verlängert der Browser den Link beim Öffnen.
+  function enc(s) { return encodeURIComponent(s).replace(/[!'()*]/g, function (c) { return '%' + c.charCodeAt(0).toString(16).toUpperCase(); }); }
+  function mailtoFor(subject, body) {
+    return 'mailto:' + MAIL_TO + '?subject=' + enc(subject) + '&body=' + enc(body);
+  }
+  // Ganzer Link höchstens MAILTO_MAX Zeichen: von hinten kürzen, Hinweis anhängen.
+  function buildMailto(subject, body) {
+    var url = mailtoFor(subject, body);
+    if (url.length <= MAILTO_MAX) return url;
+    var cps = Array.from(body);
+    var lo = 0, hi = cps.length - 1, best = -1;
+    var withCut = function (n) { return mailtoFor(subject, cps.slice(0, n).join('').replace(/\s+$/, '') + '\n\n' + CUT_NOTE); };
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (withCut(mid).length <= MAILTO_MAX) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    if (best >= 0) return withCut(best);
+    return mailtoFor(Array.from(subject).slice(0, 60).join(''), CUT_NOTE);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Anzeige
+  // ---------------------------------------------------------------------------
+  function fillList(dl, rows) {
+    dl.textContent = '';
+    rows.forEach(function (r) {
+      var row = el('div', 'kv-row');
+      row.appendChild(el('dt', null, r[0]));
+      var dd = el('dd', null, r[1]);
+      if (/^Fehler/.test(r[1])) dd.className = 'v-err';
+      row.appendChild(dd);
+      dl.appendChild(row);
+    });
+  }
+  function setCheck(id, v) {
+    var li = $(id);
+    li.setAttribute('data-state', v.state);
+    li.querySelector('.ic').textContent = v.state === 'ok' ? '✓' : v.state === 'teil' ? '!' : v.state === 'nein' ? '✗' : '…';
+    li.querySelector('.detail').textContent = v.state === 'läuft' ? 'läuft …' : v.detail;
+  }
+
+  function drawChart(canvas, deltas) {
+    var w = Math.max(100, canvas.clientWidth || 300), h = 90;
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    var g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    var maxMs = 50;
+    deltas.forEach(function (d) { if (d > maxMs) maxMs = Math.min(100, d); });
+    var n = deltas.length || 1, bw = w / n;
+    deltas.forEach(function (d, i) {
+      var bh = Math.max(1, Math.min(d, maxMs) / maxMs * (h - 4));
+      g.fillStyle = d > 33.4 ? '#f87171' : d > 20 ? '#fbbf24' : '#7c9cff';
+      g.fillRect(i * bw, h - bh, Math.max(1, bw - (bw > 3 ? 1 : 0)), bh);
+    });
+    var y = h - 33.4 / maxMs * (h - 4);
+    g.strokeStyle = '#e6e9f0'; g.setLineDash([4, 3]); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#e6e9f0'; g.font = '11px -apple-system, system-ui, sans-serif';
+    g.fillText('33,4 ms', 4, Math.max(11, y - 3));
+  }
+
+  function renderFps() {
+    var host = $('fpsStages');
+    if (!host.firstChild) {
+      STAGES.forEach(function (st) {
+        var box = el('div', 'fps-stage');
+        box.id = 'fps-' + st.id;
+        box.appendChild(el('h3', null, st.title));
+        var status = el('p', 'status'); status.id = 'fpsStatus-' + st.id; box.appendChild(status);
+        if (st.trigger === 'gamepad') { var hint = el('p', 'hint', 'Controller verbinden und eine Taste drücken (Taste wird im iframe über die Gamepad-API erkannt).'); hint.id = 'fpsHint-c'; hint.hidden = true; box.appendChild(hint); }
+        if (st.trigger === 'tap') { var h2 = el('p', 'hint', 'Jetzt einmal in die Fläche „Hier einmal antippen“ im iframe oben tippen.'); h2.id = 'fpsHint-d'; h2.hidden = true; box.appendChild(h2); }
+        var row = el('div', 'row');
+        var btn = el('button', 'btn', 'Stufe ' + st.id + ' starten'); btn.type = 'button'; btn.id = 'fpsBtn-' + st.id;
+        btn.addEventListener('click', function () { startStage(st); });
+        row.appendChild(btn);
+        if (st.optional) {
+          var sk = el('button', 'btn', 'Überspringen'); sk.type = 'button'; sk.id = 'fpsSkip-' + st.id;
+          sk.addEventListener('click', function () { skipStage(st); });
+          row.appendChild(sk);
+        }
+        box.appendChild(row);
+        var dl = el('dl', 'kv'); dl.id = 'fpsList-' + st.id; dl.style.marginTop = '8px'; box.appendChild(dl);
+        var cv = el('canvas', 'chart'); cv.id = 'fpsChart-' + st.id; cv.hidden = true; cv.setAttribute('aria-label', 'Frame-Zeiten Stufe ' + st.id); box.appendChild(cv);
+        host.appendChild(box);
+      });
+    }
+    var ready = S.direct && S.frame;
+    STAGES.forEach(function (st, i) {
+      var f = S.fps[st.id];
+      var btn = $('fpsBtn-' + st.id);
+      btn.disabled = !ready || S.fpsBusy || i !== S.fpsNext;
+      var skip = $('fpsSkip-' + st.id);
+      if (skip) skip.disabled = !ready || i !== S.fpsNext || (S.fpsBusy && f.status !== 'wartet auf Controller-Taste');
+      $('fps-' + st.id).setAttribute('data-status', f.status);
+      $('fpsStatus-' + st.id).textContent = 'Status: ' + f.status + (f.status === 'offen' && !ready ? ' (Probe läuft noch)' : '');
+      if (st.id === 'c') $('fpsHint-c').hidden = f.status !== 'wartet auf Controller-Taste';
+      if (st.id === 'd') $('fpsHint-d').hidden = f.status !== 'wartet auf Antippen';
+      var dl = $('fpsList-' + st.id), cv = $('fpsChart-' + st.id);
+      if (f.result && f.result.stats) {
+        var s = f.result.stats;
+        fillList(dl, [
+          ['Grafik-API', f.result.api],
+          ['Frames', String(s.frames)],
+          ['mittlere fps', fmt(s.meanFps, 1)],
+          ['Median Frame-Zeit', fmt(s.medianMs, 1) + ' ms'],
+          ['1 %-Tief', fmt(s.low1Fps, 1) + ' fps'],
+          ['längster Frame', fmt(s.maxMs, 1) + ' ms'],
+          ['Frames > 20 ms', String(s.over20)],
+          ['Frames > 33,4 ms', String(s.over33)],
+          ['erkannte Obergrenze', '≈ ' + s.cap + ' fps']
+        ].concat(f.result.how ? [['Start', f.result.how]] : []).concat(typeof f.result.interactedBefore === 'boolean' ? [['iframe vorher berührt', yn(f.result.interactedBefore)]] : []).concat(f.result.note ? [['Hinweis', f.result.note]] : []));
+        cv.hidden = false;
+        drawChart(cv, f.result.deltas);
+      } else if (f.result) {
+        fillList(dl, [['Fehler', f.result.error || 'keine Frames']]);
+        cv.hidden = true;
+      } else { dl.textContent = ''; cv.hidden = true; }
+    });
+    var ip = $('fpsInterp');
+    ip.textContent = '';
+    interpretation().forEach(function (l) { ip.appendChild(el('p', null, l)); });
+  }
+
+  function render() {
+    if (!S || !S.device) return;
+    setCheck('chkDirect', probeVerdict(S.direct));
+    setCheck('chkFrame', probeVerdict(S.frame));
+    setCheck('chkGl2', glVerdict());
+    $('gfxPath').textContent = graphicsPath() || 'wird geprüft …';
+    fillList($('listDevice'), rowsDevice());
+    var wr = rowsWebgpu();
+    fillList($('listWebgpu'), wr.filter(function (r) { return !/^(Features \(|Limit )/.test(r[0]); }));
+    var feats = $('gpuFeatures');
+    feats.textContent = '';
+    var a = S.gpu && S.gpu.adapter;
+    if (a && a.features.length) a.features.forEach(function (f) { feats.appendChild(el('span', 'chip', f)); });
+    else feats.appendChild(el('span', 'muted small', S.gpu ? NV : 'läuft …'));
+    if (a && Object.keys(a.limits).length) fillList($('gpuLimits'), Object.keys(a.limits).sort().map(function (k) { return [k, String(a.limits[k])]; }));
+    else fillList($('gpuLimits'), [['Limits', S.gpu ? NV : 'läuft …']]);
+    fillList($('listWebgl'), rowsWebgl());
+    var tb = $('probeBody');
+    tb.textContent = '';
+    probeTable().forEach(function (r) {
+      var tr = el('tr');
+      tr.appendChild(el('td', null, r.name));
+      var td1 = el('td', r.d.cls, r.d.text), td2 = el('td', r.f.cls, r.f.text);
+      tr.appendChild(td1); tr.appendChild(td2);
+      tb.appendChild(tr);
+    });
+    renderFps();
+    fillList($('listMore'), rowsMore());
+    $('resultText').textContent = buildText();
+  }
+
+  // ---------------------------------------------------------------------------
+  // iframe und Bildtakt-Stufen
+  // ---------------------------------------------------------------------------
+  function frameDocument() {
+    return '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>WebGPU-Probe</title></head><body>' +
+      $('wgcFrameBody').textContent +
+      '<script>' + $('wgcShared').textContent + '<\/script>' +
+      '<script>' + $('wgcFrameScript').textContent + '<\/script></body></html>';
+  }
+  function createFrame() {
+    if (frameEl) frameEl.remove();
+    var f = document.createElement('iframe');
+    f.setAttribute('sandbox', FRAME_ATTRS.sandbox);
+    f.setAttribute('allow', FRAME_ATTRS.allow);
+    f.setAttribute('referrerpolicy', FRAME_ATTRS.referrerpolicy);
+    f.setAttribute('title', 'WebGPU-Probe im Dashboard-iframe');
+    f.id = 'probeFrame';
+    f.srcdoc = frameDocument();
+    frameEl = f;
+    $('frameHost').appendChild(f);
+  }
+
+  window.addEventListener('message', function (e) {
+    if (!frameEl || e.source !== frameEl.contentWindow || !e.data || typeof e.data.type !== 'string') return;
+    var d = e.data;
+    if (d.type === 'wgc:probe') { S.frame = d.result || { error: 'leere Antwort', steps: [] }; render(); return; }
+    var st = d.stage && S.fps[d.stage];
+    if (!st) return;
+    if (d.type === 'wgc:fps-state') {
+      if (d.state === 'waiting') st.status = d.stage === 'c' ? 'wartet auf Controller-Taste' : 'wartet auf Antippen';
+      else if (d.state === 'running') st.status = 'misst …';
+      else if (d.state === 'stalled') st.status = 'misst … (keine Frames – iframe sichtbar?)';
+      renderFps();
+      return;
+    }
+    if (d.type === 'wgc:fps-result') finishStage(d.stage, d.result);
+  });
+
+  function finishStage(id, result) {
+    var st = S.fps[id];
+    st.result = result;
+    st.status = result && result.stats ? 'fertig' : 'Fehler';
+    S.fpsBusy = false;
+    S.fpsNext = STAGES.findIndex(function (s) { return s.id === id; }) + 1;
+    render();
+  }
+  function startStage(st) {
+    if (S.fpsBusy) return;
+    var my = S.run;
+    S.fpsBusy = true;
+    if (st.where === 'direkt') {
+      S.fps.a.status = 'misst …';
+      renderFps();
+      WGC.runScene($('directStage'), FPS_SECONDS, function (s) {
+        if (s === 'stalled' && S.run === my) { S.fps.a.status = 'misst … (keine Frames)'; renderFps(); }
+      }).then(function (res) { if (S.run === my) finishStage('a', res); });
+      return;
+    }
+    S.fps[st.id].status = 'startet …';
+    renderFps();
+    try { frameEl.scrollIntoView({ block: 'nearest' }); } catch (e) { /* egal */ }
+    frameEl.contentWindow.postMessage({ type: 'wgc:fps', stage: st.id, trigger: st.trigger }, '*');
+  }
+  function skipStage(st) {
+    if (S.fpsBusy) frameEl.contentWindow.postMessage({ type: 'wgc:cancel' }, '*');
+    S.fps[st.id].status = 'übersprungen';
+    S.fpsBusy = false;
+    S.fpsNext = STAGES.indexOf(st) + 1;
+    render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ablauf
+  // ---------------------------------------------------------------------------
+  async function runAll() {
+    if (keepDevice) { keepDevice.__expected = true; try { keepDevice.destroy(); } catch (e) { /* egal */ } keepDevice = null; }
+    S = freshState();
+    var my = S;
+    $('directStage').textContent = '';
+    $('copyStatus').textContent = '';
+    S.device = collectDevice();
+    S.more = collectMore();
+    render();
+    createFrame();
+    collectStorage().then(function (r) { if (S === my) { S.storage = r; render(); } });
+    var gpu = await collectGpu(my);
+    if (S !== my) return;
+    S.gpu = gpu;
+    S.gl = collectWebgl();
+    render();
+    var direct;
+    $('directProbe').textContent = '';
+    try { direct = await WGC.runProbe($('directProbe')); } catch (e) { direct = { error: WGC.msg(e), steps: [] }; }
+    if (S !== my) return;
+    S.direct = direct;
+    render();
+  }
+
+  var resizeTimer = null;
+  function refreshDevice() {
+    if (!S) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { S.device = collectDevice(); render(); }, 150);
+  }
+  window.addEventListener('resize', refreshDevice);
+  window.addEventListener('orientationchange', refreshDevice);
+  window.addEventListener('gamepadconnected', refreshDevice);
+  window.addEventListener('gamepaddisconnected', refreshDevice);
+
+  $('rerunBtn').addEventListener('click', function () { runAll(); });
+
+  function setCopy(t) { $('copyStatus').textContent = t; }
+  function selectResult() {
+    var pre = $('resultText');
+    var sel = window.getSelection();
+    var range = document.createRange();
+    range.selectNodeContents(pre);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return sel;
+  }
+  function copyFallback() {
+    var ok = false;
+    try { selectResult(); ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (ok) { window.getSelection().removeAllRanges(); setCopy('Kopiert (Ersatzweg).'); return; }
+    selectResult();
+    $('resultText').scrollIntoView({ block: 'nearest' });
+    setCopy('Kopieren nicht möglich – der Text unten ist markiert, bitte selbst kopieren.');
+  }
+  $('copyBtn').addEventListener('click', function () {
+    var text = buildText();
+    $('resultText').textContent = text;
+    var p = null;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) p = navigator.clipboard.writeText(text); } catch (e) { p = null; }
+    if (!p) { copyFallback(); return; }
+    p.then(function () { setCopy('Kopiert.'); }, copyFallback);
+  });
+  $('mailBtn').addEventListener('click', function () {
+    window.location.href = buildMailto(mailSubject(), mailText());
+  });
+
+  // Für die automatischen Tests (liest nur, speichert nichts).
+  window.__aetherCheck = {
+    parseUA: parseUA,
+    deviceType: deviceType,
+    text: buildText,
+    mailto: function () { return buildMailto(mailSubject(), mailText()); },
+    frameAttrs: function () { return JSON.parse(JSON.stringify(FRAME_ATTRS)); },
+    ready: function () { return !!(S && S.direct && S.frame && S.gpu && S.gl && S.storage); },
+    state: function () { return S; }
+  };
+
+  runAll();
+})();
+</script>
+</body>
+</html>

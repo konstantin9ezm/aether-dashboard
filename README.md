@@ -214,6 +214,48 @@ Rate-Limit (mit Uhrzeit), keine Verbindung, fehlende `ROADMAP.md`, fehlenden Wor
 - `detail` (z. B. Bibliothek) und `gruppe` (Unterzeile innerhalb einer Schicht) sind optional.
 - Felder wie `$hinweis` werden ignoriert. Nach dem Merge auf `main` ist die Änderung live.
 
+## WebGPU-Check
+
+Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
+**https://konstantin9ezm.github.io/aether-dashboard/webgpu-check.html**. Ein unauffälliger Link „WebGPU-Check“
+steht unten auf dem Token-Bildschirm und in der Build-Ansicht des Dashboards. Die Seite braucht kein Token, liest
+keins und ruft api.github.com nie auf; alles steckt in der einen Datei (keine externen Skripte oder Schriften).
+Sie ist absichtlich nicht Teil der Offline-App-Hülle in `sw.js`.
+
+Was gemessen wird (von oben nach unten):
+
+- **Ergebnis** – WebGPU direkt, WebGPU im Dashboard-iframe, WebGL 2 und der daraus folgende Grafikweg fürs Spiel
+  (WebGPU / WebGL-Rückfall / keiner; maßgeblich ist der iframe, weil das Spiel dort läuft).
+- **Gerät** – kompletter User-Agent, Browser und Version (Safari aus „Version/…“, nicht aus dem seit iOS 26
+  eingefrorenen OS-Feld; Chrome/Firefox auf iOS; `userAgentData` bei Chromium), Gerätetyp (iPad auch, wenn es sich
+  als Mac meldet; das genaue Modell ist im Browser nicht ermittelbar), Home-Bildschirm-App, Bildschirm- und
+  Fenstergrößen, Ausrichtung, devicePixelRatio, sichere Ränder, Touch/Zeiger/Hover, Controller (erscheinen erst nach
+  einem Tastendruck).
+- **Grafik (WebGPU)** – Canvas-Format, WGSL-Sprachfeatures, `requestAdapter`/`requestDevice` mit Zeit,
+  Adapter-Infos, alle Features und alle Limits, `device.lost` und `uncapturederror`.
+- **Grafik (WebGL 2)** – Renderer/Vendor (über `WEBGL_debug_renderer_info`, falls verfügbar), `MAX_TEXTURE_SIZE`,
+  `MAX_SAMPLES`, Anzahl Erweiterungen, `EXT_color_buffer_float`.
+- **Probe** – dieselbe Mini-Probe direkt und in einem iframe mit genau den Attributen des Spiel-iframes
+  (`srcdoc`, `sandbox="allow-scripts allow-pointer-lock"`, `allow="gamepad *; fullscreen *; autoplay *"`,
+  `referrerpolicy="no-referrer"`): Canvas konfigurieren, 5 Frames Löschen + Dreieck, Pixelprüfung, Compute-Shader
+  mit `mapAsync`, `device.destroy()` → `device.lost` „destroyed“, dazu WebGL 2 Löschen + `readPixels`. Der iframe
+  meldet per `postMessage`; die Seite nimmt nur Nachrichten dieses iframes an.
+- **Bildtakt** – je 5 s mit `requestAnimationFrame` während einer Testszene (WebGPU, sonst WebGL 2): Frames,
+  mittlere fps, Median, 1 %-Tief, längster Frame, Frames über 20 ms und 33,4 ms, erkannte Obergrenze, Diagramm.
+  Geführt in Stufen: a) direkt, b) im iframe ohne Interaktion, c) im iframe nach einer Controller-Taste (optional),
+  d) im iframe nach einmal Antippen. Dazu eine Deutung (Safari drosselt fremde iframes bis zur Interaktion auf
+  30 fps; im Stromsparmodus drosselt iOS überall auf 30 fps).
+- **Weitere Fähigkeiten** – sicherer Kontext, Cross-Origin-Isolation, SharedArrayBuffer, Kerne, Gerätespeicher,
+  reduzierte Bewegung, Speicher-Kontingent, WebAssembly (SIMD, JSPI, Threads).
+
+Das komplette Ergebnis steht unten als Text im Format `AETHER-CHECK v1` (eine Angabe pro Zeile, mit deutscher
+Ortszeit und dem Commit des Dashboards; den setzt der Pages-Workflow ein, lokal „nicht bekannt“).
+„Ergebnis kopieren“ legt es in die Zwischenablage, „Per Mail senden“ öffnet eine Mail an feedback.aether@gmail.com
+(höchstens 2000 Zeichen, Zusammenfassung zuerst, Features/Limits zuletzt, bei Kürzung mit Hinweis).
+
+**Datenschutz:** Nichts wird automatisch gesendet oder gespeichert (kein localStorage, keine Cookies). Was weitergeht,
+entscheidest du selbst über Kopieren oder Mail.
+
 ## Entwicklung & Tests
 
 ```sh
@@ -240,6 +282,13 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   (Nachweis über die Chromium-Meldung „Launched external handler for 'mailto:…'“), Kürzen auf 2000 Zeichen,
   Zwischenablage (ausgelesen in einem zweiten Kontext), alle Wege zum Schließen samt Fokus zurück ins Spiel, Layout
   auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop.
+- `tests/webgpu-check.test.js` – WebGPU-Check im **vollen Chromium** mit WebGPU aus SwiftShader
+  (`--enable-unsafe-webgpu --use-angle=swiftshader --enable-features=Vulkan --use-vulkan=swiftshader`): lädt ohne
+  Token und ohne Anfrage an api.github.com, alle Abschnitte gefüllt, Probe direkt und im iframe grün, iframe-Attribute
+  gleich denen aus `startGame()`, Bildtakt-Stufen a/b/d (c übersprungen), Ergebnistext mit Pflicht-Schlüsseln,
+  Kopieren, mailto ≤ 2000 Zeichen; Rückfall ohne die Flags („kein Adapter“, WebGL-Rückfall) und ohne
+  `navigator.gpu` („WebGPU fehlt“); Layout auf iPhone 16 Pro hoch/quer und iPad quer. Gegenproben (müssen rot
+  werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
@@ -249,6 +298,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 ## Deployment
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
-`manifest.json`, `engine-map.json`, `icons/`) auf GitHub Pages
+`manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.
