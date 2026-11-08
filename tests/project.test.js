@@ -337,11 +337,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=geplant', 'Profiler=geplant']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=geplant']);
     assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig']);
-    assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'Vulkan-RHI=geplant']);
-    assert.match(await text(page, '#engineBody'), /Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui.*Tracy.*double-Positionen · fertig.*60 Hz/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 6.*Vorschau: 2.*geplant: 8/);
+    assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
+    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*double-Positionen · fertig.*60 Hz/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 8.*Vorschau: 2.*geplant: 8/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
@@ -486,7 +486,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
     assert.equal(await page.getAttribute(`#${id} .msg`, 'data-kind'), 'notoken');
   }
   assert.equal(mock.requests.length, 0, 'ohne Token keine API-Aufrufe');
-  assert.equal((await page.$$('#engineBody .chip')).length, 16, 'Engine-Karte kommt ohne Token aus');
+  assert.equal((await page.$$('#engineBody .chip')).length, 18, 'Engine-Karte kommt ohne Token aus');
   await page.click('#ciBody button:has-text("Token eingeben")');
   await page.waitForSelector('#tokenView:not([hidden])');
   await page.fill('#tokenInput', TOKEN);
@@ -524,7 +524,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
   for (const id of ['ciBody', 'timelineBody', 'roadmapBody']) {
     assert.match(await text(page, `#${id} .msg`), /Rate-Limit erreicht.*Wieder möglich ab \d\d:\d\d Uhr/);
   }
-  assert.equal((await page.$$('#engineBody .chip')).length, 16);
+  assert.equal((await page.$$('#engineBody .chip')).length, 18);
 
   // Offline
   mock.mode = 'offline';
