@@ -234,6 +234,51 @@
   }
   #gameToast.error { border-color: #5b2630; color: #fecaca; }
 
+  /* Feedback-Dialog (über dem laufenden Spiel; das X bleibt darüber erreichbar) */
+  #feedback {
+    position: absolute; inset: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(8px, var(--safe-t)) max(8px, var(--safe-r)) max(8px, var(--safe-b)) max(8px, var(--safe-l));
+    background: rgba(0,0,0,.55);
+    touch-action: none;
+  }
+  #feedback[hidden] { display: none; }
+  #feedback .fb-box {
+    width: 100%; max-width: 560px; max-height: 100%;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 14px 16px; border-radius: 16px;
+    background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    color: var(--text); overflow: hidden;
+  }
+  #feedback h2 { margin: 0; font-size: 18px; }
+  #feedback .fb-to { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  #feedback .fb-to b { color: var(--text); font-weight: 600; -webkit-user-select: text; user-select: text; }
+  #feedback textarea {
+    flex: 1 1 auto; min-height: 56px; height: 160px; resize: none; width: 100%;
+    padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain;
+    -webkit-user-select: text; user-select: text;
+  }
+  #feedback .fb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  #feedback .fb-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 8px 14px; color: var(--text); font: inherit; font-weight: 600; }
+  #feedback .fb-actions .btn.primary { color: #0b0e14; }
+  #feedback .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #feedback .fb-hint { margin: 0; font-size: 13px; color: var(--muted); }
+  #feedback .fb-status { margin: 0; font-size: 13px; min-height: 1.2em; color: var(--ok); }
+  #feedback .fb-status.warn { color: var(--warn, #fbbf24); }
+  @media (orientation: portrait) and (max-width: 600px) {
+    #feedback { padding-top: max(68px, calc(60px + var(--safe-t))); }
+  }
+  @media (max-height: 460px) {
+    /* Quer auf dem Handy: seitlich Platz für die Knöpfe oben links (X, Vollbild). */
+    #feedback { padding-left: calc(124px + var(--safe-l)); padding-right: calc(124px + var(--safe-r)); }
+    #feedback .fb-box { padding: 10px 14px; gap: 6px; }
+    #feedback h2 { font-size: 16px; }
+  }
+
   html.playing, html.playing body {
     background: #000;
     overflow: hidden;
@@ -486,6 +531,20 @@
     </button>
   </div>
   <div id="gameToast" hidden></div>
+  <div id="feedback" hidden>
+    <div class="fb-box" role="dialog" aria-modal="true" aria-labelledby="fbTitle">
+      <h2 id="fbTitle">Feedback senden</h2>
+      <p class="fb-to">An: <b id="fbTo"></b></p>
+      <textarea id="fbText" readonly tabindex="-1" aria-label="Text des Feedbacks" spellcheck="false"></textarea>
+      <div class="fb-actions" id="fbActions">
+        <button class="btn primary" id="fbMail" type="button">Mail öffnen</button>
+        <button class="btn" id="fbCopy" type="button">Text kopieren</button>
+        <button class="btn" id="fbClose" type="button">Schließen</button>
+      </div>
+      <p class="fb-hint">Keine Mail-App? Text kopieren und an die Adresse oben schicken.</p>
+      <p class="fb-status" id="fbStatus" aria-live="polite"></p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -500,6 +559,10 @@
   var REF = 'web-build';
   var API = 'https://api.github.com';
   var TOKEN_KEY = 'aether.githubToken';
+  // Spiel-Einstellungen, die das Spiel (opaker Ursprung, kein localStorage) per
+  // postMessage stellvertretend hier ablegt. Bewusst getrennt vom Token.
+  var GAME_SETTINGS_KEY = 'aether.gameSettings';
+  var FEEDBACK_TO = 'feedback.aether@gmail.com';
   var CACHE_NAME = 'aether-builds-v1';
   var SHELL_CACHE_NAME = 'aether-shell-v1'; // gehört dem Service Worker (sw.js)
   var CACHE_INDEX_KEY = 'aether.cachedBuilds'; // welche Builds vollständig im Cache liegen (mit Dateiliste)
@@ -1055,6 +1118,10 @@
     boot.textContent = '(' + iframeBoot.toString() + ')();';
     var head = doc.head || doc.documentElement;
     head.insertBefore(boot, head.firstChild);
+    // Läuft vor dem Boot-Skript und damit vor allen Spielskripten.
+    var host = doc.createElement('script');
+    host.textContent = hostScript();
+    head.insertBefore(host, head.firstChild);
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
   }
 
@@ -1063,6 +1130,150 @@
     if (!cands.length) cands = info.js;
     var stems = info.wasm.map(function (w) { return w.name.replace(/\.wasm$/i, ''); });
     return cands.filter(function (f) { return stems.indexOf(f.name.replace(/\.m?js$/i, '')) >= 0; })[0] || cands[0];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spiel-Einstellungen (stellvertretend für das Spiel gespeichert)
+  // ---------------------------------------------------------------------------
+  var SETTING_KEY_RE = /^aether\.[A-Za-z0-9_.-]{1,64}$/;
+  var MAX_SETTINGS = 64;
+  var MAX_SETTING_LEN = 1024;
+  var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+
+  function validSettingKey(k) { return typeof k === 'string' && SETTING_KEY_RE.test(k); }
+  function validSettingValue(v) { return typeof v === 'string' && v.length <= MAX_SETTING_LEN; }
+
+  // Liest den Speicher und lässt nur gültige Einträge durch (kaputtes JSON = leer).
+  function readGameSettings() {
+    var raw = null, out = {}, n = 0;
+    try { raw = JSON.parse(localStorage.getItem(GAME_SETTINGS_KEY)); } catch (e) { raw = null; }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    Object.keys(raw).forEach(function (k) {
+      if (n < MAX_SETTINGS && validSettingKey(k) && validSettingValue(raw[k])) { out[k] = raw[k]; n++; }
+    });
+    return out;
+  }
+  function writeGameSettings(obj) {
+    try { localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(obj)); } catch (e) { /* Speicher voll o. ä. */ }
+  }
+  function storeGameSetting(msg) {
+    var key = msg.key, value = msg.value;
+    if (!validSettingKey(key)) return;
+    if (value !== null && !validSettingValue(value)) return;
+    var cur = readGameSettings();
+    if (value === null) {
+      if (!hasOwn(cur, key)) return;
+      delete cur[key];
+    } else {
+      if (!hasOwn(cur, key) && Object.keys(cur).length >= MAX_SETTINGS) return;
+      cur[key] = value;
+    }
+    writeGameSettings(cur);
+  }
+  // JSON als JavaScript-Literal im Skript: jedes "<" maskieren, damit ein Wert
+  // mit schließendem Skript-Tag oder HTML-Kommentar das Skript nicht beenden kann.
+  function scriptJson(v) {
+    return JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  }
+  function hostScript() {
+    return 'window.AETHER_HOST = ' + scriptJson({ version: 1, settings: true, feedback: true }) + ';\n' +
+      'window.AETHER_HOST_SETTINGS = ' + scriptJson(readGameSettings()) + ';';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Feedback-Dialog (das Spiel darf in der Sandbox weder mailto noch Zwischenablage)
+  // ---------------------------------------------------------------------------
+  var MAILTO_MAX = 2000;
+  var CUT_NOTE = "(gekürzt – vollständig über 'Text kopieren')";
+  var feedback = null; // { subject, body } solange der Dialog offen ist
+
+  // Einzelne UTF-16-Hälften ersetzen (encodeURIComponent würde sonst werfen)
+  // und nach Codepoints kürzen, ohne ein Zeichen zu zerteilen.
+  function wellFormed(s) {
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xFC00) === 0xDC00) { out += s[i] + s[i + 1]; i++; }
+      else if (c >= 0xD800 && c <= 0xDFFF) out += '\uFFFD';
+      else out += s[i];
+    }
+    return out;
+  }
+  function clip(s, max) {
+    if (s.length <= max) return s;
+    s = s.slice(0, max);
+    return /[\uD800-\uDBFF]$/.test(s) ? s.slice(0, -1) : s;
+  }
+  function mailtoFor(subject, body) {
+    return 'mailto:' + FEEDBACK_TO + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  }
+  // Ganzer Link höchstens MAILTO_MAX Zeichen: Text von hinten kürzen, Hinweis anhängen.
+  function buildMailto(subject, body) {
+    var url = mailtoFor(subject, body);
+    if (url.length <= MAILTO_MAX) return url;
+    var cps = Array.from(body);
+    var lo = 0, hi = cps.length - 1, best = -1;
+    var withCut = function (n) { return mailtoFor(subject, cps.slice(0, n).join('').replace(/\s+$/, '') + '\n\n' + CUT_NOTE); };
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (withCut(mid).length <= MAILTO_MAX) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    if (best >= 0) return withCut(best);
+    // Selbst der Betreff ist zu lang (nur bei sehr vielen Sonderzeichen möglich).
+    var sc = Array.from(subject);
+    while (sc.length && mailtoFor(sc.join(''), CUT_NOTE).length > MAILTO_MAX) sc.pop();
+    return mailtoFor(sc.join(''), CUT_NOTE);
+  }
+  function feedbackText() { return 'Betreff: ' + feedback.subject + '\n\n' + feedback.body; }
+  function postToGame(msg) {
+    try { if (game && game.iframe.contentWindow) game.iframe.contentWindow.postMessage(msg, '*'); } catch (e) { /* egal */ }
+  }
+  function setFbStatus(text, warn) {
+    var st = $('fbStatus');
+    st.textContent = text;
+    st.classList.toggle('warn', !!warn);
+  }
+  function openFeedback(msg) {
+    if (typeof msg.subject !== 'string' || typeof msg.body !== 'string') return;
+    feedback = { subject: clip(wellFormed(msg.subject), 200), body: clip(wellFormed(msg.body), 4000) };
+    $('fbTo').textContent = FEEDBACK_TO;
+    $('fbText').value = feedbackText();
+    $('fbText').scrollTop = 0;
+    setFbStatus('', false);
+    $('feedback').hidden = false;
+    $('fbMail').focus();
+    postToGame({ type: 'aether:feedback-state', open: true });
+  }
+  function closeFeedback(refocus) {
+    if (!feedback) return;
+    feedback = null;
+    $('feedback').hidden = true;
+    $('fbText').value = '';
+    setFbStatus('', false);
+    postToGame({ type: 'aether:feedback-state', open: false });
+    if (refocus && game) {
+      try { game.iframe.focus(); game.iframe.contentWindow.focus(); } catch (e) { /* egal */ }
+    }
+  }
+  function copyFallback(text) {
+    var ok = false;
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;-webkit-user-select:text;user-select:text';
+    $('feedback').appendChild(ta);
+    try { ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    if (ok) {
+      $('fbCopy').focus();
+      setFbStatus('Kopiert', false);
+    } else {
+      var pv = $('fbText');
+      pv.focus();
+      pv.select();
+      try { pv.setSelectionRange(0, pv.value.length); } catch (e) { /* egal */ }
+      setFbStatus('Bitte manuell kopieren', true);
+    }
   }
 
   function startGame(info, contents) {
@@ -1084,6 +1295,10 @@
       if (!game || game !== g || e.source !== iframe.contentWindow || !e.data) return;
       // "Beenden" im Spiel: derselbe Weg wie das Schließen-X (ohne Rückfrage).
       if (e.data.type === 'aether:quit') { stopGame(); showView('builds'); return; }
+      // Schnittstelle Spiel ↔ Dashboard, Version 1 (siehe README).
+      if (e.data.type === 'aether:setting') { storeGameSetting(e.data); return; }
+      if (e.data.type === 'aether:feedback') { openFeedback(e.data); return; }
+      if (e.data.type === 'aether:feedback-close') { closeFeedback(true); return; }
       if (typeof e.data.aether !== 'string') return;
       if (e.data.aether === 'boot') {
         clearTimeout(g.bootTimer);
@@ -1120,6 +1335,7 @@
 
   function stopGame(silent) {
     if (!game) return;
+    closeFeedback(false);
     clearTimeout(game.bootTimer);
     window.removeEventListener('message', game.onMsg);
     try { game.iframe.srcdoc = ''; } catch (e) { /* egal */ }
@@ -2153,6 +2369,44 @@
     showView('builds');
   });
   $('game').addEventListener('pointerdown', dimBarSoon, true);
+
+  // Feedback-Dialog: Knöpfe, Tastatur, Antippen außerhalb.
+  // Beide Aktionen laufen synchron im Click-Handler (Nutzeraktivierung).
+  $('fbMail').addEventListener('click', function () {
+    if (!feedback) return;
+    window.location.href = buildMailto(feedback.subject, feedback.body);
+  });
+  var fbStatusTimer = null;
+  $('fbCopy').addEventListener('click', function () {
+    if (!feedback) return;
+    var text = feedbackText();
+    var done = function () {
+      if (!feedback) return;
+      setFbStatus('Kopiert', false);
+      clearTimeout(fbStatusTimer);
+      fbStatusTimer = setTimeout(function () { if ($('fbStatus').textContent === 'Kopiert') setFbStatus('', false); }, 2500);
+    };
+    var p = null;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) p = navigator.clipboard.writeText(text); } catch (e) { p = null; }
+    if (!p) { copyFallback(text); return; }
+    p.then(done, function () { if (feedback) copyFallback(text); });
+  });
+  $('fbClose').addEventListener('click', function () { closeFeedback(true); });
+  $('feedback').addEventListener('click', function (e) { if (e.target === $('feedback')) closeFeedback(true); });
+  document.addEventListener('keydown', function (e) {
+    if (!feedback) return;
+    if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); closeFeedback(true); return; }
+    var btns = [$('fbMail'), $('fbCopy'), $('fbClose')];
+    var i = btns.indexOf(document.activeElement);
+    var step = 0;
+    if (e.key === 'Tab') step = e.shiftKey ? -1 : 1;
+    else if (i >= 0 && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) step = 1;
+    else if (i >= 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) step = -1;
+    if (!step) return;
+    e.preventDefault();
+    if (i < 0) i = step > 0 ? -1 : 0;
+    btns[(i + step + btns.length) % btns.length].focus();
+  }, true);
   $('gameBar').addEventListener('pointerdown', dimBarSoon);
 
   // Kein Zoomen/Scrollen während des Spiels.
@@ -2160,7 +2414,10 @@
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (n) {
     document.addEventListener(n, function (e) { if (playing()) e.preventDefault(); }, { passive: false });
   });
-  document.addEventListener('touchmove', function (e) { if (playing()) e.preventDefault(); }, { passive: false });
+  document.addEventListener('touchmove', function (e) {
+    // Ausnahme: Die Text-Vorschau im Feedback-Dialog muss innen scrollen können.
+    if (playing() && !(e.target && e.target.id === 'fbText')) e.preventDefault();
+  }, { passive: false });
   var lastTouchEnd = 0;
   document.addEventListener('touchend', function (e) {
     var now = Date.now();
