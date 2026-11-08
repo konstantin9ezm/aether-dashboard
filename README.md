@@ -42,7 +42,76 @@ Das Token wird nur im `localStorage` dieses Geräts gespeichert und ausschließl
   eine Nachricht, deren `event.source` das Spiel-iframe ist und deren `data.type` genau `"aether:quit"` lautet
   (der Ursprung des iframes ist `"null"`, deshalb die Prüfung über `event.source`). Alles andere wird ignoriert.
 
-Hinweis: Weil das Spiel isoliert läuft, steht ihm kein eigener `localStorage`/IndexedDB zur Verfügung.
+Hinweis: Weil das Spiel isoliert läuft, steht ihm kein eigener `localStorage`/IndexedDB zur Verfügung. Mail-Links
+und die Zwischenablage gehen dort ebenfalls nicht. Dafür gibt es die Schnittstelle unten.
+
+## Schnittstelle Spiel ↔ Dashboard (Version 1)
+
+**Die Sandbox bleibt bewusst unverändert** (`sandbox="allow-scripts allow-pointer-lock"`, kein `allow-same-origin`).
+Mit `allow-same-origin` hätte das Spiel denselben Ursprung wie das Dashboard und könnte das GitHub-Token lesen.
+Stattdessen bittet das Spiel das Dashboard per `postMessage`, Dinge stellvertretend zu erledigen.
+
+Vom Dashboard ins Spiel, beim Start als erstes Skript im `srcdoc` (vor dem Boot-Skript und allen Spielskripten):
+
+```js
+window.AETHER_HOST = { version: 1, settings: true, feedback: true };
+window.AETHER_HOST_SETTINGS = { "<schlüssel>": "<wert>", ... }; // gespeicherte Spiel-Einstellungen, sonst {}
+```
+
+Ein neues Spiel erkennt ein altes Dashboard daran, dass `window.AETHER_HOST` fehlt. Ein altes Spiel sendet die
+Nachrichten nie, dann passiert im Dashboard nichts.
+
+| Richtung | Nachricht | Wirkung |
+|---|---|---|
+| Spiel → Dashboard | `{ type: "aether:setting", key, value }` | Speichert `value` (String) unter `key`; `value: null` löscht den Schlüssel. Keine Antwort. |
+| Spiel → Dashboard | `{ type: "aether:feedback", subject, body }` | Öffnet den Feedback-Dialog. |
+| Spiel → Dashboard | `{ type: "aether:feedback-close" }` | Schließt den Dialog (z. B. Controller-Taste B). |
+| Dashboard → Spiel | `{ type: "aether:feedback-state", open: true \| false }` | Nach dem Öffnen und nach jedem Schließen des Dialogs. |
+
+Spiel → Dashboard per `window.parent.postMessage(nachricht, "*")`, Dashboard → Spiel per
+`iframe.contentWindow.postMessage(nachricht, "*")` (der Ursprung des iframes ist `"null"`).
+
+Regeln:
+
+- Das Dashboard nimmt eine Nachricht nur an, wenn `event.source === iframe.contentWindow` ist und `type` exakt
+  stimmt. Das Spiel prüft bei `aether:feedback-state`, dass `event.source === window.parent` ist.
+- Schlüssel: genau `/^aether\.[A-Za-z0-9_.-]{1,64}$/`. Wert: String mit höchstens 1024 Zeichen oder `null`.
+  Höchstens 64 Schlüssel. Alles andere wird stillschweigend ignoriert.
+- `subject` höchstens 200 Zeichen, `body` höchstens 4000 Zeichen (das Dashboard kürzt längere Texte). Beide
+  müssen Strings sein.
+- Die Empfänger-Adresse ist fest `feedback.aether@gmail.com`. Das Dashboard baut den `mailto:`-Link selbst und
+  übernimmt nie eine URL aus einer Nachricht.
+- Die bestehenden Nachrichten (`{ aether: "boot" | "started" | "error" | "files" }`, `{ type: "aether:quit" }`)
+  bleiben unverändert.
+
+### Einstellungs-Speicher
+
+- Eigener `localStorage`-Schlüssel `aether.gameSettings` (JSON-Objekt Schlüssel → Wert), getrennt vom Token. Jeder
+  Zugriff steht in `try/catch`. Kaputtes JSON oder ein falscher Typ zählt als leeres Objekt, ungültige Einträge
+  werden beim Lesen verworfen.
+- Beim Spielstart wird das Objekt mit `JSON.stringify` serialisiert und jedes `<` als `\u003c` geschrieben.
+  So beendet ein Wert wie `"</script>"` das Skript nicht vorzeitig.
+- „Token löschen“ lässt die Spiel-Einstellungen stehen. Sie enthalten keine Zugangsdaten, sondern nur Vorlieben wie
+  „Boost-Knopf (Touch) anzeigen“. Wer das Token erneuert, soll sie nicht verlieren.
+
+### Feedback-Dialog
+
+- Erscheint über dem laufenden Spiel mit dem Titel „Feedback senden“, der sichtbaren Zeile
+  „An: feedback.aether@gmail.com“ (für Geräte ohne Mail-App) und einer schreibgeschützten, innen scrollenden
+  Vorschau („Betreff: …“, Leerzeile, Text). Der Text wird nur über `.value`/`textContent` gesetzt, nie als HTML.
+- **Mail öffnen** öffnet synchron im Klick
+  `mailto:feedback.aether@gmail.com?subject=<encodeURIComponent>&body=<encodeURIComponent>`. Ist der ganze Link
+  länger als 2000 Zeichen, wird der Text von hinten gekürzt und „(gekürzt – vollständig über 'Text kopieren')“
+  angehängt. Der Dialog bleibt offen.
+- **Text kopieren** schreibt „Betreff: …“, eine Leerzeile und den Text per `navigator.clipboard.writeText` (synchron
+  im Klick). Geht das nicht, folgt `execCommand("copy")`. Scheitert auch das, wird der Text in der Vorschau markiert
+  und „Bitte manuell kopieren“ angezeigt. Bei Erfolg erscheint kurz „Kopiert“.
+- **Schließen** geht über den Knopf, Esc, Antippen außerhalb des Dialogs, `aether:feedback-close` oder das Beenden
+  des Spiels (X mit Rückfrage oder `aether:quit`). Danach meldet das Dashboard `open: false`, und der Fokus geht
+  zurück ins Spiel-iframe.
+- Bedienung: Touch und Maus; Tab/Umschalt+Tab und die Pfeiltasten wechseln zwischen den Knöpfen, Enter/Leertaste
+  lösen aus. Beim Öffnen hat „Mail öffnen“ den Fokus. Den Controller liest das Dashboard nicht; das Spiel schickt
+  bei B `aether:feedback-close`.
 
 ## Offline
 
@@ -164,8 +233,15 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
 - `tests/project.test.js` – Projektansicht (Desktop, iPad Pro 11 hoch und quer, iPhone 13): alle vier Teile,
   Ampelzustände, deutsche Ortszeit bei fremder Gerätezeitzone, Cache, Tippflächen ≥ 44 px, eine `ROADMAP.md` mit
   unerwarteten Zeilen sowie die Fehlerfälle (kein Token, keine Rechte, Rate-Limit, offline, Token abgelehnt,
-  fehlende Dateien, kaputte `engine-map.json`). Mit
-`AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
+  fehlende Dateien, kaputte `engine-map.json`).
+- `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
+  Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
+  64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste
+  (Nachweis über die Chromium-Meldung „Launched external handler for 'mailto:…'“), Kürzen auf 2000 Zeichen,
+  Zwischenablage (ausgelesen in einem zweiten Kontext), alle Wege zum Schließen samt Fokus zurück ins Spiel, Layout
+  auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop.
+
+Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
 
 Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
