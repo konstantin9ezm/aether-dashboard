@@ -262,6 +262,31 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
    (`actions/workflows` → ID per Name, dann `actions/workflows/{id}/runs?branch=main&per_page=1`).
    Grün = erfolgreich, Gelb = läuft/wartet (wird alle 30 s nachgeladen), Rot = fehlgeschlagen/abgebrochen.
    Dazu Zeit in deutscher Ortszeit (`Europe/Berlin`, unabhängig von der Gerätezeitzone), kurzer Hash und Link zum Lauf.
+
+   **CI-Laufzeit** (Zeile unter der Ampel) – immer für den letzten *abgeschlossenen* Lauf „Build“ auf `main`
+   (läuft gerade ein neuerer Lauf, steht dessen Vorgänger mit Lauf-Nr. da: „CI (Lauf #57): …“):
+   `CI: <Gesamtdauer> · <Job › Schritt> <Dauer> / <Limit> min (<Prozent> %)  ▸ Details`, darunter ein schmaler Balken.
+   - *Knappster Schritt*: Für jeden Job des Laufs und jeden Schritt mit eigenem `timeout-minutes` wird
+     Dauer / Limit berechnet; angezeigt wird der höchste Wert. Es gibt keine festen Job- oder Schrittnamen –
+     wird der Browser-Test auf mehrere Jobs aufgeteilt, funktioniert die Anzeige unverändert.
+   - *Farben*: unter 70 % grün, ab 70 % gelb, ab 90 % rot (gerechnet mit dem angezeigten, gerundeten Prozentwert).
+   - *Limits* stammen aus der Workflow-Datei (`.github/workflows/build.yml`, Pfad aus der Workflow-Liste) am Commit
+     des Laufs (`contents/…?ref=<head_sha>`). Ein kleiner eigener Leser holt nur `jobs.<schlüssel>.name`,
+     `timeout-minutes` und `steps[].name` / `timeout-minutes`; Kommentare, Leerzeilen, Einrückung und Blocktexte
+     (`run: |`) stören nicht. Zuordnung API-Job ↔ YAML-Job über `name` oder Schlüssel, auch mit `${{ … }}` im
+     Namen; Matrix-Varianten („e2e (2)“) erben das Limit des Matrix-Jobs. Ohne Zuordnung oder ohne Limit:
+     „Limit unbekannt“ (zählt nicht für den knappsten Schritt). Ohne `timeout-minutes` gilt hier *kein* Standardwert.
+   - *▸ Details* (standardmäßig zu, Zustand wird nicht gespeichert): Balken der letzten 5 abgeschlossenen Läufe
+     (Gesamtdauer `run_started_at` → `updated_at`, grün = erfolgreich, rot = fehlgeschlagen/abgebrochen) mit
+     waagerechter Linie beim höchsten Job-Limit, dazu der Block „Knappster Schritt (letzter Lauf)“ mit Trend
+     gegenüber dem ältesten der 5 Läufe. Damit dafür keine weiteren Jobs abgefragt werden müssen, merkt sich das
+     Dashboard die Dauern gesehener Läufe in `localStorage` (`aether.ciHistory`, höchstens 12 Läufe, ohne Token);
+     ist der älteste Lauf dort nicht bekannt (oder der Eintrag hieß damals anders), entfällt der Trend.
+   - *Zusätzliche API-Anfragen*: 3 pro Laden – `actions/workflows/{id}/runs?branch=main&status=completed&per_page=5`,
+     `actions/runs/{id}/jobs?filter=latest` (nur letzter abgeschlossener Lauf) und die Workflow-Datei. Gleicher
+     60-s-Cache wie die übrige Projektansicht; das automatische Nachladen eines laufenden Builds nutzt den Cache.
+   - *Fehler* (API, Rate-Limit, Datei nicht lesbar): Statt der Zeile steht „CI-Laufzeit nicht verfügbar“, die Ampel und
+     die anderen Teile bleiben unberührt. Offline zeigt die Projektansicht wie bisher nur ihren Hinweis.
 2. **Zeitleiste** – gemergte PRs (`pulls?state=closed&base=main`) und Commits auf `main` (`commits?sha=main`),
    neueste zuerst, mit Titel, PR-Nummer, Datum/Uhrzeit und kurzem Hash. Merge- und Squash-Commits erscheinen als
    PR-Eintrag; Commits, die nur im PR-Branch lagen, werden ausgeblendet. Antippen öffnet den PR (bzw. Commit) auf GitHub.
@@ -366,7 +391,10 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
 - `tests/project.test.js` – Projektansicht (Desktop, iPad Pro 11 hoch und quer, iPhone 13): alle vier Teile,
   Ampelzustände, deutsche Ortszeit bei fremder Gerätezeitzone, Cache, Tippflächen ≥ 44 px, eine `ROADMAP.md` mit
   unerwarteten Zeilen sowie die Fehlerfälle (kein Token, keine Rechte, Rate-Limit, offline, Token abgelehnt,
-  fehlende Dateien, kaputte `engine-map.json`).
+  fehlende Dateien, kaputte `engine-map.json`). Dazu die CI-Laufzeit: Werte der Zeile, Farben an den Schwellen
+  69/70/89/90 %, knappster Schritt über aufgeteilte Jobs und Matrix-Varianten, `build.yml` mit Kommentaren/CRLF,
+  fehlendes Limit, laufender neuerer Lauf, API-Fehler ohne Fehlerkarte, Details auf/zu, Trend und Layout in
+  402×874, 874×402, 1194×834 und 1280×800.
 - `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
   Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
   64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste
