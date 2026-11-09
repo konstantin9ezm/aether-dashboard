@@ -201,23 +201,29 @@ const padState = (page) => page.evaluate(() => {
 });
 const RING = '3px solid rgb(255, 255, 255)';
 const input = (frame, action) => post(frame, { type: 'aether:dialog-input', action });
-// Nachricht des Spiels ohne jede Nutzeraktivierung: Jedes Playwright-evaluate zählt als Geste (userGesture)
+// Nachrichten des Spiels ohne jede Nutzeraktivierung: Jedes Playwright-evaluate zählt als Geste (userGesture)
 // und aktiviert über das Spiel-iframe auch das Dashboard. Deshalb läuft alles per CDP ohne Geste in einem
-// Schritt: warten, bis die Aktivierung im Dashboard abgelaufen ist, das Spiel über das Test-Relais senden
-// lassen und dann (weiter ohne Geste) auf den erwarteten Status warten. Liefert die Zeit ab dem Senden.
-async function pressNoGesture(cdp, wantStatus) {
-  const msg = { type: 'aether:dialog-input', action: 'press' };
+// Schritt: warten, bis die Aktivierung im Dashboard abgelaufen ist, dann für jeden Schritt das Spiel über das
+// Test-Relais `action` senden lassen und (weiter ohne Geste) auf den Status `want` warten. Liefert je Schritt
+// die Zeit ab dem Senden.
+async function padNoGesture(cdp, steps) {
   const r = await cdp.send('Runtime.evaluate', {
     expression: `new Promise((resolve) => {
+      const steps = ${JSON.stringify(steps)};
       const st = () => document.getElementById('fbStatus').textContent;
+      const out = [];
       const idle = () => {
         if (navigator.userActivation.isActive) return setTimeout(idle, 50);
+        next(0);
+      };
+      const next = (i) => {
+        if (i === steps.length) return resolve({ out });
         const t0 = performance.now();
-        document.querySelector('#game iframe').contentWindow.postMessage({ type: 'test:relay', msg: ${JSON.stringify(msg)} }, '*');
+        document.querySelector('#game iframe').contentWindow.postMessage({ type: 'test:relay', msg: { type: 'aether:dialog-input', action: steps[i].action } }, '*');
         const wait = () => {
-          if (st() === ${JSON.stringify(wantStatus)}) return resolve({ ms: performance.now() - t0, active: navigator.userActivation.isActive });
-          if (performance.now() - t0 > 20000) return resolve({ timeout: true, status: st() });
-          setTimeout(wait, 20);
+          if (st() === steps[i].want) { out.push({ ms: performance.now() - t0, active: navigator.userActivation.isActive }); return next(i + 1); }
+          if (performance.now() - t0 > 20000) return resolve({ timeout: true, step: i, status: st() });
+          setTimeout(wait, 5);
         };
         wait();
       };
@@ -226,9 +232,41 @@ async function pressNoGesture(cdp, wantStatus) {
     awaitPromise: true, returnByValue: true, userGesture: false
   });
   const v = r.result.value;
+  assert.ok(!v.timeout, `Schritt ${v.step}: Status "${v.step === undefined ? '' : steps[v.step].want}" erwartet, ist "${v.status}"`);
+  v.out.forEach((o, i) => assert.equal(o.active, false, `Dashboard blieb ohne Nutzeraktivierung (Schritt ${i})`));
+  return v.out.map((o) => o.ms);
+}
+const pressNoGesture = async (cdp, wantStatus) => (await padNoGesture(cdp, [{ action: 'press', want: wantStatus }]))[0];
+// Dasselbe MIT Nutzeraktivierung im Dashboard (CDP userGesture: true): meldet, ob die Aktivierung beim Senden
+// aktiv war, und wartet auf den Status.
+async function pressWithGesture(cdp, wantStatus) {
+  const r = await cdp.send('Runtime.evaluate', {
+    expression: `new Promise((resolve) => {
+      const st = () => document.getElementById('fbStatus').textContent;
+      const active = navigator.userActivation.isActive;
+      const t0 = performance.now();
+      document.querySelector('#game iframe').contentWindow.postMessage({ type: 'test:relay', msg: { type: 'aether:dialog-input', action: 'press' } }, '*');
+      const wait = () => {
+        if (st() === ${JSON.stringify(wantStatus)}) return resolve({ ms: performance.now() - t0, active });
+        if (performance.now() - t0 > 20000) return resolve({ timeout: true, status: st() });
+        setTimeout(wait, 5);
+      };
+      wait();
+    })`,
+    awaitPromise: true, returnByValue: true, userGesture: true
+  });
+  const v = r.result.value;
   assert.ok(!v.timeout, `Status "${wantStatus}" erwartet, ist "${v.status}"`);
-  assert.equal(v.active, false, 'Dashboard blieb ohne Nutzeraktivierung');
+  assert.equal(v.active, true, 'Dashboard hatte beim Senden Nutzeraktivierung');
   return v.ms;
+}
+// Jeder Navigationsversuch zu mailto: im Dashboard, auch ein vom Browser blockierter (ohne Nutzeraktivierung
+// meldet Chromium dann keinen "Launched external handler", der Versuch erscheint aber hier).
+async function mailtoAttempts(cdp) {
+  const list = [];
+  cdp.on('Page.frameRequestedNavigation', (e) => { if (e.url.startsWith('mailto:')) list.push(e.url); });
+  await cdp.send('Page.enable');
+  return list;
 }
 async function assertClosedAndFocused(page, frame, count) {
   await page.waitForSelector('#feedback', { state: 'hidden' });
@@ -718,9 +756,10 @@ describe('Feedback-Dialog: Controller', () => {
     await context.close();
   });
 
-  test('press auf "Text kopieren" und "Mail öffnen" ohne Nutzeraktion: Hinweis; Antippen und Enter gehen weiter', async () => {
+  test('press auf "Text kopieren" und "Mail öffnen" ohne Nutzeraktion: Hinweis (Mail sofort, ohne mailto-Versuch, auch beim 2. und 3. Druck); Antippen und Enter gehen weiter', async () => {
     const { context, page, log } = await newPage(null);
     const cdp = await context.newCDPSession(page);
+    const attempts = await mailtoAttempts(cdp);
     await page.goto(baseUrl);
     const frame = await startGame(page);
     const fb = await frame.evaluate(() => window.__fb);
@@ -739,15 +778,26 @@ describe('Feedback-Dialog: Controller', () => {
     await input(frame, 'show');
     await page.waitForFunction(() => document.getElementById('fbStatus').textContent === '');
 
-    // Mail öffnen: Seite verliert weder Fokus noch Sichtbarkeit → nach PAD_MAIL_DETECT_MS Hinweis.
+    // Mail öffnen per Controller: kein mailto-Versuch, Hinweis sofort – dreimal hintereinander, dazwischen
+    // blendet "show" den Hinweis aus (alles ohne Nutzeraktivierung).
     await input(frame, 'prev');
     await sentinel(page, frame, 'm');
     assert.equal((await padState(page)).sel, 'fbMail');
-    const ms = await pressNoGesture(cdp, PAD_BLOCKED);
-    // Der Hinweis kommt erst nach der Erkennungszeit (1500 ms ab Empfang; 1 ms Timer-Auflösung).
-    assert.ok(ms >= 1500 - 1, `Hinweis nach ${ms} ms`);
+    const ms = await padNoGesture(cdp, [
+      { action: 'press', want: PAD_BLOCKED }, { action: 'show', want: '' },
+      { action: 'press', want: PAD_BLOCKED }, { action: 'show', want: '' },
+      { action: 'press', want: PAD_BLOCKED }
+    ]);
+    // Sofort heißt: weit unter der früheren Erkennungszeit von 1500 ms (zwei postMessage-Wege, 5-ms-Abfrage).
+    for (const i of [0, 2, 4]) assert.ok(ms[i] < 500, `Hinweis nach ${ms[i]} ms (Druck ${i / 2 + 1})`);
+    st = await padState(page);
+    assert.equal(st.warn, true);
+    assert.equal(st.sel, 'fbMail');
+    assert.equal(st.focus, 'fbMail', 'Fokus bleibt auf "Mail öffnen"');
     assert.equal(await dialogOpen(page), true);
+    assert.deepEqual(attempts, [], 'kein mailto-Versuch bei press auf "Mail öffnen"');
     const launchesAfterPress = launched(log).length;
+    assert.equal(launchesAfterPress, 0);
 
     // Antippen im Dialog blendet den Hinweis aus.
     await page.click('#fbTitle');
@@ -773,6 +823,8 @@ describe('Feedback-Dialog: Controller', () => {
     await page.locator('#fbMail').click();
     await waitLaunch(page, log, launchesAfterPress + 2);
     assert.equal(launched(log)[launchesAfterPress + 1], want);
+    // Der Zähler sieht mailto-Versuche (Enter und Klick), also ist das leere Ergebnis oben aussagekräftig.
+    assert.deepEqual(attempts, [expectedMailto(fb.subject, fb.body), expectedMailto(fb.subject, fb.body)]);
     assert.equal(await dialogOpen(page), true);
     assert.equal((await padState(page)).status, 'Kopiert');
 
@@ -783,6 +835,71 @@ describe('Feedback-Dialog: Controller', () => {
     await rp.goto(baseUrl + 'manifest.json');
     assert.equal(await rp.evaluate(() => navigator.clipboard.readText()), `Betreff: ${fb.subject}\n\n${fb.body}`);
     await reader.close();
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('press auf "Mail öffnen" MIT Nutzeraktivierung im Dashboard: ebenfalls nur Hinweis, kein mailto-Versuch', async () => {
+    const { context, page, log } = await newPage(null);
+    const cdp = await context.newCDPSession(page);
+    const attempts = await mailtoAttempts(cdp);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    await openFeedbackByKey(page, frame);
+    await input(frame, 'show');
+    await sentinel(page, frame, 'a');
+    assert.equal((await padState(page)).sel, 'fbMail');
+    for (let i = 0; i < 3; i++) {
+      const ms = await pressWithGesture(cdp, PAD_BLOCKED);
+      assert.ok(ms < 500, `Hinweis nach ${ms} ms (Druck ${i + 1})`);
+      await input(frame, 'show');
+      await page.waitForFunction(() => document.getElementById('fbStatus').textContent === '');
+    }
+    assert.equal(await dialogOpen(page), true);
+    await sentinel(page, frame, 'b');
+    assert.deepEqual(attempts, [], 'kein mailto-Versuch, auch wenn die Seite gerade aktiviert ist');
+    assert.equal(launched(log).length, 0);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('Enter auf "Mail öffnen" kommt als echte Taste im Dashboard an (nicht im Spiel-iframe) und startet mailto, auch nach Controller-Auswahl', async () => {
+    const { context, page, log } = await newPage(null);
+    const cdp = await context.newCDPSession(page);
+    const attempts = await mailtoAttempts(cdp);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    const fb = await frame.evaluate(() => window.__fb);
+    const url = expectedMailto(fb.subject, fb.body);
+    const want = `Launched external handler for '${url}'.`;
+    const gameKeys = () => frame.evaluate(() => window.__t.keys.slice());
+
+    // Dialog per Taste im Spiel geöffnet (Fokus lag im iframe): Danach hat "Mail öffnen" im Dashboard den Fokus.
+    await openFeedbackByKey(page, frame);
+    assert.equal((await padState(page)).focus, 'fbMail');
+    const keysBefore = await gameKeys();
+    await page.keyboard.press('Enter');
+    await waitLaunch(page, log, 1);
+    assert.deepEqual(launched(log), [want]);
+
+    // Pfeiltasten-Runde (rechts ×3 = wieder "Mail öffnen") + Enter.
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+    assert.equal((await padState(page)).focus, 'fbMail');
+    await page.keyboard.press('Enter');
+    await waitLaunch(page, log, 2);
+
+    // Auswahl per Controller (next, prev → Fokus folgt), dann Enter.
+    await input(frame, 'next');
+    await input(frame, 'prev');
+    await sentinel(page, frame, 'c');
+    assert.equal((await padState(page)).focus, 'fbMail');
+    await page.keyboard.press('Enter');
+    await waitLaunch(page, log, 3);
+    assert.deepEqual(launched(log), [want, want, want]);
+    assert.deepEqual(attempts, [url, url, url]);
+    // Keine dieser Tasten ist im Spiel angekommen (dort würde sie seit aether PR #31 als Controller zählen).
+    assert.deepEqual(await gameKeys(), keysBefore);
+    assert.equal(await dialogOpen(page), true);
     assert.deepEqual(log.errors, []);
     await context.close();
   });

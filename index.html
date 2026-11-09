@@ -1361,11 +1361,9 @@
   var feedback = null; // { subject, body } solange der Dialog offen ist
   // Controller-Bedienung: Das Spiel liest den Controller und schickt aether:dialog-input.
   var PAD_ACTIONS = ['show', 'prev', 'next', 'press'];
-  var PAD_MAIL_DETECT_MS = 1500; // so lange muss die Seite Fokus/Sichtbarkeit verlieren, sonst gilt "Mail öffnen" als blockiert
   var PAD_BLOCKED = 'Per Controller nicht möglich – bitte antippen oder Enter drücken.';
   var fbSel = 0;        // gewählter Knopf (0 Mail öffnen, 1 Text kopieren, 2 Schließen)
   var fbPad = false;    // Rahmen sichtbar
-  var padMailCheck = null;
 
   // Einzelne UTF-16-Hälften ersetzen (encodeURIComponent würde sonst werfen)
   // und nach Codepoints kürzen, ohne ein Zeichen zu zerteilen.
@@ -1421,7 +1419,6 @@
     $('fbText').value = feedbackText();
     $('fbText').scrollTop = 0;
     setFbStatus('', false);
-    cancelPadMailCheck();
     fbPad = false;
     fbSel = 0;
     renderPad();
@@ -1432,7 +1429,6 @@
   function closeFeedback(refocus) {
     if (!feedback) return;
     feedback = null;
-    cancelPadMailCheck();
     fbPad = false;
     renderPad();
     $('feedback').hidden = true;
@@ -1478,37 +1474,11 @@
     var b = fbButtons()[fbSel];
     if (document.activeElement !== b) { try { b.focus({ preventScroll: true }); } catch (e) { b.focus(); } }
   }
-  function cancelPadMailCheck() {
-    if (!padMailCheck) return;
-    clearTimeout(padMailCheck.timer);
-    padMailCheck.off();
-    padMailCheck = null;
-  }
   function clearPadBlocked() {
     if ($('fbStatus').textContent === PAD_BLOCKED) setFbStatus('', false);
   }
   function showPadBlocked() {
     if (feedback) setFbStatus(PAD_BLOCKED, true);
-  }
-  // "Mail öffnen": derselbe Weg wie beim Antippen. Ohne echte Nutzeraktion blockieren Browser das
-  // oft stillschweigend. Verliert die Seite in PAD_MAIL_DETECT_MS weder Fokus noch Sichtbarkeit,
-  // hat sich keine Mail-App geöffnet → Hinweis.
-  function padMail() {
-    var left = false;
-    var onBlur = function () { left = true; };
-    var onVis = function () { if (document.visibilityState === 'hidden') left = true; };
-    window.addEventListener('blur', onBlur);
-    document.addEventListener('visibilitychange', onVis);
-    padMailCheck = {
-      off: function () { window.removeEventListener('blur', onBlur); document.removeEventListener('visibilitychange', onVis); },
-      timer: setTimeout(function () {
-        var c = padMailCheck;
-        padMailCheck = null;
-        if (c) c.off();
-        if (!left) showPadBlocked();
-      }, PAD_MAIL_DETECT_MS)
-    };
-    try { window.location.href = buildMailto(feedback.subject, feedback.body); } catch (e) { /* Hinweis folgt */ }
   }
   // "Text kopieren": derselbe Kopierweg wie beim Antippen, aber ohne den Ersatzweg "Vorschau
   // markieren" (dafür braucht es Antippen). Scheitert er, Hinweis.
@@ -1526,12 +1496,15 @@
   }
   function feedbackDialogInput(action) {
     if (!feedback || typeof action !== 'string' || PAD_ACTIONS.indexOf(action) < 0) return;
-    // Jede Eingabe beendet einen noch laufenden Mail-Versuch und blendet den Hinweis aus.
-    cancelPadMailCheck();
+    // Jede Eingabe blendet den Hinweis aus.
     clearPadBlocked();
     if (action === 'press') {
       if (fbSel === 2) { closeFeedback(true); return; }
-      if (fbSel === 0) padMail(); else padCopy();
+      // "Mail öffnen" per Controller: kein mailto-Versuch, sofort Hinweis. Safari öffnet einen
+      // mailto-Link ohne echte Nutzeraktion nur einmal pro Seitenaufruf und meldet danach
+      // „Adresse ungültig“. Enter auf dem fokussierten Knopf und Antippen laufen über den
+      // Click-Handler (echte Nutzeraktion) und öffnen die Mail-App weiterhin.
+      if (fbSel === 0) showPadBlocked(); else padCopy();
       return;
     }
     if (action === 'prev') fbSel = Math.max(0, fbSel - 1);
@@ -2765,7 +2738,6 @@
   // Antippen/Klick im Dialog: Controller-Rahmen aus (Touch-Bedienung wie bisher), Hinweis weg.
   $('feedback').addEventListener('pointerdown', function () {
     if (!feedback) return;
-    cancelPadMailCheck();
     clearPadBlocked();
     if (fbPad) { fbPad = false; renderPad(); }
   }, true);
@@ -2776,7 +2748,6 @@
   });
   document.addEventListener('keydown', function (e) {
     if (!feedback) return;
-    cancelPadMailCheck();
     clearPadBlocked();
     if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); closeFeedback(true); return; }
     var btns = [$('fbMail'), $('fbCopy'), $('fbClose')];
