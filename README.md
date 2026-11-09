@@ -202,8 +202,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 
 **Ablauf beim Start**
 
-1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons) aus dem Cache
-   `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons) und `engine-map.json`
+   aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
