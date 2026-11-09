@@ -202,8 +202,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 
 **Ablauf beim Start**
 
-1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons) aus dem Cache
-   `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons) und `engine-map.json`
+   aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -267,7 +267,13 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
    PR-Eintrag; Commits, die nur im PR-Branch lagen, werden ausgeblendet. Antippen öffnet den PR (bzw. Commit) auf GitHub.
 3. **Fortschritt** – `ROADMAP.md` aus dem Hauptverzeichnis von `main` (`contents/ROADMAP.md?ref=main`).
    Gelesen werden Abschnitte `## Name` und Punkte `- [x] Text` / `- [ ] Text`, optional mit `(PR #123)`.
-   HTML-Kommentare werden ignoriert. Pro Abschnitt gibt es einen Balken erledigt/gesamt, PR-Verweise sind antippbar.
+   HTML-Kommentare werden ignoriert. Pro Abschnitt gibt es einen Balken erledigt/gesamt, PR-Verweise sind antippbar:
+   - `(PR #31)` → PR im Repo `aether` (`https://github.com/konstantin9ezm/aether/pull/31`),
+   - `(Repo aether-dashboard, PR #8)` → PR in diesem Repo (`https://github.com/konstantin9ezm/aether-dashboard/pull/8`),
+   - `(Repo aether-dashboard)` ohne Nummer bleibt als Text stehen (kein Link).
+
+   Leerzeichen um `#` sind erlaubt (`(PR # 13)`, `(Repo aether-dashboard, PR # 8)`), Groß-/Kleinschreibung ist egal.
+   Andere Repos werden nicht erkannt und bleiben Text. Der Link heißt in beiden Fällen „PR #n“.
    Tolerant: Punkte vor dem ersten Abschnitt landen unter „Ohne Abschnitt“, unbekannte Abschnitte werden normal
    angezeigt, nicht erkannte Zeilen (Freitext, Tabellen, `###`, Listen ohne Kästchen …) werden übersprungen und gezählt.
    Der Inhalt wird nur als Text eingesetzt, nie als HTML.
@@ -300,8 +306,10 @@ Rate-Limit (mit Uhrzeit), keine Verbindung, fehlende `ROADMAP.md`, fehlenden Wor
 ## WebGPU-Check
 
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
-**https://konstantin9ezm.github.io/aether-dashboard/webgpu-check.html**. Ein unauffälliger Link „WebGPU-Check“
-steht unten auf dem Token-Bildschirm und in der Build-Ansicht des Dashboards. Die Seite braucht kein Token, liest
+**https://konstantin9ezm.github.io/aether-dashboard/webgpu-check.html**. Der Link „WebGPU-Check“
+steht in der Kopfzeile oben rechts, links neben dem Umschalter „Spielen | Projekt“ (Build- und Projektansicht;
+auf dem iPhone hochkant als Symbol mit derselben 44-px-Tippfläche; bis 400 px Breite entfällt dafür das Logo), und unten auf dem Token-Bildschirm. Auf dem
+Token-Bildschirm ist der Kopfzeilen-Link ausgeblendet, während ein Spiel läuft ebenfalls. Die Seite braucht kein Token, liest
 keins und ruft api.github.com nie auf; alles steckt in der einen Datei (keine externen Skripte oder Schriften).
 Sie ist absichtlich nicht Teil der Offline-App-Hülle in `sw.js`.
 
@@ -379,7 +387,9 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   Token und ohne Anfrage an api.github.com, alle Abschnitte gefüllt, Probe direkt und im iframe grün, iframe-Attribute
   gleich denen aus `createGameFrame()`, Bildtakt-Stufen a/b/d (c übersprungen), Ergebnistext mit Pflicht-Schlüsseln,
   Kopieren, mailto ≤ 2000 Zeichen; Rückfall ohne die Flags („kein Adapter“, WebGL-Rückfall) und ohne
-  `navigator.gpu` („WebGPU fehlt“); Layout auf iPhone 16 Pro hoch/quer und iPad quer. Gegenproben (müssen rot
+  `navigator.gpu` („WebGPU fehlt“); Layout auf iPhone 16 Pro hoch/quer und iPad quer; Link „WebGPU-Check“ auf dem
+  Token-Bildschirm und in der Kopfzeile (Build- und Projektansicht auf iPhone 16 Pro hoch/quer, iPad, Desktop: links
+  neben dem Umschalter, gleiche Höhe, Tippfläche ≥ 44 × 44 px per Treffertest, kein Überlappen, einzeilig). Gegenproben (müssen rot
   werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.

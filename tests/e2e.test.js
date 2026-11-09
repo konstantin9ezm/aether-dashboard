@@ -669,6 +669,9 @@ describe('Offline', () => {
     ]));
     assert.ok(swReady, 'Service Worker ist aktiv');
     assert.ok((await localState(page)).cacheNames.includes('aether-shell-v1'), 'Service Worker hat die Seite gespeichert');
+    // engine-map.json liegt nach dem ersten Laden in der App-Hülle.
+    const shellKeys = await page.evaluate(async () => (await (await caches.open('aether-shell-v1')).keys()).map((r) => new URL(r.url).pathname));
+    assert.ok(shellKeys.includes('/engine-map.json'), `engine-map.json in der App-Hülle: ${shellKeys.join(', ')}`);
     assert.ok(mock.requests.length > 0, 'API-Aufrufe laufen weiter über die Seite, nicht über den Service Worker');
 
     // Netz weg: Browser offline, Mock-API bricht ab, statischer Server kappt Verbindungen.
@@ -680,6 +683,13 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 18 Bausteine).
+    const offlineMap = await page.evaluate(async () => {
+      const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
+      const j = await res.json();
+      return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
+    });
+    assert.equal(offlineMap, 18, 'engine-map.json offline aus der App-Hülle');
     assert.ok(await page.isHidden('#message'), 'keine Fehlermeldung, nur der Hinweis');
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable, r.disabled, r.checked]), [
@@ -763,6 +773,13 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 18 Bausteine).
+    const offlineMap = await page.evaluate(async () => {
+      const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
+      const j = await res.json();
+      return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
+    });
+    assert.equal(offlineMap, 18, 'engine-map.json offline aus der App-Hülle');
     assert.match(hint, /antwortet nicht/);
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);

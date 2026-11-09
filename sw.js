@@ -1,11 +1,13 @@
-// Service Worker des Aether-Dashboards: hält nur die App-Hülle (diese Seite, Manifest, Icons)
-// für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
+// Service Worker des Aether-Dashboards: hält nur die App-Hülle (diese Seite, Manifest, Icons,
+// engine-map.json) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
 // Anfragen an api.github.com (mit Token im Authorization-Header) werden hier nie angefasst,
 // also auch nie in einem Cache abgelegt.
 'use strict';
 
 var SHELL_CACHE = 'aether-shell-v1';
-var SHELL = ['./', 'index.html', 'manifest.json',
+// Ein geändertes sw.js wird neu installiert und legt dabei alle Einträge (auch neue) in denselben
+// Hüllen-Cache; der Name muss dafür nicht hochgezählt werden.
+var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
 function shellKey(url) {

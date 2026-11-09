@@ -114,6 +114,21 @@ const ROADMAP_WEIRD = '\uFEFF' + [
   ''
 ].join('\r\n');
 
+// Verweise auf zwei Repos: aether (ohne Angabe) und aether-dashboard (mit „Repo aether-dashboard, “),
+// Leerzeichen-Varianten, Repo ohne Nummer (bleibt Text), fremdes Repo (wird nicht erkannt).
+const ROADMAP_REPOS = [
+  '## Verweise',
+  '- [x] Engine-PR (PR #31)',
+  '- [x] Dashboard-PR (Repo aether-dashboard, PR #8)',
+  '- [ ] Nur Repo (Repo aether-dashboard)',
+  '- [x] Leerzeichen (PR # 13)',
+  '- [ ] Dashboard mit Leerzeichen (Repo aether-dashboard, PR # 9)',
+  '- [x] Beide Repos, gleiche Nummer (PR #8) (Repo aether-dashboard, PR #8)',
+  '## Fremd',
+  '- [ ] Anderes Repo (Repo aether-tools, PR #5)',
+  ''
+].join('\n');
+
 // ---------------------------------------------------------------------------
 // Mock der GitHub-REST-API
 // ---------------------------------------------------------------------------
@@ -187,7 +202,7 @@ async function githubApi(route) {
     assert.equal(q.get('ref'), 'main');
     assert.ok(headers.accept.includes('application/vnd.github.raw'), 'ROADMAP.md roh laden');
     if (mock.roadmap === 'missing') return json(route, 404, { message: 'Not Found' });
-    const body = mock.roadmap === 'weird' ? ROADMAP_WEIRD : ROADMAP_NORMAL;
+    const body = mock.roadmap === 'weird' ? ROADMAP_WEIRD : mock.roadmap === 'repos' ? ROADMAP_REPOS : ROADMAP_NORMAL;
     return route.fulfill({ status: 200, headers: { ...CORS, ...rate(4990), 'content-type': 'application/vnd.github.raw+json; charset=utf-8' }, body });
   }
   // Spielansicht (nur für den Wechsel zurück)
@@ -469,6 +484,43 @@ test('ROADMAP.md mit unerwarteten Zeilen wird tolerant gelesen', async () => {
   assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'ok');
   await assertTouchFriendly(page, 'ROADMAP unerwartet');
   await page.screenshot({ path: path.join(OUT, 'projekt-roadmap-unerwartet.png'), fullPage: true });
+  await assertNoLeak(log, page);
+  await context.close();
+});
+
+test('ROADMAP.md: PR-Verweise auf aether und aether-dashboard', async () => {
+  mock.reset();
+  mock.roadmap = 'repos';
+  const { context, page, log } = await newPage(null);
+  await openProject(page);
+  const DASH = `https://github.com/${OWNER}/aether-dashboard`;
+  const items = await page.$$eval('#roadmapBody .rm-items li:not(.empty)', (lis) => lis.map((li) => ({
+    text: li.querySelector('.txt').textContent,
+    links: [...li.querySelectorAll('a.pr-link')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])
+  })));
+  const ext = (n, href) => [`PR #${n}`, href, '_blank', 'noopener noreferrer'];
+  assert.deepEqual(items, [
+    { text: 'Engine-PR', links: [ext(31, `${GH}/pull/31`)] },
+    { text: 'Dashboard-PR', links: [ext(8, `${DASH}/pull/8`)] },
+    { text: 'Nur Repo (Repo aether-dashboard)', links: [] },
+    { text: 'Leerzeichen', links: [ext(13, `${GH}/pull/13`)] },
+    { text: 'Dashboard mit Leerzeichen', links: [ext(9, `${DASH}/pull/9`)] },
+    { text: 'Beide Repos, gleiche Nummer', links: [ext(8, `${GH}/pull/8`), ext(8, `${DASH}/pull/8`)] },
+    { text: 'Anderes Repo (Repo aether-tools, PR #5)', links: [] }
+  ]);
+  // Gleiche Darstellung wie die bisherigen Links (Klasse, Stil).
+  const styles = await page.$$eval('#roadmapBody a.pr-link', (as) => [...new Set(as.map((a) => {
+    const c = getComputedStyle(a);
+    return [a.className, c.color, c.fontSize, c.textDecorationLine, c.backgroundColor].join('|');
+  }))]);
+  assert.equal(styles.length, 1, `einheitlicher Link-Stil: ${styles.join(' / ')}`);
+  // Zählung unverändert: Abschnitte, Balken, erledigt/gesamt.
+  const secs = await page.$$eval('#roadmapBody .rm-sec', (ds) => ds.map((d) => [
+    d.querySelector('summary .name').textContent, d.querySelector('summary .num').textContent,
+    d.querySelector('summary .bar').getAttribute('aria-valuenow'), d.querySelector('summary .bar').getAttribute('aria-valuemax')]));
+  assert.deepEqual(secs, [['Verweise', '4/6', '4', '6'], ['Fremd', '0/1', '0', '1']]);
+  assert.match(await text(page, '#roadmapBody .rm-total'), /4 \/ 7 erledigt/);
+  await assertTouchFriendly(page, 'ROADMAP Repos');
   await assertNoLeak(log, page);
   await context.close();
 });
