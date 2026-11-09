@@ -129,12 +129,92 @@ const ROADMAP_REPOS = [
   ''
 ].join('\n');
 
+
+// ---------------------------------------------------------------------------
+// CI-Laufzeit: abgeschlossene Läufe, Jobs und build.yml (Limits aus timeout-minutes)
+// ---------------------------------------------------------------------------
+const CI_SHA = '0abc1234def5678900000000000000000000beef';
+const at = (min, sec = 0) => new Date(Date.UTC(2026, 10, 5, 9, 40, 30) + (min * 60 + sec) * 1000).toISOString().replace('.000', '');
+// Neuester zuerst (wie die API). #57 ist derselbe Lauf wie in der Ampel (27,0 min).
+function CI_RUNS() {
+  const r = (id, n, conclusion, minutes, sha) => ({
+    id, run_number: n, name: 'Build', head_branch: 'main', head_sha: sha, status: 'completed', conclusion,
+    run_started_at: '2026-11-0' + (n - 52) + 'T08:00:00Z',
+    updated_at: new Date(Date.parse('2026-11-0' + (n - 52) + 'T08:00:00Z') + minutes * 60000).toISOString()
+  });
+  return [
+    { ...r(9001, 57, 'success', 0, CI_SHA), run_started_at: '2026-11-05T09:40:30Z', updated_at: '2026-11-05T10:07:30Z',
+      created_at: '2026-11-05T09:40:00Z', head_commit: { message: 'README: Tippfehler korrigiert' } },
+    r(9000, 56, 'failure', 25, sha('6')),
+    r(8999, 55, 'success', 24, sha('5')),
+    r(8998, 54, 'cancelled', 22.5, sha('4')),
+    r(8997, 53, 'success', 21, sha('3'))
+  ];
+}
+const step = (name, from, to, extra = {}) => ({ name, status: 'completed', conclusion: 'success', number: 1, started_at: from, completed_at: to, ...extra });
+const job = (name, from, to, steps = [], extra = {}) => ({ id: Math.floor(Math.random() * 1e6), name, status: 'completed', conclusion: 'success', started_at: from, completed_at: to, steps, ...extra });
+// build 4:00 / 15 (27 %), web/emscripten 26:00 / 45 (58 %), Browser-Test 24:30 / 40 (61 %), veröffentlichen 1:00 / 10 (10 %)
+const CI_JOBS_DEFAULT = () => [
+  job('build', at(0), at(4), [step('Set up job', at(0), at(0, 5)), step('Bauen', at(0, 5), at(3, 50))]),
+  job('web/emscripten', at(0), at(26), [
+    step('Checkout', at(0), at(0, 20)),
+    step('Browser-Test', at(1), at(25, 30)),
+    step('Post Checkout', at(25, 30), at(25, 40))
+  ]),
+  job('web/veröffentlichen', at(26), at(27), [step('Veröffentlichen', at(26), at(26, 50))])
+];
+const CI_YAML_DEFAULT = `# Build-Workflow (Kommentare, Leerzeilen und verschachtelte Schlüssel sind Absicht)
+name: Build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:   # nativer Build
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bauen
+        run: |
+          cmake -B out
+          # timeout-minutes: 1   (Text im Skript, kein Limit)
+          cmake --build out
+
+  web:
+    name: web/emscripten
+    needs: build
+    # timeout-minutes: 5   (auskommentiert)
+    timeout-minutes: 45 # ganzer Job
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          name: kein-schritt
+          timeout-minutes: 2
+      - name: "Browser-Test"   # wächst
+        # Limit aus build.yml
+        timeout-minutes: 40
+        run: npm test
+
+  publish:
+    name: 'web/veröffentlichen'
+    timeout-minutes: 10
+    steps:
+      - name: Veröffentlichen
+        run: echo ok
+`;
+
 // ---------------------------------------------------------------------------
 // Mock der GitHub-REST-API
 // ---------------------------------------------------------------------------
 const mock = {
   reset() {
-    Object.assign(this, { mode: 'ok', run: 'success', actions: 'ok', roadmap: 'normal', requests: [] });
+    Object.assign(this, { mode: 'ok', run: 'success', actions: 'ok', roadmap: 'normal', requests: [],
+      ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok' });
   }
 };
 mock.reset();
@@ -156,6 +236,8 @@ function runFor(kind) {
   if (kind === 'success') return { ...base, status: 'completed', conclusion: 'success' };
   if (kind === 'failure') return { ...base, status: 'completed', conclusion: 'failure' };
   if (kind === 'in_progress') return { ...base, status: 'in_progress', conclusion: null };
+  // neuerer Lauf #58 läuft noch, der letzte abgeschlossene ist #57 (id 9001)
+  if (kind === 'newer_running') return { ...base, id: 9002, run_number: 58, head_sha: sha('8'), status: 'in_progress', conclusion: null };
   return null;
 }
 
@@ -183,6 +265,23 @@ async function githubApi(route) {
       { id: 7, name: 'Web-Build', path: '.github/workflows/web.yml', state: 'active' },
       { id: 42, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }
     ] });
+  }
+  if (p === `${BASE}/actions/workflows/42/runs` && q.get('status') === 'completed') {
+    assert.equal(q.get('branch'), 'main', 'Läufe nur von main');
+    if (mock.ci === 'runs500') return json(route, 500, { message: 'Server Error' });
+    const n = Number(q.get('per_page')) || 30;
+    return json(route, 200, { total_count: mock.ciRuns.length, workflow_runs: mock.ciRuns.slice(0, n) });
+  }
+  const jobsM = /^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/jobs$/.exec(p);
+  if (jobsM) {
+    if (mock.ci === 'jobs500') return json(route, 500, { message: 'Server Error' });
+    if (mock.ci === 'jobsRate') return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
+    return json(route, 200, { total_count: mock.ciJobs.length, jobs: mock.ciJobs });
+  }
+  if (p === `${BASE}/contents/.github/workflows/build.yml`) {
+    assert.ok(headers.accept.includes('application/vnd.github.raw'), 'build.yml roh laden');
+    if (mock.ci === 'yaml404') return json(route, 404, { message: 'Not Found' });
+    return route.fulfill({ status: 200, headers: { ...CORS, ...rate(4990), 'content-type': 'application/vnd.github.raw+json; charset=utf-8' }, body: mock.ciYaml });
   }
   if (p === `${BASE}/actions/workflows/42/runs`) {
     assert.equal(q.get('branch'), 'main', 'Läufe nur von main');
@@ -263,6 +362,9 @@ async function openProject(page) {
 async function waitProjectLoaded(page) {
   await page.waitForFunction(() => ['ciBody', 'timelineBody', 'roadmapBody', 'engineBody']
     .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); }));
+}
+async function waitCiTime(page) {
+  await page.waitForSelector('#ciTime[data-state]');
 }
 const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, ' ').trim());
 
@@ -353,11 +455,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=geplant']);
-    assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=geplant', 'Asset-System=geplant']);
+    assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig', 'Frame-Zeiten=fertig']);
     assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
-    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*double-Positionen · fertig.*60 Hz/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 8.*Vorschau: 2.*geplant: 8/);
+    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 9.*Vorschau: 2.*geplant: 9/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
@@ -422,9 +524,11 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   mock.reset();
   const { context, page } = await newPage(null);
   await openProject(page);
-  const first = mock.requests.length;
   // index.json + Dateiliste des neuesten Builds (Spielansicht, beim Start) + die vier Teile der Projektansicht
-  assert.ok(first >= 6 && first <= 7, `Anfragen beim ersten Laden: ${first}`);
+  // + 3 für die CI-Laufzeit (abgeschlossene Läufe, Jobs des letzten Laufs, build.yml an dessen Commit)
+  await waitCiTime(page);
+  const first = mock.requests.length;
+  assert.ok(first >= 9 && first <= 10, `Anfragen beim ersten Laden: ${first}`);
   await page.click('#tabPlay');
   await page.waitForSelector('#buildsView:not([hidden])');
   const afterPlay = mock.requests.length;
@@ -539,7 +643,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
     assert.equal(await page.getAttribute(`#${id} .msg`, 'data-kind'), 'notoken');
   }
   assert.equal(mock.requests.length, 0, 'ohne Token keine API-Aufrufe');
-  assert.equal((await page.$$('#engineBody .chip')).length, 18, 'Engine-Karte kommt ohne Token aus');
+  assert.equal((await page.$$('#engineBody .chip')).length, 20, 'Engine-Karte kommt ohne Token aus');
   await page.click('#ciBody button:has-text("Token eingeben")');
   await page.waitForSelector('#tokenView:not([hidden])');
   await page.fill('#tokenInput', TOKEN);
@@ -577,7 +681,7 @@ test('Fehlerfälle: Token fehlt, keine Rechte, Rate-Limit, offline, Token abgele
   for (const id of ['ciBody', 'timelineBody', 'roadmapBody']) {
     assert.match(await text(page, `#${id} .msg`), /Rate-Limit erreicht.*Wieder möglich ab \d\d:\d\d Uhr/);
   }
-  assert.equal((await page.$$('#engineBody .chip')).length, 18);
+  assert.equal((await page.$$('#engineBody .chip')).length, 20);
 
   // Offline
   mock.mode = 'offline';
@@ -640,4 +744,321 @@ test('engine-map.json ist gültig und wird mit veröffentlicht', () => {
   for (const l of map.schichten) for (const b of l.bausteine) assert.ok(['fertig', 'vorschau', 'geplant'].includes(b.status), `${b.name}: ${b.status}`);
   const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/pages.yml'), 'utf8');
   assert.match(wf, /cp [^\n]*engine-map\.json/, 'engine-map.json wird nach _site kopiert');
+});
+
+// ---------------------------------------------------------------------------
+// CI-Laufzeit in der Build-Ampel
+// ---------------------------------------------------------------------------
+const ciLine = (page) => text(page, '#ciTimeLine');
+const itext = (page, sel) => page.innerText(sel).then((t) => t.replace(/\s+/g, ' ').trim());
+const cssVar = (page, name) => page.evaluate((n) => {
+  const d = document.createElement('div');
+  d.style.color = `var(${n})`;
+  document.body.appendChild(d);
+  const c = getComputedStyle(d).color;
+  d.remove();
+  return c;
+}, name);
+async function ciReload(page) {
+  await page.click('#projReload');
+  await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+  await waitCiTime(page);
+}
+
+describe('CI-Laufzeit', () => {
+  test('Zeile mit korrekten Werten, Balken, Details auf/zu, sparsame Anfragen', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok');
+    assert.equal(await ciLine(page), 'CI: 27,0 min · web/emscripten › Browser-Test 24,5 / 40 min (61 %)');
+    assert.equal(await page.getAttribute('#ciTime', 'data-level'), 'ok');
+    assert.equal(await page.getAttribute('#ciTime > .ci-bar', 'aria-valuenow'), '61');
+    assert.equal(await page.$eval('#ciTime > .ci-bar > div', (d) => d.style.width), '61%');
+    // Grün wie die Ampel
+    const ok = await cssVar(page, '--ok');
+    assert.equal(await page.$eval('#ciTime > .ci-bar > div', (d) => getComputedStyle(d).backgroundColor), ok);
+    assert.equal(await page.$eval('#ciLight .l-g', (d) => getComputedStyle(d).backgroundColor), ok);
+    // Die bisherige Ampel bleibt unverändert.
+    assert.match(await text(page, '#ciLight'), /Erfolgreich.*05\.11\.2026, 11:07 Uhr.*0abc123.*Lauf #57/);
+
+    // Details: standardmäßig zu, Knopf ≥ 44 px
+    assert.equal(await page.getAttribute('#ciMore', 'aria-expanded'), 'false');
+    assert.ok(await page.isHidden('#ciDetails'));
+    const bb = await page.$eval('#ciMore', (b) => { const r = b.getBoundingClientRect(); return [r.width, r.height]; });
+    assert.ok(bb[0] >= 44 && bb[1] >= 44, `Tippfläche ${bb}`);
+    assert.equal(await text(page, '#ciMore'), '▸ Details');
+    await page.click('#ciMore');
+    assert.ok(await page.isVisible('#ciDetails'));
+    assert.equal(await page.getAttribute('#ciMore', 'aria-expanded'), 'true');
+    assert.equal(await text(page, '#ciMore'), '▾ Details');
+    const cols = await page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent]));
+    assert.deepEqual(cols, [['53', 'ok', '21,0'], ['54', 'err', '22,5'], ['55', 'ok', '24,0'], ['56', 'err', '25,0'], ['57', 'ok', '27,0']]);
+    assert.deepEqual(await page.$$eval('#ciChart .ci-axis span', (s) => s.map((x) => x.textContent)), ['#53', '#54', '#55', '#56', '#57']);
+    assert.equal(await text(page, '#ciLimitLine'), 'Limit 45 min', 'Linie beim höchsten Job-Limit');
+    // Linie liegt auf Höhe 45 min, der höchste Balken (27 min) darunter
+    const geo = await page.evaluate(() => {
+      const plot = document.querySelector('#ciChart .ci-plot').getBoundingClientRect();
+      const line = document.getElementById('ciLimitLine').getBoundingClientRect();
+      const bars = [...document.querySelectorAll('#ciChart .ci-runbar')].map((b) => b.getBoundingClientRect().height);
+      return { lineFromBottom: plot.bottom - line.top, plotH: plot.height, bars };
+    });
+    assert.ok(Math.abs(geo.lineFromBottom / geo.bars[4] - 45 / 27) < 0.05, `Linie/Balken ${JSON.stringify(geo)}`);
+    assert.equal(await page.$eval('#ciChart .ci-col[data-result="err"] .ci-runbar', (b) => getComputedStyle(b).backgroundColor), await cssVar(page, '--err'));
+    const blk = await itext(page, '#ciTightBlock');
+    assert.match(blk, /^Knappster Schritt \(letzter Lauf\) web\/emscripten › Browser-Test 24,5 von 40 min 61 %/);
+    assert.match(blk, /Limits aus build\.yml gelesen/);
+    assert.doesNotMatch(blk, /Trend/, 'ohne frühere Daten kein Trend');
+    await page.click('#ciMore');
+    assert.ok(await page.isHidden('#ciDetails'));
+    assert.equal(await page.getAttribute('#ciMore', 'aria-expanded'), 'false');
+
+    // API-Sparsamkeit: Jobs und build.yml nur für den letzten abgeschlossenen Lauf, am Commit des Laufs.
+    const ciReq = mock.requests.filter((r) => /\/jobs$|build\.yml$/.test(r.path) || /status=completed/.test(r.query));
+    assert.deepEqual(ciReq.map((r) => r.path + r.query).sort(), [
+      `${BASE}/actions/runs/9001/jobs?filter=latest&per_page=100`,
+      `${BASE}/actions/workflows/42/runs?branch=main&status=completed&per_page=5&exclude_pull_requests=true`,
+      `${BASE}/contents/.github/workflows/build.yml?ref=${CI_SHA}`
+    ].sort());
+    // Zustand „aufgeklappt“ wird nicht gespeichert: nach Neuladen wieder zu.
+    await page.click('#ciMore');
+    await page.reload();
+    await page.waitForSelector('#projectView:not([hidden])');
+    await waitProjectLoaded(page);
+    await waitCiTime(page);
+    assert.ok(await page.isHidden('#ciDetails'));
+    // Kein Token in gespeicherten Daten (auch nicht im Trend-Verlauf)
+    const stored = await page.evaluate(async (t) => {
+      const hits = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k !== 'aether.githubToken' && localStorage.getItem(k).includes(t)) hits.push(k); }
+      for (const n of await caches.keys()) for (const r of await (await caches.open(n)).keys()) if (r.url.includes(t) || r.headers.get('authorization')) hits.push(n);
+      return hits;
+    }, TOKEN);
+    assert.deepEqual(stored, []);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Trend gegenüber dem ältesten der 5 Läufe (sofern dort vorhanden)', async () => {
+    mock.reset();
+    const { context, page } = await newPage(null);
+    await context.addInitScript(() => {
+      if (window !== window.top || localStorage.getItem('aether.ciHistory')) return;
+      localStorage.setItem('aether.ciHistory', JSON.stringify([{ id: 8997, entries: { 'web/emscripten › Browser-Test': 1200 } }]));
+    });
+    await openProject(page);
+    await waitCiTime(page);
+    await page.click('#ciMore');
+    assert.equal(await text(page, '#ciTrend'), 'Trend: +4,5 min seit Lauf #53');
+    // Eintrag im ältesten Lauf nicht vorhanden (z. B. umbenannt) → kein Trend
+    await page.evaluate(() => localStorage.setItem('aether.ciHistory', JSON.stringify([{ id: 8997, entries: { 'web/alt › Browser-Test': 1200 } }])));
+    await ciReload(page);
+    await page.click('#ciMore');
+    assert.equal(await page.$('#ciTrend'), null);
+    await context.close();
+  });
+
+  test('Farben genau an den Schwellen 69 / 70 / 89 / 90 %', async () => {
+    mock.reset();
+    // Limit kommt aus build.yml (10 min) – nicht aus dem Code.
+    mock.ciYaml = 'jobs:\n  t:\n    name: Prüfung\n    timeout-minutes: 10\n    steps:\n      - run: true\n';
+    const { context, page } = await newPage(null);
+    const colors = { ok: null, warn: null, err: null };
+    let first = true;
+    for (const [pct, level] of [[69, 'ok'], [70, 'warn'], [89, 'warn'], [90, 'err']]) {
+      mock.ciJobs = [job('Prüfung', at(0), at(0, pct * 6))]; // pct % von 600 s
+      if (first) { await openProject(page); await waitCiTime(page); first = false; } else await ciReload(page);
+      if (!colors.warn) for (const k of ['ok', 'warn', 'err']) colors[k] = await cssVar(page, '--' + k);
+      assert.equal(await ciLine(page), `CI: 27,0 min · Prüfung ${(pct / 10).toFixed(1).replace('.', ',')} / 10 min (${pct} %)`);
+      assert.equal(await page.getAttribute('#ciTime', 'data-level'), level, `${pct} %`);
+      assert.equal(await page.$eval('#ciTime > .ci-bar > div', (d) => getComputedStyle(d).backgroundColor), colors[level], `Balkenfarbe bei ${pct} %`);
+      assert.equal(await page.$eval('#ciTimeLine .ci-pct', (d) => getComputedStyle(d).color), colors[level], `Textfarbe bei ${pct} %`);
+    }
+    await context.close();
+  });
+
+  test('Knappster Schritt über mehrere aufgeteilte Jobs (andere Namen, Matrix)', async () => {
+    mock.reset();
+    mock.ciYaml = [
+      'jobs:',
+      '  build:',
+      '    timeout-minutes: 15',
+      '    steps: [ ]',
+      '  test-start:',
+      '    name: web/test-start',
+      '    timeout-minutes: 20',
+      '  test-flug:',
+      '    name: web/test-flug',
+      '    timeout-minutes: 30',
+      '    steps:',
+      '      - name: Vorbereiten',
+      '      - name: Szenen',
+      '        timeout-minutes: 15',
+      '  test-matrix:',
+      '    name: web/test-${{ matrix.browser }}',
+      '    strategy:',
+      '      matrix:',
+      '        browser: [chromium, webkit]',
+      '    timeout-minutes: 12',
+      ''
+    ].join('\n');
+    mock.ciJobs = [
+      job('build', at(0), at(3)),                                     // 3/15 = 20 %
+      job('web/test-start', at(3), at(15)),                           // 12/20 = 60 %
+      job('web/test-flug', at(3), at(20), [                           // 17/30 = 57 %
+        step('Vorbereiten', at(3), at(6)),
+        step('Szenen', at(6), at(19, 30))                             // 13,5/15 = 90 %
+      ]),
+      job('web/test-chromium', at(3), at(10)),                        // 7/12 = 58 %
+      job('web/test-webkit', at(3), at(13, 48))                       // 10,8/12 = 90 % (gleich, aber später)
+    ];
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await ciLine(page), 'CI: 27,0 min · web/test-flug › Szenen 13,5 / 15 min (90 %)');
+    assert.equal(await page.getAttribute('#ciTime', 'data-level'), 'err');
+    await page.click('#ciMore');
+    assert.match(await itext(page, '#ciTightBlock'), /web\/test-flug › Szenen 13,5 von 15 min 90 %/);
+    assert.equal(await text(page, '#ciLimitLine'), 'Limit 30 min');
+    assert.doesNotMatch(await text(page, '#ciTightBlock'), /Limit unbekannt/, 'Matrix-Varianten erben das Limit');
+
+    // Matrix-Variante ohne eigenen Namen („key (a, b)“) wird dem Matrix-Job zugeordnet.
+    mock.ciYaml = 'jobs:\n  e2e:\n    timeout-minutes: 20\n    strategy:\n      matrix:\n        teil: [1, 2, 3]\n';
+    mock.ciJobs = [job('e2e (1)', at(0), at(5)), job('e2e (2)', at(0), at(16)), job('e2e (3)', at(0), at(8))];
+    await ciReload(page);
+    assert.equal(await ciLine(page), 'CI: 27,0 min · e2e (2) 16,0 / 20 min (80 %)');
+    assert.equal(await page.getAttribute('#ciTime', 'data-level'), 'warn');
+    await context.close();
+  });
+
+  test('Limit aus build.yml trotz Kommentaren, CRLF, 4er-Einrückung und Strichen auf Schlüsselhöhe', async () => {
+    mock.reset();
+    mock.ciYaml = [
+      '\uFEFF# Kopf-Kommentar',
+      'name: "Build"   # Name',
+      '',
+      'jobs:   # alle Jobs',
+      '    # Kommentar vor dem Job',
+      '    web:',
+      '        name: "web/emscripten"  # mit # im Kommentar',
+      '        timeout-minutes: 45',
+      '',
+      '        steps:',
+      '        - name: Browser-Test # Kommentar',
+      '          # timeout-minutes: 99',
+      '          timeout-minutes: "40"   # als Text',
+      '          run: |',
+      '            echo "timeout-minutes: 1"',
+      '        -   name:   Nachlauf',
+      '            timeout-minutes: 3',
+      ''
+    ].join('\r\n');
+    mock.ciJobs = [job('web/emscripten', at(0), at(26), [step('Browser-Test', at(1), at(25, 30)), step('Nachlauf', at(25, 30), at(25, 50))])];
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await ciLine(page), 'CI: 27,0 min · web/emscripten › Browser-Test 24,5 / 40 min (61 %)');
+    await context.close();
+  });
+
+  test('Fehlendes Limit: „Limit unbekannt“, zählt nicht für den knappsten Schritt, kein Abbruch', async () => {
+    mock.reset();
+    mock.ciYaml = 'jobs:\n  build:\n    name: build\n    timeout-minutes: 15\n  ohne:\n    name: ohne-limit\n    steps:\n      - name: Lang\n';
+    mock.ciJobs = [
+      job('build', at(0), at(3)),                                  // 20 %
+      job('ohne-limit', at(0), at(50), [step('Lang', at(0), at(49))]), // kein Limit
+      job('Unbekannter Job', at(0), at(40))                         // nicht zuordenbar
+    ];
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await ciLine(page), 'CI: 27,0 min · build 3,0 / 15 min (20 %)');
+    await page.click('#ciMore');
+    assert.match(await text(page, '#ciTightBlock'), /Limit unbekannt: ohne-limit, Unbekannter Job/);
+
+    // Gar kein Limit bekannt → Zeile ohne knappsten Schritt.
+    mock.ciYaml = '# leer\nname: Build\n';
+    await ciReload(page);
+    assert.equal(await ciLine(page), 'CI: 27,0 min · Limit unbekannt');
+    assert.equal(await page.$('#ciTime > .ci-bar'), null);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Laufender neuerer Lauf wird übergangen (Zeile nennt den abgeschlossenen Lauf)', async () => {
+    mock.reset();
+    mock.run = 'newer_running';
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'warn');
+    assert.match(await text(page, '#ciLight'), /Läuft.*Lauf #58/);
+    assert.equal(await ciLine(page), 'CI (Lauf #57): 27,0 min · web/emscripten › Browser-Test 24,5 / 40 min (61 %)');
+    const jobs = mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path);
+    assert.deepEqual(jobs, [`${BASE}/actions/runs/9001/jobs`], 'Jobs nur vom letzten abgeschlossenen Lauf');
+    assert.ok(mock.requests.some((r) => r.path.endsWith('build.yml') && r.query === `?ref=${CI_SHA}`));
+    assert.ok(!mock.requests.some((r) => r.query.includes(sha('8'))), 'nichts vom laufenden Lauf');
+    await context.close();
+  });
+
+  test('API-Fehler zeigen „CI-Laufzeit nicht verfügbar“ ohne Fehlerkarte', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage(null);
+    let first = true;
+    for (const mode of ['jobs500', 'jobsRate', 'yaml404', 'runs500']) {
+      mock.ci = mode;
+      if (first) { await openProject(page); await waitCiTime(page); first = false; } else await ciReload(page);
+      assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'unavailable', mode);
+      assert.equal(await text(page, '#ciTime'), 'CI-Laufzeit nicht verfügbar', mode);
+      assert.equal(await page.$('#ciBody .msg'), null, `keine Fehlerkarte (${mode})`);
+      assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'ok', `Ampel bleibt (${mode})`);
+      assert.equal((await page.$$('#timeline a')).length, 5, `Zeitleiste bleibt (${mode})`);
+      assert.equal((await page.$$('#roadmapBody .rm-sec')).length, 4, `Roadmap bleibt (${mode})`);
+    }
+    mock.ci = 'ok';
+    await ciReload(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok');
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  for (const [label, w, h] of [['iPhone hoch', 402, 874], ['iPhone quer', 874, 402], ['iPad', 1194, 834], ['Desktop', 1280, 800]]) {
+    test(`Layout CI-Laufzeit: ${label} ${w}×${h}`, async () => {
+      mock.reset();
+      // langer Job-/Schrittname zum Prüfen des Umbruchs
+      mock.ciJobs = CI_JOBS_DEFAULT();
+      const { context, page } = await newPage(null);
+      await page.setViewportSize({ width: w, height: h });
+      await openProject(page);
+      await waitCiTime(page);
+      const lay = async () => page.evaluate(() => {
+        const card = document.getElementById('ciCard').getBoundingClientRect();
+        const inCard = (sel) => [...document.querySelectorAll(sel)].filter((e) => e.getBoundingClientRect().width > 0)
+          .map((e) => { const r = e.getBoundingClientRect(); return { sel, l: r.left, r: r.right, ok: r.left >= card.left - 0.5 && r.right <= card.right + 0.5 }; });
+        const line = document.getElementById('ciTimeLine');
+        const lh = parseFloat(getComputedStyle(line).lineHeight);
+        return {
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+          boxes: [...inCard('#ciTime .ci-bar'), ...inCard('#ciTime .ci-row'), ...inCard('#ciMore'), ...inCard('#ciDetails'), ...inCard('#ciChart'), ...inCard('.ci-runbar'), ...inCard('#ciLimitLine')],
+          lines: Math.round(line.getBoundingClientRect().height / lh),
+          lineScroll: line.scrollWidth - line.clientWidth
+        };
+      });
+      let l = await lay();
+      assert.ok(l.overflow <= 0, `waagerechtes Scrollen ${l.overflow}px`);
+      assert.deepEqual(l.boxes.filter((b) => !b.ok), [], 'nichts breiter als die Karte');
+      assert.ok(l.lineScroll <= 0, 'Zeile läuft nicht über');
+      if (w >= 874) assert.equal(l.lines, 1, `einzeilig bei ${w}px`);
+      else assert.ok(l.lines <= 3, `sauber umbrochen (${l.lines} Zeilen)`);
+      await page.click('#ciMore');
+      l = await lay();
+      assert.ok(l.overflow <= 0, `waagerechtes Scrollen (offen) ${l.overflow}px`);
+      assert.deepEqual(l.boxes.filter((b) => !b.ok), [], 'Details nicht breiter als die Karte');
+      await assertTouchFriendly(page, `CI-Laufzeit ${label}`);
+      await page.screenshot({ path: path.join(OUT, `ci-laufzeit-${w}x${h}.png`), fullPage: true });
+      await (await page.$('#ciCard')).screenshot({ path: path.join(OUT, `ci-laufzeit-karte-${w}x${h}.png`) });
+      await context.close();
+    });
+  }
 });

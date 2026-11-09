@@ -428,6 +428,39 @@
   .ci .commitmsg { font-size: 14px; overflow-wrap: anywhere; margin-top: 2px; }
   .ci .chev, .tl .chev { margin-left: auto; color: var(--muted); font-size: 22px; flex: none; padding-left: 6px; }
 
+  /* CI-Laufzeit (unter der Build-Ampel) */
+  .ci-time { margin-top: 10px; min-width: 0; }
+  .ci-time[data-state="unavailable"] .ci-line, .ci-time[data-state="none"] .ci-line { font-size: 14px; }
+  .ci-row { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; min-width: 0; }
+  .ci-line { flex: 1 1 260px; min-width: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+  .ci-line .ci-name { font-weight: 600; }
+  .ci-pct[data-level="ok"] { color: var(--ok); }
+  .ci-pct[data-level="warn"] { color: var(--warn); }
+  .ci-pct[data-level="err"] { color: var(--err); }
+  .ci-more { flex: none; min-height: 44px; min-width: 44px; padding: 8px 12px; margin-left: auto; font-size: 14px; }
+  .ci-bar { height: 6px; margin-top: 6px; max-width: 100%; border-radius: 999px; background: #0f131c; border: 1px solid var(--line); overflow: hidden; }
+  .ci-bar > div { height: 100%; background: var(--ok); }
+  .ci-bar[data-level="warn"] > div { background: var(--warn); }
+  .ci-bar[data-level="err"] > div { background: var(--err); }
+  .ci-details { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); min-width: 0; }
+  .ci-details[hidden] { display: none; }
+  .ci-h { font-size: 14px; margin: 0 0 8px; }
+  .ci-chart { max-width: 520px; }
+  .ci-plot { position: relative; height: 120px; display: flex; align-items: flex-end; gap: 10px; border-bottom: 1px solid var(--line); }
+  .ci-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+  .ci-val { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .ci-runbar { width: 100%; max-width: 56px; border-radius: 4px 4px 0 0; background: var(--ok); }
+  .ci-col[data-result="err"] .ci-runbar { background: var(--err); }
+  .ci-limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
+  .ci-limit span { position: absolute; right: 0; bottom: 2px; font-size: 11px; color: var(--muted); background: var(--panel-2); padding: 0 3px; }
+  .ci-axis { display: flex; gap: 10px; margin-top: 4px; }
+  .ci-axis span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 12px; color: var(--muted); }
+  .ci-unit { margin-top: 4px; }
+  .ci-tightblk { margin-top: 14px; }
+  .ci-tightblk .ci-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+  .ci-tightrow { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 14px; margin-top: 2px; }
+  .ci-tightblk .note { margin-top: 6px; overflow-wrap: anywhere; }
+
   /* Zeitleiste */
   .tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   .tl a {
@@ -2208,10 +2241,10 @@
   }
 
   // --- 1. Build-Ampel --------------------------------------------------------
-  async function fetchLatestRun(force) {
+  async function fetchWorkflow() {
     needToken();
     var perm = 'Actions: Read-only';
-    var wfId = await cached('workflow', WORKFLOW_ID_TTL, false, async function () {
+    return cached('workflow', WORKFLOW_ID_TTL, false, async function () {
       var res = await api(REPO_PATH + '/actions/workflows?per_page=100', { perm: perm,
         notFound: new AppError('norepo', 'Repo nicht erreichbar.', 'GitHub findet ' + REPO_FULL + ' nicht. Unter „Repository access“ muss ' + REPO_FULL + ' ausgewählt sein.') });
       var j = await res.json();
@@ -2219,10 +2252,15 @@
       var m = list.filter(function (w) { return w && w.name === BUILD_WORKFLOW; });
       if (m.length > 1) m.sort(function (a, b) { return (a.state === 'active' ? 0 : 1) - (b.state === 'active' ? 0 : 1); });
       if (!m.length) throw new AppError('noworkflow', 'Workflow „' + BUILD_WORKFLOW + '“ nicht gefunden.', 'In ' + REPO_FULL + ' gibt es keinen GitHub-Actions-Workflow mit dem Namen „' + BUILD_WORKFLOW + '“.');
-      return m[0].id;
+      return { id: m[0].id, path: String(m[0].path || '') };
     });
+  }
+
+  async function fetchLatestRun(force) {
+    var perm = 'Actions: Read-only';
+    var wf = await fetchWorkflow();
     return cached('run', PROJECT_TTL, force, async function () {
-      var res = await api(REPO_PATH + '/actions/workflows/' + encodeURIComponent(wfId) + '/runs?branch=' + MAIN + '&per_page=1&exclude_pull_requests=true', { perm: perm });
+      var res = await api(REPO_PATH + '/actions/workflows/' + encodeURIComponent(wf.id) + '/runs?branch=' + MAIN + '&per_page=1&exclude_pull_requests=true', { perm: perm });
       var j = await res.json();
       return (j && Array.isArray(j.workflow_runs) && j.workflow_runs[0]) || null;
     });
@@ -2270,6 +2308,354 @@
     if (id) a.appendChild(el('span', 'chev', '›'));
     box.appendChild(a);
     return info;
+  }
+
+  // --- 1b. CI-Laufzeit (unter der Build-Ampel) ----------------------------------
+  // Bezieht sich immer auf den letzten ABGESCHLOSSENEN Lauf „Build“ auf main. Die Zeitlimits
+  // (timeout-minutes) kommen aus der Workflow-Datei am Commit dieses Laufs. Es gibt bewusst
+  // keine festen Job- oder Schrittnamen: Gesucht wird über alle Jobs und Schritte.
+  var CI_RUNS_SHOWN = 5;
+  var CI_WARN_PCT = 70;   // ab hier gelb
+  var CI_ERR_PCT = 90;    // ab hier rot
+  var CI_HISTORY_KEY = 'aether.ciHistory'; // Dauern früherer Läufe (für den Trend), ohne Token
+  var CI_HISTORY_MAX = 12;
+
+  // Kleiner YAML-Leser nur für das Nötige: jobs.<schlüssel>.name / timeout-minutes und
+  // steps[].name / timeout-minutes. Arbeitet über die Einrückung; Kommentare, Leerzeilen,
+  // Blocktexte (run: |) und alle anderen Schlüssel werden übergangen.
+  function yamlStripComment(line) {
+    var q = null;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (q) { if (c === q) q = null; continue; }
+      if ((c === '"' || c === "'") && (i === 0 || /[\s:\-\[{,]/.test(line[i - 1]))) { q = c; continue; }
+      if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+    }
+    return line;
+  }
+  function yamlScalar(v) {
+    v = String(v == null ? '' : v).trim();
+    if (v.length >= 2 && ((v[0] === '"' && v[v.length - 1] === '"') || (v[0] === "'" && v[v.length - 1] === "'"))) {
+      v = v.slice(1, -1);
+    }
+    return v;
+  }
+  function yamlKeyValue(text) {
+    var m = /^("[^"]*"|'[^']*'|[^\s:#"'][^:]*?)\s*:(?:\s+(.*)|\s*)$/.exec(text);
+    return m ? { key: yamlScalar(m[1]), value: m[2] === undefined ? '' : m[2].trim() } : null;
+  }
+  function yamlMinutes(v) {
+    v = yamlScalar(v);
+    return /^\d+(\.\d+)?$/.test(v) && Number(v) > 0 ? Number(v) : null;
+  }
+
+  function parseWorkflowLimits(text) {
+    var lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).map(function (raw) {
+      var l = yamlStripComment(raw).replace(/\s+$/, '');
+      return { indent: l.length - l.replace(/^ +/, '').length, text: l.trim() };
+    }).filter(function (l) { return l.text !== ''; });
+    var jobs = [];
+    var i = 0;
+    while (i < lines.length && !(lines[i].indent === 0 && /^jobs\s*:\s*$/.test(lines[i].text))) i++;
+    if (i >= lines.length) return jobs;
+    i++;
+    var jobIndent = i < lines.length && lines[i].indent > 0 ? lines[i].indent : -1;
+    for (; i < lines.length && lines[i].indent > 0; i++) {
+      if (lines[i].indent !== jobIndent) continue;
+      var kv = yamlKeyValue(lines[i].text);
+      if (!kv || kv.value) continue;
+      var job = { key: kv.key, name: '', limit: null, steps: [] };
+      jobs.push(job);
+      var propIndent = -1;
+      for (var j = i + 1; j < lines.length && lines[j].indent > jobIndent; j++) {
+        if (propIndent < 0) propIndent = lines[j].indent;
+        if (lines[j].indent !== propIndent) continue;
+        var p = yamlKeyValue(lines[j].text);
+        if (!p) continue;
+        if (p.key === 'name') job.name = yamlScalar(p.value);
+        else if (p.key === 'timeout-minutes') job.limit = yamlMinutes(p.value);
+        else if (p.key === 'steps' && !p.value) {
+          var step = null, itemIndent = -1, dashIndent = -1;
+          for (var k = j + 1; k < lines.length && (lines[k].indent > propIndent || (lines[k].indent === propIndent && /^-(\s|$)/.test(lines[k].text))); k++) {
+            var ln = lines[k], body = null, ind = ln.indent;
+            var dash = /^-(\s+|$)(.*)$/.exec(ln.text);
+            if (dash && (dashIndent < 0 || ind === dashIndent)) {
+              dashIndent = ind;
+              step = { name: '', limit: null };
+              job.steps.push(step);
+              itemIndent = ind + 1 + dash[1].length;
+              body = dash[2];
+            } else if (step && ind === itemIndent) {
+              body = ln.text;
+            }
+            if (!step || body === null || body === '') continue;
+            var s = yamlKeyValue(body);
+            if (!s) continue;
+            if (s.key === 'name') step.name = yamlScalar(s.value);
+            else if (s.key === 'timeout-minutes') step.limit = yamlMinutes(s.value);
+          }
+        }
+      }
+    }
+    return jobs;
+  }
+
+  // API-Job ↔ YAML-Job: über name (auch mit ${{ … }}-Platzhaltern) oder Schlüssel; Matrix-Varianten
+  // („name (a, b)“) gehören zum Matrix-Job und erben dessen Limit.
+  function normJobName(s) { return String(s || '').replace(/\s*\/\s*/g, ' / ').replace(/\s+/g, ' ').trim(); }
+  function jobNamePatterns(yj) {
+    var out = [];
+    [yj.name, yj.key].forEach(function (n) {
+      n = normJobName(n);
+      if (!n) return;
+      var re = n.split(/\$\{\{[\s\S]*?\}\}/).map(function (part) { return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('.+?');
+      out.push(new RegExp('^' + re + '(?: \\(.*\\))?$'));
+    });
+    return out;
+  }
+  function matchYamlJob(apiName, yjobs) {
+    var n = normJobName(apiName);
+    var exact = yjobs.filter(function (yj) { return normJobName(yj.name) === n || normJobName(yj.key) === n; })[0];
+    if (exact) return exact;
+    return yjobs.filter(function (yj) { return jobNamePatterns(yj).some(function (re) { return re.test(n); }); })[0] || null;
+  }
+
+  function secondsBetween(a, b) {
+    var t0 = Date.parse(a), t1 = Date.parse(b);
+    return isFinite(t0) && isFinite(t1) && t1 >= t0 ? (t1 - t0) / 1000 : null;
+  }
+  function runSeconds(run) { return secondsBetween(run.run_started_at || run.created_at, run.updated_at); }
+
+  // Alle Einträge (Jobs und Schritte mit eigenem Limit) mit Dauer, Limit und Verhältnis.
+  function ciEntries(apiJobs, yjobs) {
+    var out = [];
+    apiJobs.forEach(function (j) {
+      if (!j || !j.name || j.status !== 'completed' || j.conclusion === 'skipped') return;
+      var dur = secondsBetween(j.started_at, j.completed_at);
+      if (dur === null) return;
+      var yj = matchYamlJob(j.name, yjobs);
+      var jobName = String(j.name);
+      out.push({ label: jobName, job: jobName, step: '', seconds: dur, limit: yj ? yj.limit : null });
+      if (!yj) return;
+      (Array.isArray(j.steps) ? j.steps : []).forEach(function (st) {
+        if (!st || !st.name || st.conclusion === 'skipped') return;
+        var ys = yj.steps.filter(function (x) { return x.name && x.name === String(st.name) && x.limit; })[0];
+        if (!ys) return; // Schritte ohne eigenes Limit zählen nicht
+        var sd = secondsBetween(st.started_at, st.completed_at);
+        if (sd === null) return;
+        out.push({ label: jobName + ' › ' + st.name, job: jobName, step: String(st.name), seconds: sd, limit: ys.limit });
+      });
+    });
+    out.forEach(function (e) { e.ratio = e.limit ? e.seconds / (e.limit * 60) : null; });
+    return out;
+  }
+  function tightestEntry(entries) {
+    return entries.filter(function (e) { return e.ratio !== null; })
+      .sort(function (a, b) { return b.ratio - a.ratio; })[0] || null;
+  }
+  function ciLevel(pct) { return pct >= CI_ERR_PCT ? 'err' : pct >= CI_WARN_PCT ? 'warn' : 'ok'; }
+  function fmtMin(sec) { return (Math.round(sec / 6) / 10).toFixed(1).replace('.', ',') + ' min'; }
+  function fmtMinNum(sec) { return (Math.round(sec / 6) / 10).toFixed(1).replace('.', ','); }
+  function fmtLimit(min) { return String(min).replace('.', ','); }
+
+  function readCiHistory() {
+    var h = readJson(CI_HISTORY_KEY, []);
+    return Array.isArray(h) ? h.filter(function (x) { return x && validNum(x.id) && x.entries && typeof x.entries === 'object'; }) : [];
+  }
+  function rememberCiRun(run, entries) {
+    var rec = { id: run.id, entries: {} };
+    entries.forEach(function (e) { rec.entries[e.label] = Math.round(e.seconds); });
+    var h = readCiHistory().filter(function (x) { return x.id !== run.id; });
+    h.unshift(rec);
+    writeJson(CI_HISTORY_KEY, h.slice(0, CI_HISTORY_MAX));
+  }
+
+  function workflowFilePath(wf) {
+    var p = String((wf && wf.path) || '');
+    return /^\.github\/workflows\/[\w.\-]+\.ya?ml$/.test(p) ? p : '.github/workflows/build.yml';
+  }
+
+  async function fetchCiStats(force) {
+    needToken();
+    var perm = 'Actions: Read-only';
+    var wf = await fetchWorkflow();
+    var runs = await cached('ciRuns', PROJECT_TTL, force, async function () {
+      var res = await api(REPO_PATH + '/actions/workflows/' + encodeURIComponent(wf.id) + '/runs?branch=' + MAIN + '&status=completed&per_page=' + CI_RUNS_SHOWN + '&exclude_pull_requests=true', { perm: perm });
+      var j = await res.json();
+      return (j && Array.isArray(j.workflow_runs) ? j.workflow_runs : [])
+        .filter(function (r) { return r && r.status === 'completed' && validNum(r.id); }).slice(0, CI_RUNS_SHOWN);
+    });
+    if (!runs.length) return { runs: [], run: null };
+    var run = runs[0];
+    var sha = String(run.head_sha || '');
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new AppError('http', 'Lauf ohne Commit.', '');
+    var file = workflowFilePath(wf);
+    var detail = await cached('ciJobs:' + run.id, PROJECT_TTL, force, async function () {
+      var r = await Promise.all([
+        api(REPO_PATH + '/actions/runs/' + encodeURIComponent(run.id) + '/jobs?filter=latest&per_page=100', { perm: perm }).then(function (x) { return x.json(); }),
+        api(REPO_PATH + '/contents/' + file.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(sha), { perm: 'Contents: Read-only', accept: 'application/vnd.github.raw+json' }).then(function (x) { return x.text(); })
+      ]);
+      var apiJobs = r[0] && Array.isArray(r[0].jobs) ? r[0].jobs : [];
+      return { apiJobs: apiJobs, yjobs: parseWorkflowLimits(r[1]) };
+    });
+    var entries = ciEntries(detail.apiJobs, detail.yjobs);
+    var tight = tightestEntry(entries);
+    // Trend: Dauer desselben Eintrags im ältesten der gezeigten Läufe (sofern früher schon gesehen).
+    var oldest = runs.length > 1 ? runs[runs.length - 1] : null;
+    var hist = readCiHistory();
+    rememberCiRun(run, entries);
+    var trend = null;
+    if (tight && oldest) {
+      var old = hist.filter(function (x) { return x.id === oldest.id; })[0];
+      var prev = old && old.entries[tight.label];
+      if (typeof prev === 'number' && isFinite(prev)) trend = { seconds: tight.seconds - prev, run: oldest };
+    }
+    var maxJobLimit = detail.yjobs.reduce(function (m, yj) { return yj.limit && yj.limit > m ? yj.limit : m; }, 0) || null;
+    return { runs: runs, run: run, file: file.replace(/^.*\//, ''), entries: entries, tight: tight, trend: trend, maxJobLimit: maxJobLimit };
+  }
+
+  function ciBar(cls, pct, level) {
+    var bar = el('div', cls);
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-valuenow', String(Math.min(100, pct)));
+    bar.dataset.level = level;
+    var fill = el('div');
+    fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    bar.appendChild(fill);
+    return bar;
+  }
+
+  function renderCiUnavailable(box) {
+    box.textContent = '';
+    box.appendChild(el('div', 'ci-line muted', 'CI-Laufzeit nicht verfügbar'));
+    box.dataset.state = 'unavailable';
+  }
+
+  function renderCiStats(box, st, latestRun) {
+    box.textContent = '';
+    if (!st.run) {
+      box.dataset.state = 'none';
+      box.appendChild(el('div', 'ci-line muted', 'CI-Laufzeit: noch kein abgeschlossener Lauf'));
+      return;
+    }
+    box.dataset.state = 'ok';
+    var total = runSeconds(st.run);
+    var head = el('div', 'ci-row');
+    var line = el('div', 'ci-line');
+    line.id = 'ciTimeLine';
+    var other = latestRun && latestRun.id !== st.run.id && validNum(st.run.run_number);
+    var parts = [];
+    parts.push(el('b', null, other ? 'CI (Lauf #' + st.run.run_number + '):' : 'CI:'));
+    if (total !== null) parts.push(el('span', 'ci-total', fmtMin(total)));
+    var pct = 0, level = 'ok';
+    if (st.tight) {
+      pct = Math.round(st.tight.ratio * 100);
+      level = ciLevel(pct);
+      var t = el('span', 'ci-tight');
+      t.appendChild(el('span', 'ci-name', st.tight.label));
+      t.appendChild(document.createTextNode(' ' + fmtMinNum(st.tight.seconds) + ' / ' + fmtLimit(st.tight.limit) + ' min '));
+      var pc = el('span', 'ci-pct', '(' + pct + ' %)');
+      pc.dataset.level = level;
+      t.appendChild(pc);
+      parts.push(t);
+    } else {
+      parts.push(el('span', 'ci-tight muted', 'Limit unbekannt'));
+    }
+    parts.forEach(function (n, i) {
+      if (i > 1) line.appendChild(document.createTextNode(' · '));
+      else if (i === 1) line.appendChild(document.createTextNode(' '));
+      line.appendChild(n);
+    });
+    head.appendChild(line);
+    var btn = el('button', 'btn ci-more', '▸ Details');
+    btn.type = 'button';
+    btn.id = 'ciMore';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-controls', 'ciDetails');
+    head.appendChild(btn);
+    box.appendChild(head);
+    if (st.tight) box.appendChild(ciBar('ci-bar', pct, level));
+    box.dataset.level = st.tight ? level : 'unknown';
+
+    var det = el('div', 'ci-details');
+    det.id = 'ciDetails';
+    det.hidden = true;
+    renderCiDetails(det, st, pct, level);
+    box.appendChild(det);
+    btn.addEventListener('click', function () {
+      var open = det.hidden;
+      det.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = (open ? '▾' : '▸') + ' Details';
+    });
+  }
+
+  function renderCiDetails(det, st, pct, level) {
+    // Balken der letzten Läufe (älteste links), dazu eine Linie beim höchsten Job-Limit.
+    var runs = st.runs.slice().reverse();
+    var secs = runs.map(runSeconds);
+    var limitSec = st.maxJobLimit ? st.maxJobLimit * 60 : 0;
+    var top = Math.max.apply(null, secs.map(function (s) { return s || 0; }).concat([limitSec, 60])) * 1.08;
+    det.appendChild(el('h3', 'ci-h', 'Letzte ' + runs.length + ' abgeschlossene Läufe'));
+    var chart = el('div', 'ci-chart');
+    chart.id = 'ciChart';
+    var plot = el('div', 'ci-plot');
+    runs.forEach(function (r, i) {
+      var col = el('div', 'ci-col');
+      col.dataset.run = String(r.run_number);
+      var ok = r.conclusion === 'success';
+      col.dataset.result = ok ? 'ok' : 'err';
+      var s = secs[i];
+      var val = el('span', 'ci-val', s === null ? '–' : fmtMinNum(s));
+      var b = el('div', 'ci-runbar');
+      b.style.height = (s === null ? 0 : Math.max(2, s / top * 100)) + '%';
+      b.title = 'Lauf #' + r.run_number + ': ' + (s === null ? 'Dauer unbekannt' : fmtMin(s)) + (ok ? '' : ' (nicht erfolgreich)');
+      col.appendChild(val);
+      col.appendChild(b);
+      plot.appendChild(col);
+    });
+    if (limitSec) {
+      var lim = el('div', 'ci-limit');
+      lim.id = 'ciLimitLine';
+      lim.style.bottom = (limitSec / top * 100) + '%';
+      lim.appendChild(el('span', null, 'Limit ' + fmtLimit(st.maxJobLimit) + ' min'));
+      plot.appendChild(lim);
+    }
+    chart.appendChild(plot);
+    var axis = el('div', 'ci-axis');
+    runs.forEach(function (r) { axis.appendChild(el('span', null, '#' + r.run_number)); });
+    chart.appendChild(axis);
+    det.appendChild(chart);
+    det.appendChild(el('div', 'ci-unit muted small', 'Gesamtdauer in min · grün = erfolgreich, rot = fehlgeschlagen/abgebrochen'));
+
+    var blk = el('div', 'ci-tightblk');
+    blk.id = 'ciTightBlock';
+    blk.appendChild(el('h3', 'ci-h', 'Knappster Schritt (letzter Lauf)'));
+    if (st.tight) {
+      blk.appendChild(el('div', 'ci-name', st.tight.label));
+      var row = el('div', 'ci-tightrow');
+      row.appendChild(el('span', null, fmtMinNum(st.tight.seconds) + ' von ' + fmtLimit(st.tight.limit) + ' min'));
+      var p = el('span', 'ci-pct', pct + ' %');
+      p.dataset.level = level;
+      row.appendChild(p);
+      if (st.trend) {
+        var d = st.trend.seconds;
+        var sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+        var tr = el('span', 'ci-trend', 'Trend: ' + sign + fmtMin(Math.abs(d)) + ' seit Lauf #' + st.trend.run.run_number);
+        tr.id = 'ciTrend';
+        row.appendChild(tr);
+      }
+      blk.appendChild(row);
+      blk.appendChild(ciBar('ci-bar', pct, level));
+    } else {
+      blk.appendChild(el('div', 'muted', 'Limit unbekannt'));
+    }
+    var unknown = st.entries.filter(function (e) { return e.limit === null; }).map(function (e) { return e.label; });
+    if (unknown.length) blk.appendChild(el('div', 'note', 'Limit unbekannt: ' + unknown.join(', ')));
+    blk.appendChild(el('div', 'note', 'Limits aus ' + st.file + ' gelesen'));
+    det.appendChild(blk);
   }
 
   // --- 2. Zeitleiste -----------------------------------------------------------
@@ -2590,13 +2976,37 @@
     });
   }
 
-  function loadCiPart(force) {
+  // CI-Laufzeit unter der Ampel. Fehler bleiben in dieser Zeile („nicht verfügbar“), keine Fehlerkarte.
+  function loadCiTime(box, latestRun, force, retried) {
+    var gen = projGen;
+    return fetchCiStats(force).then(function (st) {
+      if (gen !== projGen || !box.isConnected) return;
+      // Ist der neueste Lauf inzwischen fertig, aber die Statistik noch älter: einmal frisch laden.
+      if (!retried && st.run && latestRun && latestRun.status === 'completed' && latestRun.id !== st.run.id) {
+        return loadCiTime(box, latestRun, true, true);
+      }
+      try { renderCiStats(box, st, latestRun); } catch (e) { renderCiUnavailable(box); }
+    }, function () {
+      if (gen !== projGen || !box.isConnected) return;
+      renderCiUnavailable(box);
+    });
+  }
+
+  function loadCiPart(force, fromPoll) {
     return loadPart($('ciBody'), 'Lade Build-Status …', fetchLatestRun, function (box, run) {
       var info = renderRun(box, run);
       stopProjectPolling();
       if (info && info.running && !$('projectView').hidden) {
-        pollTimer = setTimeout(function () { if (!$('projectView').hidden) loadCiPart(true); }, POLL_RUNNING_MS);
+        pollTimer = setTimeout(function () { if (!$('projectView').hidden) loadCiPart(true, true); }, POLL_RUNNING_MS);
       }
+      if (!run) return;
+      var t = el('div', 'ci-time');
+      t.id = 'ciTime';
+      t.setAttribute('aria-live', 'off');
+      t.appendChild(el('div', 'ci-line muted', 'Lade CI-Laufzeit …'));
+      box.appendChild(t);
+      // Beim automatischen Nachladen eines laufenden Builds den 60-s-Cache nutzen.
+      return loadCiTime(t, run, force && !fromPoll);
     }, force);
   }
 

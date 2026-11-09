@@ -16,7 +16,8 @@
         { "name": "Audio", "detail": "miniaudio", "status": "geplant" },
         { "name": "UI", "detail": "RmlUi", "status": "geplant" },
         { "name": "Debug-UI", "detail": "Dear ImGui", "status": "fertig" },
-        { "name": "Profiler", "detail": "Tracy", "status": "geplant" }
+        { "name": "Profiler", "detail": "Tracy", "status": "geplant" },
+        { "name": "Asset-System", "detail": "Katalog, Streaming", "status": "geplant" }
       ]
     },
     {
@@ -24,7 +25,8 @@
       "bausteine": [
         { "name": "Log", "status": "fertig" },
         { "name": "Mathe", "detail": "double-Positionen", "status": "fertig" },
-        { "name": "Spielschleife", "detail": "60 Hz", "status": "fertig" }
+        { "name": "Spielschleife", "detail": "60 Hz", "status": "fertig" },
+        { "name": "Frame-Zeiten", "detail": "Messung, 1-s-Fenster", "status": "fertig" }
       ]
     },
     {

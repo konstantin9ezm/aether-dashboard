@@ -683,13 +683,13 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 18 Bausteine).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
       return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
     });
-    assert.equal(offlineMap, 18, 'engine-map.json offline aus der App-Hülle');
+    assert.equal(offlineMap, 20, 'engine-map.json offline aus der App-Hülle');
     assert.ok(await page.isHidden('#message'), 'keine Fehlermeldung, nur der Hinweis');
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable, r.disabled, r.checked]), [
@@ -773,13 +773,13 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 18 Bausteine).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
       return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
     });
-    assert.equal(offlineMap, 18, 'engine-map.json offline aus der App-Hülle');
+    assert.equal(offlineMap, 20, 'engine-map.json offline aus der App-Hülle');
     assert.match(hint, /antwortet nicht/);
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);
