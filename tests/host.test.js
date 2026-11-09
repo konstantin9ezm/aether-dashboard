@@ -135,6 +135,11 @@ async function startGame(page) {
   await page.waitForSelector('#buildsView:not([hidden])');
   // „Spielen“ ist ein Knopf IM Start-Rahmen (Spiel-iframe): echter Klick dort, nicht per evaluate.
   const start = await (await page.waitForSelector('#game.slot:not([hidden]) iframe')).contentFrame();
+  // Erst klicken, wenn der Start-Rahmen bereit ist und zwei Bilder gezeichnet hat: Im vollen Chromium ging ein
+  // zu früher Klick gelegentlich verloren (Knopf blieb „Spielen“; vermutlich ist das sandboxed iframe dort
+  // noch nicht für Eingaben bereit).
+  await start.waitForSelector('#aetherStart:not([disabled])');
+  await start.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await start.click('#aetherStart');
   await page.waitForFunction(() => document.querySelector('#game iframe') && !document.getElementById('game').hidden && !document.getElementById('game').classList.contains('slot'));
   let frame;

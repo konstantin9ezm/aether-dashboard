@@ -186,11 +186,12 @@ Das Spiel bleibt der einzige Controller-Leser (kein `navigator.getGamepads` im D
   Knöpfen „◀ ▶ wechseln · Ⓐ auswählen · Ⓑ schließen“. Rahmen und Zeile ändern weder Knopfgröße noch -anordnung.
 - `"press"` auf **Schließen** schließt wie der Knopf (`open: false`, Fokus zurück ins Spiel).
 - Browser erlauben Mail-Link und Zwischenablage oft nur nach echter Nutzeraktion; ein Controller zählt dafür nicht
-  überall. Deshalb wird es versucht, sonst erscheint im Dialog „Per Controller nicht möglich – bitte antippen oder
-  Enter drücken.“:
-  - **Mail öffnen**: derselbe `mailto:`-Weg wie beim Antippen. Verliert die Seite innerhalb von
-    `PAD_MAIL_DETECT_MS = 1500` ms weder den Fokus (`blur`) noch die Sichtbarkeit (`visibilitychange` → hidden),
-    hat sich keine Mail-App geöffnet → Hinweis.
+  überall. Im Dialog erscheint dann „Per Controller nicht möglich – bitte antippen oder Enter drücken.“:
+  - **Mail öffnen**: Das Dashboard versucht per Controller **keinen** `mailto:`-Link und zeigt sofort den Hinweis.
+    Grund: Safari öffnet einen Mail-Link ohne echte Nutzeraktion nur einmal pro Seitenaufruf und meldet danach
+    „Safari kann die Seite nicht öffnen, da die Adresse ungültig ist.“. Enter auf dem fokussierten Knopf (der
+    Fokus liegt bei offenem Dialog im Dashboard, nicht im Spiel-iframe), Antippen und Klick öffnen die Mail-App
+    weiterhin über den Klick-Handler.
   - **Text kopieren**: `navigator.clipboard.writeText`, sonst `execCommand("copy")`. Scheitert beides → Hinweis
     (die Vorschau wird nicht markiert; das bleibt dem Antippen vorbehalten). Bei Erfolg kurz „Kopiert“.
   - Der Hinweis verschwindet bei der nächsten Eingabe (Controller, Antippen, Taste) oder beim Schließen.
@@ -361,7 +362,9 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
 - `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
   Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
   64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste
-  (Nachweis über die Chromium-Meldung „Launched external handler for 'mailto:…'“), Kürzen auf 2000 Zeichen,
+  (Nachweis über die Chromium-Meldung „Launched external handler for 'mailto:…'“), Controller-„press“ auf „Mail
+  öffnen“ mit und ohne Nutzeraktivierung (sofort Hinweis, kein `mailto:`-Versuch, gezählt per CDP
+  `Page.frameRequestedNavigation`), Kürzen auf 2000 Zeichen,
   Zwischenablage (ausgelesen in einem zweiten Kontext), alle Wege zum Schließen samt Fokus zurück ins Spiel, Layout
   auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop.
 - `tests/start-frame.test.js` – Spielstart im Rahmen (Headless Chromium): Tipp im Rahmen startet, Dokument
