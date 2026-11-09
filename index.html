@@ -381,11 +381,16 @@
   @media (max-width: 460px) {
     header.top { gap: 8px; }
     header.top .spacer { display: none; }
-    .hdr-link { margin-left: auto; }
+    .hdr-link { margin-left: auto; margin-right: 0; }
+    /* Tippfläche nach links verlängern (dort ist freier Platz), zum Umschalter bleiben 6 px. */
+    .hdr-link::before { left: auto; right: -2px; transform: translateY(-50%); }
     .hdr-link[hidden] + .tabs { margin-left: auto; }
     .hdr-link .lbl { display: none; }
     .hdr-link .ic { display: block; }
   }
+  /* Noch schmaler (iPhone 13/14 mit 390 px, iPhone SE/mini): Logo weglassen, damit Titel, Symbol und
+     Umschalter ohne Umbruch und ohne waagerechtes Scrollen nebeneinander passen. */
+  @media (max-width: 400px) { header.top img { display: none; } }
 
   /* Projektansicht */
   .app.wide { max-width: 1180px; }

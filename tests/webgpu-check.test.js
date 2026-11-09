@@ -196,14 +196,21 @@ async function headerLinkLayout(page) {
     const tabs = document.getElementById('tabs');
     const header = document.querySelector('header.top');
     const r = a.getBoundingClientRect(), t = tabs.getBoundingClientRect(), h = header.getBoundingClientRect();
-    const before = getComputedStyle(a, '::before');
-    const hw = parseFloat(before.width), hh = parseFloat(before.height);
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const hit = { left: cx - hw / 2, right: cx + hw / 2, top: cy - hh / 2, bottom: cy + hh / 2 };
-    // Treffertest: 44 × 44 px um die Mitte (Ränder 1 px eingerückt) müssen den Link treffen.
+    // Tippfläche per Treffertest ausmessen: zusammenhängende Strecke, die den Link trifft (waagerecht und senkrecht).
+    const on = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && a.contains(e); };
+    const cx0 = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let left = cx0, right = cx0, top = cy, bottom = cy;
+    while (left > 0 && on(left - 0.5, cy)) left -= 0.5;
+    while (right < window.innerWidth && on(right + 0.5, cy)) right += 0.5;
+    while (top > 0 && on(cx0, top - 0.5)) top -= 0.5;
+    while (bottom < window.innerHeight && on(cx0, bottom + 0.5)) bottom += 0.5;
+    const hit = { left, right, top, bottom };
+    const hw = right - left, hh = bottom - top;
+    // 44 × 44 px innerhalb der Fläche (Ränder 1 px eingerückt) müssen überall den Link treffen.
+    const cx = (left + right) / 2, cyy = (top + bottom) / 2;
     const miss = [];
     for (let dx = -21; dx <= 21; dx += 7) for (let dy = -21; dy <= 21; dy += 7) {
-      const e = document.elementFromPoint(cx + dx, cy + dy);
+      const e = document.elementFromPoint(cx + dx, cyy + dy);
       if (!e || !a.contains(e)) miss.push(`${dx},${dy}:${e ? e.tagName + '#' + e.id : '-'}`);
     }
     const kids = [...header.children].filter((e) => e.getBoundingClientRect().width > 0);
@@ -215,7 +222,7 @@ async function headerLinkLayout(page) {
       color: getComputedStyle(a).color, accent: (() => { const x = document.createElement('span'); x.style.color = 'var(--accent)'; document.body.appendChild(x); const c = getComputedStyle(x).color; x.remove(); return c; })(),
       fontSize: parseFloat(getComputedStyle(a).fontSize), tabFont: parseFloat(getComputedStyle(tabs.querySelector('button')).fontSize),
       border: getComputedStyle(a).borderTopWidth, bg: getComputedStyle(a).backgroundColor,
-      hitW: hw, hitH: hh, miss,
+      hitW: hw, hitH: hh, miss, box: [r.left, r.top, r.width, r.height].map(Math.round), tabsBox: [t.left, t.top, t.width, t.height].map(Math.round),
       leftOfTabs: r.right <= t.left, gapToTabs: t.left - hit.right,
       sameRow: Math.abs(cy - (t.top + t.height / 2)) <= 4, rowSpread: Math.max(...tops) - Math.min(...tops), headerH: h.height, tabsH: t.height,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -226,6 +233,7 @@ async function headerLinkLayout(page) {
 
 const HEADER_LAYOUTS = [
   { name: 'iPhone 16 Pro hoch', device: { viewport: { width: 402, height: 874 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: 'iPhone 13 hoch (390 px)', device: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
   { name: 'iPhone 16 Pro quer', device: { viewport: { width: 874, height: 402 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
   { name: 'iPad quer', device: { viewport: { width: 1194, height: 834 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } },
   { name: 'Desktop', device: { viewport: { width: 1280, height: 800 } } }
@@ -261,6 +269,7 @@ for (const L of HEADER_LAYOUTS) {
       assert.equal(await page.locator('main a[href="webgpu-check.html"]:visible').count(), 1, `${view}: genau ein sichtbarer Link`);
       const m = await headerLinkLayout(page);
       const label = `${L.name}/${view}`;
+      console.log(`# Kopfzeile ${label}: Link ${m.box.join(',')} Tippfläche ${m.hitW}×${m.hitH} Abstand ${m.gapToTabs} Umschalter ${m.tabsBox.join(',')} Kopfzeile ${m.headerH} Symbol ${m.iconOnly}`);
       assert.ok(m.visible, `${label}: sichtbar`);
       assert.equal(m.href, 'webgpu-check.html');
       assert.equal(m.target, null, 'öffnet wie bisher im selben Tab');
@@ -278,7 +287,7 @@ for (const L of HEADER_LAYOUTS) {
       assert.ok(m.rowSpread <= 4 && m.headerH <= m.tabsH + 1, `${label}: Kopfzeile einzeilig (Höhe ${m.headerH}, Streuung ${m.rowSpread})`);
       assert.ok(m.overflow <= 0, `${label}: kein waagerechtes Scrollen (${m.overflow}px)`);
       assert.ok(m.inView, `${label}: Tippfläche im Fenster`);
-      if (L.name === 'iPhone 16 Pro hoch') assert.ok(m.iconOnly, 'hochkant nur Symbol');
+      if (L.device.viewport.width <= 460) assert.ok(m.iconOnly, 'hochkant nur Symbol');
       else assert.ok(!m.iconOnly, `${label}: Text sichtbar`);
       await page.screenshot({ path: path.join(OUT, `kopfzeile-${L.name.replace(/\W+/g, '_')}-${view}.png`), clip: { x: 0, y: 0, width: L.device.viewport.width, height: 110 } });
     }

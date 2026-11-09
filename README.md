@@ -308,7 +308,7 @@ Rate-Limit (mit Uhrzeit), keine Verbindung, fehlende `ROADMAP.md`, fehlenden Wor
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
 **https://konstantin9ezm.github.io/aether-dashboard/webgpu-check.html**. Der Link „WebGPU-Check“
 steht in der Kopfzeile oben rechts, links neben dem Umschalter „Spielen | Projekt“ (Build- und Projektansicht;
-auf dem iPhone hochkant als Symbol mit derselben 44-px-Tippfläche), und unten auf dem Token-Bildschirm. Auf dem
+auf dem iPhone hochkant als Symbol mit derselben 44-px-Tippfläche; bis 400 px Breite entfällt dafür das Logo), und unten auf dem Token-Bildschirm. Auf dem
 Token-Bildschirm ist der Kopfzeilen-Link ausgeblendet, während ein Spiel läuft ebenfalls. Die Seite braucht kein Token, liest
 keins und ruft api.github.com nie auf; alles steckt in der einen Datei (keine externen Skripte oder Schriften).
 Sie ist absichtlich nicht Teil der Offline-App-Hülle in `sw.js`.
