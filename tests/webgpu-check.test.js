@@ -258,6 +258,10 @@ describe('WebGPU-Check mit WebGPU (Desktop)', () => {
     await waitStatus(page, 'd', 'wartet auf Antippen');
     await frame.waitForSelector('#tap', { state: 'visible' });
     assert.equal(await page.isVisible('#fpsHint-d'), true);
+    // Erst klicken, wenn das iframe die eingeblendete Tippfläche gezeichnet hat: Im vollen Chromium ging ein
+    // sofortiger Klick ins sandboxed iframe gelegentlich verloren (Status blieb „wartet auf Antippen“).
+    // evaluate löst kein pointerdown/mousedown aus, zählt also nicht als Antippen.
+    await frame.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     await frame.click('#tap');
     await waitStatus(page, 'd', 'fertig');
     const d = await fpsState(page, 'd');
