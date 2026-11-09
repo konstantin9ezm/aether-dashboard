@@ -283,6 +283,24 @@ async function assertClosedAndFocused(page, frame, count) {
   await frame.waitForFunction((n) => window.__t.keys.length > n && window.__t.keys[window.__t.keys.length - 1] === 'x', before);
 }
 
+// Kopfzeile: Link „WebGPU-Check“ (Teil der Spielansicht, deshalb hier mit echtem Spielstart)
+test('Kopfzeilen-Link „WebGPU-Check“: sichtbar in der Build-Ansicht, nicht im Start-Rahmen, nicht während des Spiels', async () => {
+  const { context, page, log } = await newPage(null);
+  await page.goto(baseUrl);
+  await page.waitForSelector('#buildsView:not([hidden])');
+  assert.ok(await page.isVisible('header.top #hdrWebgpu'), 'Build-Ansicht: Link in der Kopfzeile');
+  const start = await (await page.waitForSelector('#game.slot:not([hidden]) iframe')).contentFrame();
+  await start.waitForSelector('#aetherStart');
+  assert.equal(await start.$$eval('a', (as) => as.filter((a) => /webgpu/i.test(a.getAttribute('href') + a.textContent)).length), 0, 'nicht im Start-Rahmen');
+  await startGame(page);
+  assert.equal(await page.isVisible('#hdrWebgpu'), false, 'während des Spiels nicht sichtbar');
+  assert.equal(await page.isVisible('a[href="webgpu-check.html"]'), false, 'auch sonst kein sichtbarer Link im Spiel');
+  await stopGameByX(page);
+  assert.ok(await page.isVisible('#hdrWebgpu'), 'nach dem Spiel wieder sichtbar');
+  assert.deepEqual(log.errors, []);
+  await context.close();
+});
+
 // ---------------------------------------------------------------------------
 // Einstellungs-Speicher
 // ---------------------------------------------------------------------------

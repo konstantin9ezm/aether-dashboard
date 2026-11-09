@@ -161,7 +161,77 @@ test('sw.js nimmt die Seite nicht in die App-Hülle auf; Workflow veröffentlich
   assert.match(wf, /cp [^\n]*webgpu-check\.html[^\n]*_site\//, 'webgpu-check.html wird nach _site kopiert');
 });
 
-test('index.html: Link „WebGPU-Check“ auf dem Token-Bildschirm und in der Build-Ansicht', async () => {
+// Kleiner Mock der GitHub-API für die Build- und Projektansicht (nur, was die Kopfzeile braucht).
+const DASH_TOKEN = 'github_pat_11TESTTOKEN0000_mockSecretValueForTestsOnly1234567890abcdef';
+async function dashboardApi(route) {
+  const req = route.request();
+  const cors = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset' };
+  if (req.method() === 'OPTIONS') {
+    return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-methods': 'GET', 'access-control-allow-headers': 'Authorization, Accept, Content-Type' } });
+  }
+  const p = decodeURIComponent(new URL(req.url()).pathname);
+  const base = '/repos/konstantin9ezm/aether';
+  const json = (status, body, type = 'application/json') => route.fulfill({ status, headers: { ...cors, 'content-type': type }, body: JSON.stringify(body) });
+  if ((await req.allHeaders()).authorization !== `Bearer ${DASH_TOKEN}`) return json(401, { message: 'Bad credentials' });
+  if (p === base) return json(200, { full_name: 'konstantin9ezm/aether', private: true });
+  if (p === `${base}/branches/web-build`) return json(200, { name: 'web-build' });
+  if (p === `${base}/contents/index.json`) {
+    return json(200, [{ commit: 'abc1234' + '0'.repeat(33), short: 'abc1234', message: 'Kopfzeilen-Test', date: '2026-11-08T10:00:00Z', path: 'builds/abc1234/' }], 'application/vnd.github.raw+json');
+  }
+  return json(404, { message: 'Not Found' });
+}
+async function newDashboardPage(device) {
+  const { context, page, log } = await newPage(plainBrowser, { device });
+  await context.unroute('https://api.github.com/**');
+  await context.route('https://api.github.com/**', dashboardApi);
+  await page.addInitScript((t) => { if (window === window.top) localStorage.setItem('aether.githubToken', t); }, DASH_TOKEN);
+  return { context, page, log };
+}
+
+// Lage des Kopfzeilen-Links: links neben dem Umschalter, gleiche Höhe, Tippfläche ≥ 44 × 44 px
+// (per Treffertest an den Punkten der Fläche), kein Überlappen, Kopfzeile einzeilig, kein waagerechtes Scrollen.
+async function headerLinkLayout(page) {
+  return page.evaluate(() => {
+    const a = document.getElementById('hdrWebgpu');
+    const tabs = document.getElementById('tabs');
+    const header = document.querySelector('header.top');
+    const r = a.getBoundingClientRect(), t = tabs.getBoundingClientRect(), h = header.getBoundingClientRect();
+    const before = getComputedStyle(a, '::before');
+    const hw = parseFloat(before.width), hh = parseFloat(before.height);
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const hit = { left: cx - hw / 2, right: cx + hw / 2, top: cy - hh / 2, bottom: cy + hh / 2 };
+    // Treffertest: 44 × 44 px um die Mitte (Ränder 1 px eingerückt) müssen den Link treffen.
+    const miss = [];
+    for (let dx = -21; dx <= 21; dx += 7) for (let dy = -21; dy <= 21; dy += 7) {
+      const e = document.elementFromPoint(cx + dx, cy + dy);
+      if (!e || !a.contains(e)) miss.push(`${dx},${dy}:${e ? e.tagName + '#' + e.id : '-'}`);
+    }
+    const kids = [...header.children].filter((e) => e.getBoundingClientRect().width > 0);
+    const tops = kids.map((e) => e.getBoundingClientRect()).map((k) => k.top + k.height / 2);
+    return {
+      visible: a.offsetParent !== null && r.width > 0,
+      text: a.textContent.trim(), aria: a.getAttribute('aria-label'), href: a.getAttribute('href'), target: a.getAttribute('target'),
+      iconOnly: getComputedStyle(a.querySelector('.lbl')).display === 'none',
+      color: getComputedStyle(a).color, accent: (() => { const x = document.createElement('span'); x.style.color = 'var(--accent)'; document.body.appendChild(x); const c = getComputedStyle(x).color; x.remove(); return c; })(),
+      fontSize: parseFloat(getComputedStyle(a).fontSize), tabFont: parseFloat(getComputedStyle(tabs.querySelector('button')).fontSize),
+      border: getComputedStyle(a).borderTopWidth, bg: getComputedStyle(a).backgroundColor,
+      hitW: hw, hitH: hh, miss,
+      leftOfTabs: r.right <= t.left, gapToTabs: t.left - hit.right,
+      sameRow: Math.abs(cy - (t.top + t.height / 2)) <= 4, rowSpread: Math.max(...tops) - Math.min(...tops), headerH: h.height, tabsH: t.height,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      inView: hit.left >= 0 && hit.right <= window.innerWidth
+    };
+  });
+}
+
+const HEADER_LAYOUTS = [
+  { name: 'iPhone 16 Pro hoch', device: { viewport: { width: 402, height: 874 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: 'iPhone 16 Pro quer', device: { viewport: { width: 874, height: 402 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: 'iPad quer', device: { viewport: { width: 1194, height: 834 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } },
+  { name: 'Desktop', device: { viewport: { width: 1280, height: 800 } } }
+];
+
+test('index.html: Link „WebGPU-Check“ auf dem Token-Bildschirm; Kopfzeilen-Link dort ausgeblendet', async () => {
   const { context, page, log } = await newPage(gpuBrowser);
   await page.goto(baseUrl);
   await page.waitForSelector('#tokenView:not([hidden])');
@@ -169,11 +239,53 @@ test('index.html: Link „WebGPU-Check“ auf dem Token-Bildschirm und in der Bu
   assert.equal(await link.count(), 1);
   assert.equal(await link.isVisible(), true);
   assert.equal((await link.textContent()).trim(), 'WebGPU-Check');
-  assert.equal(await page.locator('#buildsView a[href="webgpu-check.html"]').count(), 1);
-  assert.equal(await page.locator('a[href="webgpu-check.html"]').count(), 2, 'sonst keine weiteren Links');
+  assert.equal(await page.isVisible('#tabs'), true, 'Kopfzeile mit Umschalter ist auf dem Token-Bildschirm sichtbar');
+  assert.equal(await page.isVisible('header.top a[href="webgpu-check.html"]'), false, 'kein doppelter Link in der Kopfzeile');
+  assert.equal(await page.locator('#buildsView a[href="webgpu-check.html"]').count(), 0, 'nicht mehr unten in der Build-Ansicht');
+  assert.equal(await page.locator('a[href="webgpu-check.html"]').count(), 2, 'sonst keine weiteren Links (Karte + Kopfzeile)');
   assert.deepEqual(log.github, [], 'ohne Token keine API-Aufrufe');
   await context.close();
 });
+
+for (const L of HEADER_LAYOUTS) {
+  test(`Kopfzeile ${L.name}: Link „WebGPU-Check“ links neben dem Umschalter in Build- und Projektansicht`, async () => {
+    const { context, page, log } = await newDashboardPage(L.device);
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden]) #buildList .build');
+    for (const view of ['Spielen', 'Projekt']) {
+      if (view === 'Projekt') {
+        await page.click('#tabProject');
+        await page.waitForSelector('#projectView:not([hidden])');
+      }
+      assert.equal(await page.locator('header.top a[href="webgpu-check.html"]').count(), 1, `${view}: Link in der Kopfzeile`);
+      assert.equal(await page.locator('main a[href="webgpu-check.html"]:visible').count(), 1, `${view}: genau ein sichtbarer Link`);
+      const m = await headerLinkLayout(page);
+      const label = `${L.name}/${view}`;
+      assert.ok(m.visible, `${label}: sichtbar`);
+      assert.equal(m.href, 'webgpu-check.html');
+      assert.equal(m.target, null, 'öffnet wie bisher im selben Tab');
+      assert.equal(m.aria, 'WebGPU-Check');
+      if (!m.iconOnly) assert.equal(m.text, 'WebGPU-Check');
+      assert.equal(m.color, m.accent, `${label}: Link-/Akzentblau`);
+      assert.ok(m.fontSize < m.tabFont, `${label}: kleiner als die Umschalter-Beschriftung (${m.fontSize} < ${m.tabFont})`);
+      assert.equal(m.border, '0px');
+      assert.equal(m.bg, 'rgba(0, 0, 0, 0)');
+      assert.ok(m.hitW >= 44 && m.hitH >= 44, `${label}: Tippfläche ${m.hitW}×${m.hitH}`);
+      assert.deepEqual(m.miss, [], `${label}: Tippfläche trifft überall den Link`);
+      assert.ok(m.leftOfTabs, `${label}: links neben dem Umschalter`);
+      assert.ok(m.gapToTabs >= 0, `${label}: Tippfläche überlappt den Umschalter nicht (Abstand ${m.gapToTabs}px)`);
+      assert.ok(m.sameRow, `${label}: gleiche Höhe wie der Umschalter`);
+      assert.ok(m.rowSpread <= 4 && m.headerH <= m.tabsH + 1, `${label}: Kopfzeile einzeilig (Höhe ${m.headerH}, Streuung ${m.rowSpread})`);
+      assert.ok(m.overflow <= 0, `${label}: kein waagerechtes Scrollen (${m.overflow}px)`);
+      assert.ok(m.inView, `${label}: Tippfläche im Fenster`);
+      if (L.name === 'iPhone 16 Pro hoch') assert.ok(m.iconOnly, 'hochkant nur Symbol');
+      else assert.ok(!m.iconOnly, `${label}: Text sichtbar`);
+      await page.screenshot({ path: path.join(OUT, `kopfzeile-${L.name.replace(/\W+/g, '_')}-${view}.png`), clip: { x: 0, y: 0, width: L.device.viewport.width, height: 110 } });
+    }
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Hauptablauf mit WebGPU (Desktop)
