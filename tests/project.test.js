@@ -214,7 +214,8 @@ jobs:
 const mock = {
   reset() {
     Object.assign(this, { mode: 'ok', run: 'success', actions: 'ok', roadmap: 'normal', requests: [],
-      ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok' });
+      ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok',
+      wfId: 42, latest: undefined });
   }
 };
 mock.reset();
@@ -263,29 +264,37 @@ async function githubApi(route) {
   if (p === `${BASE}/actions/workflows`) {
     return json(route, 200, { total_count: 2, workflows: [
       { id: 7, name: 'Web-Build', path: '.github/workflows/web.yml', state: 'active' },
-      { id: 42, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }
+      { id: mock.wfId, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }
     ] });
   }
-  if (p === `${BASE}/actions/workflows/42/runs` && q.get('status') === 'completed') {
+  if (p === `${BASE}/actions/workflows/${mock.wfId}/runs` && q.get('status') === 'completed') {
     assert.equal(q.get('branch'), 'main', 'Läufe nur von main');
     if (mock.ci === 'runs500') return json(route, 500, { message: 'Server Error' });
     const n = Number(q.get('per_page')) || 30;
-    return json(route, 200, { total_count: mock.ciRuns.length, workflow_runs: mock.ciRuns.slice(0, n) });
+    // Wie GitHub: status=completed filtert serverseitig (außer im Modus „ignoreStatus“).
+    const list = mock.ci === 'ignoreStatus' ? mock.ciRuns : mock.ciRuns.filter((r) => r.status === 'completed');
+    return json(route, 200, { total_count: list.length, workflow_runs: list.slice(0, n) });
   }
   const jobsM = /^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/jobs$/.exec(p);
   if (jobsM) {
     if (mock.ci === 'jobs500') return json(route, 500, { message: 'Server Error' });
     if (mock.ci === 'jobsRate') return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
-    return json(route, 200, { total_count: mock.ciJobs.length, jobs: mock.ciJobs });
+    // Wie GitHub: filter=latest (Standard) liefert nur die Jobs des letzten Versuchs, filter=all alle Versuche.
+    let jobs = mock.ciJobs;
+    if (q.get('filter') !== 'all' && jobs.some((j) => j.run_attempt)) {
+      const last = Math.max(...jobs.map((j) => j.run_attempt || 1));
+      jobs = jobs.filter((j) => (j.run_attempt || 1) === last);
+    }
+    return json(route, 200, { total_count: jobs.length, jobs });
   }
   if (p === `${BASE}/contents/.github/workflows/build.yml`) {
     assert.ok(headers.accept.includes('application/vnd.github.raw'), 'build.yml roh laden');
     if (mock.ci === 'yaml404') return json(route, 404, { message: 'Not Found' });
     return route.fulfill({ status: 200, headers: { ...CORS, ...rate(4990), 'content-type': 'application/vnd.github.raw+json; charset=utf-8' }, body: mock.ciYaml });
   }
-  if (p === `${BASE}/actions/workflows/42/runs`) {
+  if (p === `${BASE}/actions/workflows/${mock.wfId}/runs`) {
     assert.equal(q.get('branch'), 'main', 'Läufe nur von main');
-    const run = runFor(mock.run);
+    const run = mock.latest !== undefined ? mock.latest : runFor(mock.run);
     return json(route, 200, { total_count: run ? 1 : 0, workflow_runs: run ? [run] : [] });
   }
   if (p === `${BASE}/pulls`) {
@@ -1061,4 +1070,238 @@ describe('CI-Laufzeit', () => {
       await context.close();
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// CI-Laufzeit mit realistischen API-Daten (Gerätebefund vom 09.11.2026, Lauf #103 nach „Re-run failed jobs“)
+//
+// Aufbau genau nach der dokumentierten GitHub-REST-API (API-Version 2022-11-28):
+// - Workflow-Runs: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow
+//   (id und workflow_id sind int64 – Doku-Beispiel id 30433642, echte IDs heute ~1,9·10^10; run_attempt;
+//   run_started_at laut Schema „The start time of the latest run. Resets on re-runs.“; updated_at)
+// - Jobs: https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run
+//   (Parameter filter: „latest“ = Jobs der letzten Ausführung (Standard), „all“ = alle Versuche;
+//   jeder Job hat run_id, run_attempt, status, conclusion, started_at, completed_at, steps[])
+// Die Zahlen selbst (IDs, Zeiten, Namen) sind nachgebaut; die echten Daten (privates Repo) lagen nicht vor.
+// ---------------------------------------------------------------------------
+const RW = { wfId: 118542077, sha103: '1a29bbc' + '4f0e2d9c7b6a5f4e3d2c1b0a9f8e7d6c5', sha101: '9c0d1e2' + 'f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d' };
+function realRun(id, n, sha, { status = 'completed', conclusion = 'success', attempt = 1, created, started, updated } = {}) {
+  const url = `https://api.github.com${BASE}/actions/runs/${id}`;
+  return {
+    id, name: 'Build', node_id: 'WFR_kwLOM' + id, head_branch: 'main', head_sha: sha, path: '.github/workflows/build.yml',
+    display_title: `Merge pull request #${n - 90}`, run_number: n, event: 'push', status, conclusion,
+    workflow_id: RW.wfId, check_suite_id: id + 1000000, check_suite_node_id: 'CS_kwDOM' + id,
+    url, html_url: `${GH}/actions/runs/${id}`, pull_requests: [], created_at: created, updated_at: updated,
+    actor: { login: OWNER, id: 1234567, type: 'User' }, triggering_actor: { login: OWNER, id: 1234567, type: 'User' },
+    run_attempt: attempt, referenced_workflows: [], run_started_at: started,
+    jobs_url: url + '/jobs', logs_url: url + '/logs', check_suite_url: `https://api.github.com${BASE}/check-suites/${id + 1000000}`,
+    artifacts_url: url + '/artifacts', cancel_url: url + '/cancel', rerun_url: url + '/rerun',
+    previous_attempt_url: attempt > 1 ? `${url}/attempts/${attempt - 1}` : null,
+    workflow_url: `https://api.github.com${BASE}/actions/workflows/${RW.wfId}`,
+    head_commit: { id: sha, tree_id: 'f'.repeat(40), message: `Merge pull request #${n - 90}\n\nText`, timestamp: created,
+      author: { name: OWNER, email: 'x@example.invalid' }, committer: { name: 'GitHub', email: 'noreply@github.com' } },
+    repository: { id: 900000001, name: REPO, full_name: `${OWNER}/${REPO}`, private: true },
+    head_repository: { id: 900000001, name: REPO, full_name: `${OWNER}/${REPO}`, private: true }
+  };
+}
+// #103: Versuch 1 21:55–22:17 UTC (Veröffentlichen rot), Re-run nur des roten Jobs 22:19:01–22:19:17 (16 s).
+const RUN103 = (o = {}) => realRun(19234567890, 103, RW.sha103, { attempt: 2, created: '2026-11-09T21:55:01Z', started: '2026-11-09T22:19:01Z', updated: '2026-11-09T22:19:17Z', ...o });
+const RUN101 = () => realRun(19234112233, 101, RW.sha101, { created: '2026-11-09T20:10:02Z', started: '2026-11-09T20:10:02Z', updated: '2026-11-09T20:31:20Z' });
+const olderRuns = () => [
+  realRun(19233000100, 100, 'b'.repeat(40), { conclusion: 'failure', created: '2026-11-09T18:00:00Z', started: '2026-11-09T18:00:00Z', updated: '2026-11-09T18:12:00Z' }),
+  realRun(19232000099, 99, 'c'.repeat(40), { attempt: 2, created: '2026-11-09T15:00:00Z', started: '2026-11-09T16:40:00Z', updated: '2026-11-09T16:40:30Z' }),
+  realRun(19231000098, 98, 'd'.repeat(40), { created: '2026-11-09T12:00:00Z', started: '2026-11-09T12:00:00Z', updated: '2026-11-09T12:20:00Z' })
+];
+let realJobId = 55123400000;
+function realJob(runId, attempt, name, from, to, steps, conclusion = 'success') {
+  const id = realJobId++;
+  return {
+    id, run_id: runId, workflow_name: 'Build', head_branch: 'main', run_url: `https://api.github.com${BASE}/actions/runs/${runId}`,
+    run_attempt: attempt, node_id: 'CR_kwDOM' + id, head_sha: RW.sha103, url: `https://api.github.com${BASE}/actions/jobs/${id}`,
+    html_url: `${GH}/actions/runs/${runId}/job/${id}`, status: 'completed', conclusion, created_at: from, started_at: from, completed_at: to,
+    name, steps: steps.map((st, i) => ({ name: st[0], status: 'completed', conclusion: st[3] || 'success', number: i + 1, started_at: st[1], completed_at: st[2] })),
+    check_run_url: `https://api.github.com${BASE}/check-runs/${id}`, labels: ['ubuntu-latest'], runner_id: 1, runner_name: 'GitHub Actions 1',
+    runner_group_id: 1, runner_group_name: 'GitHub Actions'
+  };
+}
+const T = (hms) => `2026-11-09T${hms}Z`;
+// Limits: native 20 min; web / bauen 25 min, Browser-Test 15 min; veröffentlichen 10 min, Schritt 10 min.
+const REAL_YAML = [
+  'name: Build',
+  'on:',
+  '  push:',
+  '    branches: [main]',
+  'jobs:',
+  '  native:',
+  '    name: native / bauen',
+  '    timeout-minutes: 20',
+  '    steps:',
+  '      - uses: actions/checkout@v4',
+  '      - name: Bauen',
+  '        run: cmake --build out',
+  '  web-bauen:',
+  '    name: web / bauen (web-build)',
+  '    timeout-minutes: 25',
+  '    steps:',
+  '      - name: Browser-Test',
+  '        timeout-minutes: 15',
+  '        run: npm test',
+  '  web-publish:',
+  '    name: web / veröffentlichen (web-build)',
+  '    needs: [native, web-bauen]',
+  '    timeout-minutes: 10',
+  '    steps:',
+  '      - name: Veröffentlichen',
+  '        timeout-minutes: 10',
+  '        run: ./publish.sh',
+  ''
+].join('\n');
+// Jobs von #103 über beide Versuche (filter=all). Versuch 2 enthält nur den neu gestarteten Job.
+function jobs103() {
+  const id = 19234567890;
+  return [
+    realJob(id, 1, 'native / bauen', T('21:55:12'), T('22:02:40'), [['Set up job', T('21:55:12'), T('21:55:14')], ['Bauen', T('21:55:20'), T('22:02:30')]]),
+    realJob(id, 1, 'web / bauen (web-build)', T('21:55:15'), T('22:08:51'), [['Set up job', T('21:55:15'), T('21:55:17')], ['Browser-Test', T('21:57:00'), T('22:07:30')]]), // 10,5 / 15 = 70 %
+    // Versuch 1 rot: Veröffentlichen hing 8,5 min (85 % des Limits) – darf NICHT als knappster Schritt zählen.
+    realJob(id, 1, 'web / veröffentlichen (web-build)', T('22:09:00'), T('22:17:45'), [['Veröffentlichen', T('22:09:10'), T('22:17:40'), 'failure']], 'failure'),
+    realJob(id, 2, 'web / veröffentlichen (web-build)', T('22:19:03'), T('22:19:17'), [['Veröffentlichen', T('22:19:06'), T('22:19:14')]])
+  ];
+}
+function jobs101() {
+  const id = 19234112233;
+  return [
+    realJob(id, 1, 'native / bauen', T('20:10:10'), T('20:18:10'), [['Bauen', T('20:10:20'), T('20:18:00')]]),
+    realJob(id, 1, 'web / bauen (web-build)', T('20:10:12'), T('20:29:00'), [['Browser-Test', T('20:12:00'), T('20:24:00')]]), // 12 / 15 = 80 %
+    realJob(id, 1, 'web / veröffentlichen (web-build)', T('20:29:10'), T('20:31:10'), [['Veröffentlichen', T('20:29:20'), T('20:31:00')]])
+  ];
+}
+function realMock() {
+  mock.reset();
+  mock.wfId = RW.wfId;
+  mock.ciYaml = REAL_YAML;
+}
+const ciQuery = (r) => /status=completed/.test(r.query);
+
+describe('CI-Laufzeit mit realistischen API-Daten', () => {
+  test('Echte int64-Lauf-IDs: CI-Zeile erscheint (Gegenprobe zum Gerätebefund)', async () => {
+    realMock();
+    mock.latest = RUN101();
+    mock.ciRuns = [RUN101(), ...olderRuns()];
+    mock.ciJobs = jobs101();
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok', await text(page, '#ciTime'));
+    // 20:10:02 → 20:31:20 = 21,3 min (Lauf ohne Re-run: wie bisher aus run_started_at/updated_at)
+    assert.equal(await ciLine(page), 'CI: 21,3 min · web / bauen (web-build) › Browser-Test 12,0 / 15 min (80 %)');
+    assert.equal(await page.getAttribute('#ciLight', 'href'), `${GH}/actions/runs/19234112233`);
+    assert.deepEqual(mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path + r.query),
+      [`${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`]);
+    assert.ok(mock.requests.some((r) => r.path.endsWith('build.yml') && r.query === `?ref=${RW.sha101}`));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Re-run (run_attempt 2, nur ein Job im zweiten Versuch): ehrliche Dauer, Schritt aus seinem Versuch', async () => {
+    realMock();
+    mock.latest = RUN103();
+    mock.ciRuns = [RUN103(), RUN101(), ...olderRuns()];
+    mock.ciJobs = jobs103();
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok', await text(page, '#ciTime'));
+    // Jobzeit aller Versuche ohne Wartezeit: 21:55:12–22:08:51 (13:39) + 22:09:00–22:17:45 (8:45) + 22:19:03–22:19:17 (0:14)
+    // = 1358 s = 22,6 min – nicht die 16 s des zweiten Versuchs. Knappster Schritt: Browser-Test aus Versuch 1 (70 %),
+    // nicht der hängende Schritt aus dem fehlgeschlagenen Versuch 1 (85 %), Veröffentlichen aus Versuch 2 (8 s).
+    assert.equal(await ciLine(page), 'CI: 22,6 min (Re-run, Versuch 2) · web / bauen (web-build) › Browser-Test 10,5 / 15 min (70 %)');
+    assert.equal(await page.getAttribute('#ciTime', 'data-level'), 'warn');
+    assert.doesNotMatch(await ciLine(page), /0,3 min/, 'keine irreführend kurze Dauer');
+    assert.deepEqual(mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path + r.query),
+      [`${BASE}/actions/runs/19234567890/jobs?filter=all&per_page=100`], 'bei Re-run Jobs aller Versuche');
+    await page.click('#ciMore');
+    const blk = await itext(page, '#ciTightBlock');
+    assert.match(blk, /web \/ bauen \(web-build\) › Browser-Test 10,5 von 15 min 70 %/);
+    assert.match(blk, /Gemessen in Versuch 1 von 2/);
+    assert.match(blk, /Re-run \(Versuch 2\): Gesamtdauer = Laufzeit der Jobs aller Versuche/);
+    // Balken: #103 mit 22,6 min; älterer Re-run #99 ohne bekannte Gesamtdauer → „–“ statt 0,5 min.
+    const cols = await page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent, c.dataset.attempt || '']));
+    assert.deepEqual(cols, [['98', 'ok', '20,0', ''], ['99', 'ok', '–', '2'], ['100', 'err', '12,0', ''], ['101', 'ok', '21,3', ''], ['103', 'ok', '22,6', '2']]);
+    // Gesamtdauer wird (ohne Token) gemerkt, damit #103 später als älterer Lauf richtig erscheint.
+    const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ciHistory')));
+    assert.equal(hist[0].id, 19234567890);
+    assert.equal(hist[0].total, 1358);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Neuerer laufender Lauf und laufender Re-run werden übergangen', async () => {
+    realMock();
+    // #104 läuft, letzter abgeschlossener ist #103 (Re-run)
+    mock.latest = realRun(19235000104, 104, 'e'.repeat(40), { status: 'in_progress', conclusion: null, created: '2026-11-09T22:40:00Z', started: '2026-11-09T22:40:00Z', updated: '2026-11-09T22:41:00Z' });
+    mock.ciRuns = [mock.latest, RUN103(), RUN101(), ...olderRuns()];
+    mock.ciJobs = jobs103();
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'warn');
+    assert.equal(await ciLine(page), 'CI (Lauf #103): 22,6 min (Re-run, Versuch 2) · web / bauen (web-build) › Browser-Test 10,5 / 15 min (70 %)');
+    assert.ok(!mock.requests.some((r) => r.path.includes('19235000104')), 'nichts vom laufenden Lauf');
+
+    // #103 wird gerade neu gestartet (Versuch 2 läuft): Zeile nennt #101, nicht „kein Lauf“.
+    mock.latest = RUN103({ status: 'in_progress', conclusion: null, updated: '2026-11-09T22:19:05Z' });
+    mock.ciRuns = [mock.latest, RUN101(), ...olderRuns()];
+    mock.ciJobs = jobs101();
+    mock.requests = [];
+    await ciReload(page);
+    assert.equal(await ciLine(page), 'CI (Lauf #101): 21,3 min · web / bauen (web-build) › Browser-Test 12,0 / 15 min (80 %)');
+    assert.ok(!mock.requests.some((r) => r.path.includes('19234567890')), 'nichts vom laufenden Re-run');
+    await context.close();
+  });
+
+  test('Leere oder unpassende Antwort: Diagnosetext statt „kein Lauf“', async () => {
+    realMock();
+    mock.latest = RUN103();
+    mock.ciRuns = [];
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'none');
+    assert.equal(await text(page, '#ciTime'), 'CI-Laufzeit: API lieferte 0 Läufe');
+    // Die Ampel zeigt einen fertigen Lauf → genau einmal frisch nachgeladen, nicht öfter.
+    assert.equal(mock.requests.filter(ciQuery).length, 2);
+    assert.equal(await page.$('#ciBody .msg'), null, 'keine Fehlerkarte');
+
+    // Server liefert (trotz status=completed) nur einen laufenden Lauf.
+    mock.ci = 'ignoreStatus';
+    mock.ciRuns = [RUN103({ status: 'in_progress', conclusion: null })];
+    await ciReload(page);
+    assert.equal(await text(page, '#ciTime'), 'CI-Laufzeit: API lieferte 1 Lauf, keiner abgeschlossen');
+    mock.ciRuns = [RUN103({ status: 'queued', conclusion: null }), { ...RUN101(), status: 'in_progress', conclusion: null }];
+    await ciReload(page);
+    assert.equal(await text(page, '#ciTime'), 'CI-Laufzeit: API lieferte 2 Läufe, keiner abgeschlossen');
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('API-Fehler (auch beim Re-run) bleiben „CI-Laufzeit nicht verfügbar“', async () => {
+    realMock();
+    mock.latest = RUN103();
+    mock.ciRuns = [RUN103(), RUN101(), ...olderRuns()];
+    mock.ciJobs = jobs103();
+    const { context, page, log } = await newPage(null);
+    let first = true;
+    for (const mode of ['runs500', 'jobs500', 'jobsRate', 'yaml404']) {
+      mock.ci = mode;
+      if (first) { await openProject(page); await waitCiTime(page); first = false; } else await ciReload(page);
+      assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'unavailable', mode);
+      assert.equal(await text(page, '#ciTime'), 'CI-Laufzeit nicht verfügbar', mode);
+      assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'ok', `Ampel bleibt (${mode})`);
+    }
+    mock.ci = 'ok';
+    await ciReload(page);
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok');
+    await assertNoLeak(log, page);
+    await context.close();
+  });
 });
