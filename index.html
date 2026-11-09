@@ -2089,6 +2089,7 @@
   var MAIN = 'main';
   var BUILD_WORKFLOW = 'Build';
   var GH_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
+  var GH_DASHBOARD_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/aether-dashboard';
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
@@ -2129,6 +2130,7 @@
   }
   function shortSha(sha) { return /^[0-9a-f]{7,40}$/i.test(String(sha || '')) ? String(sha).slice(0, 7).toLowerCase() : ''; }
   function prUrl(n) { return GH_WEB + '/pull/' + Number(n); }
+  function dashboardPrUrl(n) { return GH_DASHBOARD_WEB + '/pull/' + Number(n); }
   function commitUrl(sha) { return GH_WEB + '/commit/' + String(sha).toLowerCase(); }
   function firstLine(s) { return String(s || '').split('\n')[0].trim(); }
   function validNum(n) { n = Number(n); return Number.isInteger(n) && n > 0 && n < 1e7 ? n : null; }
@@ -2377,10 +2379,13 @@
       var it = /^[-*+]\s*\[([ xX]?)\]\s*(.*)$/.exec(t);
       if (!it) { skipped++; return; }
       if (!cur) { cur = { name: 'Ohne Abschnitt', items: [] }; sections.push(cur); }
+      // „(PR #12)“ verweist auf dieses Repo (aether), „(Repo aether-dashboard, PR #8)“ auf das Dashboard.
+      // „(Repo aether-dashboard)“ ohne Nummer bleibt Text. Andere Repos werden nicht erkannt.
       var prs = [];
-      var txt = it[2].replace(/\(\s*PR\s*#(\d{1,7})\s*\)/gi, function (all, n) {
+      var txt = it[2].replace(/\(\s*(?:Repo\s+aether-dashboard\s*,\s*)?PR\s*#\s*(\d{1,7})\s*\)/gi, function (all, n) {
         n = validNum(n);
-        if (n && prs.indexOf(n) < 0) prs.push(n);
+        var repo = /^\(\s*Repo/i.test(all) ? 'dashboard' : 'aether';
+        if (n && !prs.some(function (p) { return p.n === n && p.repo === repo; })) prs.push({ n: n, repo: repo });
         return ' ';
       }).replace(/\s+/g, ' ').trim();
       cur.items.push({ done: it[1] === 'x' || it[1] === 'X', text: txt || '(ohne Text)', prs: prs });
@@ -2435,9 +2440,9 @@
         li.setAttribute('aria-label', (i.done ? 'Erledigt: ' : 'Offen: ') + i.text);
         if (i.prs.length) {
           var prs = el('span', 'prs');
-          i.prs.forEach(function (n) {
-            var a = extLink(prUrl(n), 'pr-link');
-            a.textContent = 'PR #' + n;
+          i.prs.forEach(function (p) {
+            var a = extLink(p.repo === 'dashboard' ? dashboardPrUrl(p.n) : prUrl(p.n), 'pr-link');
+            a.textContent = 'PR #' + p.n;
             prs.appendChild(a);
           });
           li.appendChild(prs);

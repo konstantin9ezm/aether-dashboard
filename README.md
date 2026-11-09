@@ -267,7 +267,13 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
    PR-Eintrag; Commits, die nur im PR-Branch lagen, werden ausgeblendet. Antippen öffnet den PR (bzw. Commit) auf GitHub.
 3. **Fortschritt** – `ROADMAP.md` aus dem Hauptverzeichnis von `main` (`contents/ROADMAP.md?ref=main`).
    Gelesen werden Abschnitte `## Name` und Punkte `- [x] Text` / `- [ ] Text`, optional mit `(PR #123)`.
-   HTML-Kommentare werden ignoriert. Pro Abschnitt gibt es einen Balken erledigt/gesamt, PR-Verweise sind antippbar.
+   HTML-Kommentare werden ignoriert. Pro Abschnitt gibt es einen Balken erledigt/gesamt, PR-Verweise sind antippbar:
+   - `(PR #31)` → PR im Repo `aether` (`https://github.com/konstantin9ezm/aether/pull/31`),
+   - `(Repo aether-dashboard, PR #8)` → PR in diesem Repo (`https://github.com/konstantin9ezm/aether-dashboard/pull/8`),
+   - `(Repo aether-dashboard)` ohne Nummer bleibt als Text stehen (kein Link).
+
+   Leerzeichen um `#` sind erlaubt (`(PR # 13)`, `(Repo aether-dashboard, PR # 8)`), Groß-/Kleinschreibung ist egal.
+   Andere Repos werden nicht erkannt und bleiben Text. Der Link heißt in beiden Fällen „PR #n“.
    Tolerant: Punkte vor dem ersten Abschnitt landen unter „Ohne Abschnitt“, unbekannte Abschnitte werden normal
    angezeigt, nicht erkannte Zeilen (Freitext, Tabellen, `###`, Listen ohne Kästchen …) werden übersprungen und gezählt.
    Der Inhalt wird nur als Text eingesetzt, nie als HTML.
