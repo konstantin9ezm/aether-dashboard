@@ -29,6 +29,7 @@
     --ok: #4ade80;
     --warn: #fbbf24;
     --err: #f87171;
+    --rerun: #E8B54A; /* CI-Lauf nach Re-run erfolgreich */
     --radius: 14px;
     --safe-t: env(safe-area-inset-top, 0px);
     --safe-r: env(safe-area-inset-right, 0px);
@@ -451,7 +452,9 @@
   .ci-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
   .ci-val { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
   .ci-runbar { width: 100%; max-width: 56px; border-radius: 4px 4px 0 0; background: var(--ok); }
+  .ci-col[data-result="rerun"] .ci-runbar { background: var(--rerun); }
   .ci-col[data-result="err"] .ci-runbar { background: var(--err); }
+  .ci-col[data-result="other"] .ci-runbar { background: var(--muted); }
   .ci-limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
   .ci-limit span { position: absolute; right: 0; bottom: 2px; font-size: 11px; color: var(--muted); background: var(--panel-2); padding: 0 3px; }
   .ci-axis { display: flex; gap: 10px; margin-top: 4px; }
@@ -2486,6 +2489,16 @@
     return entries.filter(function (e) { return e.ratio !== null; })
       .sort(function (a, b) { return b.ratio - a.ratio; })[0] || null;
   }
+  // Ausgang eines Laufs nur aus der Laufliste (conclusion, run_attempt), ohne weitere Anfrage:
+  // ok = beim ersten Versuch erfolgreich, rerun = nach Re-run erfolgreich, err = fehlgeschlagen/abgebrochen
+  // (auch timed_out, startup_failure), other = alles andere (neutral, skipped, stale, action_required, …).
+  function ciOutcome(r) {
+    var c = r && r.conclusion;
+    if (c === 'success') return runAttempt(r) > 1 ? 'rerun' : 'ok';
+    if (c === 'failure' || c === 'cancelled' || c === 'timed_out' || c === 'startup_failure') return 'err';
+    return 'other';
+  }
+  var CI_OUTCOME_TEXT = { ok: 'beim ersten Mal erfolgreich', rerun: 'nach Re-run erfolgreich', err: 'fehlgeschlagen/abgebrochen', other: 'sonstiges Ergebnis' };
   function ciLevel(pct) { return pct >= CI_ERR_PCT ? 'err' : pct >= CI_WARN_PCT ? 'warn' : 'ok'; }
   function fmtMin(sec) { return (Math.round(sec / 6) / 10).toFixed(1).replace('.', ',') + ' min'; }
   function fmtMinNum(sec) { return (Math.round(sec / 6) / 10).toFixed(1).replace('.', ','); }
@@ -2670,13 +2683,13 @@
     runs.forEach(function (r, i) {
       var col = el('div', 'ci-col');
       col.dataset.run = String(r.run_number);
-      var ok = r.conclusion === 'success';
-      col.dataset.result = ok ? 'ok' : 'err';
+      var outcome = ciOutcome(r);
+      col.dataset.result = outcome;
       var s = secs[i];
       var val = el('span', 'ci-val', s === null ? '–' : fmtMinNum(s));
       var b = el('div', 'ci-runbar');
       b.style.height = (s === null ? 0 : Math.max(2, s / top * 100)) + '%';
-      b.title = 'Lauf #' + r.run_number + ': ' + (s === null ? 'Dauer unbekannt' : fmtMin(s)) + (ok ? '' : ' (nicht erfolgreich)') + (runAttempt(r) > 1 ? ' (Re-run, Versuch ' + runAttempt(r) + ')' : '');
+      b.title = 'Lauf #' + r.run_number + ': ' + (s === null ? 'Dauer unbekannt' : fmtMin(s)) + ' (' + CI_OUTCOME_TEXT[outcome] + (outcome === 'other' && r.conclusion ? ': ' + r.conclusion : '') + ')' + (runAttempt(r) > 1 ? ' (Re-run, Versuch ' + runAttempt(r) + ')' : '');
       if (runAttempt(r) > 1) col.dataset.attempt = String(runAttempt(r));
       col.appendChild(val);
       col.appendChild(b);
@@ -2694,7 +2707,7 @@
     runs.forEach(function (r) { axis.appendChild(el('span', null, '#' + r.run_number)); });
     chart.appendChild(axis);
     det.appendChild(chart);
-    det.appendChild(el('div', 'ci-unit muted small', 'Gesamtdauer in min · grün = erfolgreich, rot = fehlgeschlagen/abgebrochen'));
+    det.appendChild(el('div', 'ci-unit muted small', 'Gesamtdauer in min · grün = beim ersten Mal erfolgreich · gelb = nach Re-run erfolgreich · rot = fehlgeschlagen/abgebrochen'));
 
     var blk = el('div', 'ci-tightblk');
     blk.id = 'ciTightBlock';

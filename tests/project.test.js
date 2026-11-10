@@ -1226,11 +1226,41 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     assert.match(blk, /Re-run \(Versuch 2\): Gesamtdauer = Laufzeit der Jobs aller Versuche/);
     // Balken: #103 mit 22,6 min; älterer Re-run #99 ohne bekannte Gesamtdauer → „–“ statt 0,5 min.
     const cols = await page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent, c.dataset.attempt || '']));
-    assert.deepEqual(cols, [['98', 'ok', '20,0', ''], ['99', 'ok', '–', '2'], ['100', 'err', '12,0', ''], ['101', 'ok', '21,3', ''], ['103', 'ok', '22,6', '2']]);
+    assert.deepEqual(cols, [['98', 'ok', '20,0', ''], ['99', 'rerun', '–', '2'], ['100', 'err', '12,0', ''], ['101', 'ok', '21,3', ''], ['103', 'rerun', '22,6', '2']]);
     // Gesamtdauer wird (ohne Token) gemerkt, damit #103 später als älterer Lauf richtig erscheint.
     const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ciHistory')));
     assert.equal(hist[0].id, 19234567890);
     assert.equal(hist[0].total, 1358);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Balkenfarben nach Ausgang: grün / gelb (Re-run erfolgreich) / rot (auch Re-run fehlgeschlagen) / grau', async () => {
+    realMock();
+    // conclusion laut Doku: success, failure, neutral, cancelled, skipped, timed_out, action_required, stale, startup_failure
+    const R = (id, n, conclusion, attempt) => realRun(id, n, 'a'.repeat(40), { conclusion, attempt, created: T('10:00:00'), started: T('10:00:00'), updated: T('10:20:00') });
+    mock.latest = RUN101();
+    mock.ciJobs = jobs101();
+    mock.ciRuns = [RUN101(), R(19233900099, 99, 'success', 2), R(19233800098, 98, 'failure', 2), R(19233700097, 97, 'cancelled', 1), R(19233600096, 96, 'timed_out', 3)];
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    await page.click('#ciMore');
+    const res = () => page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, getComputedStyle(c.querySelector('.ci-runbar')).backgroundColor]));
+    const ok = await cssVar(page, '--ok'), err = await cssVar(page, '--err'), muted = await cssVar(page, '--muted');
+    const yellow = 'rgb(232, 181, 74)'; // #E8B54A
+    assert.equal(await cssVar(page, '--rerun'), yellow);
+    assert.deepEqual(await res(), [['96', 'err', err], ['97', 'err', err], ['98', 'err', err], ['99', 'rerun', yellow], ['101', 'ok', ok]]);
+    assert.notEqual(yellow, await cssVar(page, '--warn'), 'eigene Farbe, nicht die Prozent-Warnfarbe');
+    // Legende
+    assert.equal(await text(page, '#ciDetails .ci-unit'), 'Gesamtdauer in min · grün = beim ersten Mal erfolgreich · gelb = nach Re-run erfolgreich · rot = fehlgeschlagen/abgebrochen');
+    // Andere Ergebnisse: startup_failure rot; neutral, skipped, stale, action_required grau
+    mock.ciRuns = [RUN101(), R(19233900095, 95, 'startup_failure', 1), R(19233900094, 94, 'neutral', 1), R(19233900093, 93, 'action_required', 2), R(19233900092, 92, 'stale', 1)];
+    await ciReload(page);
+    await page.click('#ciMore');
+    assert.deepEqual(await res(), [['92', 'other', muted], ['93', 'other', muted], ['94', 'other', muted], ['95', 'err', err], ['101', 'ok', ok]]);
+    // Prozentfarben des knappsten Schritts unverändert (80 % → gelb wie bisher)
+    assert.equal(await page.$eval('#ciTightBlock .ci-pct', (d) => getComputedStyle(d).color), await cssVar(page, '--warn'));
     await assertNoLeak(log, page);
     await context.close();
   });
