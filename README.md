@@ -160,12 +160,27 @@ Regeln:
 - **Text kopieren** schreibt „Betreff: …“, eine Leerzeile und den Text per `navigator.clipboard.writeText` (synchron
   im Klick). Geht das nicht, folgt `execCommand("copy")`. Scheitert auch das, wird der Text in der Vorschau markiert
   und „Bitte manuell kopieren“ angezeigt. Bei Erfolg erscheint kurz „Kopiert“.
-- **Schließen** geht über den Knopf, Esc, Antippen außerhalb des Dialogs, `aether:feedback-close` oder das Beenden
+- **Schließen** geht über den Knopf, Esc, Backspace (siehe unten), Antippen außerhalb des Dialogs, `aether:feedback-close` oder das Beenden
   des Spiels (X mit Rückfrage oder `aether:quit`). Danach meldet das Dashboard `open: false`, und der Fokus geht
   zurück ins Spiel-iframe.
 - Bedienung: Touch und Maus; Tab/Umschalt+Tab und die Pfeiltasten wechseln zwischen den Knöpfen, Enter/Leertaste
   lösen aus. Beim Öffnen hat „Mail öffnen“ den Fokus. Den Controller liest das Dashboard nicht; das Spiel schickt
   bei B `aether:feedback-close`.
+- Tastenbelegung des Dialogs:
+
+  | Taste | Wirkung |
+  |---|---|
+  | Tab / Umschalt+Tab | nächster / vorheriger Knopf (mit Umlauf) |
+  | Pfeiltasten | nächster / vorheriger Knopf, solange ein Knopf den Fokus hat |
+  | Enter / Leertaste | löst den fokussierten Knopf aus |
+  | Esc | schließt den Dialog |
+  | Backspace | schließt den Dialog wie Esc bzw. Controller-B (für das Magic Keyboard des iPads ohne Esc-Taste) |
+
+  Backspace schließt **nicht**, solange ein Texteingabefeld den Fokus hat (`input` vom Typ text, password, search,
+  email, url, tel oder number, `textarea` ohne `readonly`, `contenteditable`); dort löscht es wie gewohnt Zeichen.
+  Die schreibgeschützte Vorschau zählt nicht als Texteingabe. Eine gehaltene Taste (Tastenwiederholung,
+  `event.repeat`) löst nichts aus: ein Druck schließt höchstens einmal. Ohne offenen Dialog bewirkt Backspace im
+  Dashboard nichts Neues (keine Navigation, kein Ansichtswechsel; das Token-Feld funktioniert unverändert).
 
 ### Controller im Feedback-Dialog (`aether:dialog-input`)
 
