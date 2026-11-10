@@ -439,7 +439,10 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   öffnen“ mit und ohne Nutzeraktivierung (sofort Hinweis, kein `mailto:`-Versuch, gezählt per CDP
   `Page.frameRequestedNavigation`), Kürzen auf 2000 Zeichen,
   Zwischenablage (ausgelesen in einem zweiten Kontext), alle Wege zum Schließen samt Fokus zurück ins Spiel, Layout
-  auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop.
+  auf iPhone 16 Pro quer, iPad Pro 11 quer und Desktop. Backspace im Token-Feld (mit Dummy-Wert, nichts gespeichert):
+  ein Druck löscht genau ein Zeichen, eine gehaltene Taste mehrere; keine Navigation, kein neuer Verlaufseintrag,
+  kein Ansichtswechsel, Dialog unberührt, das Dashboard fängt die Taste nicht ab (`defaultPrevented` bleibt aus,
+  auch ohne Fokus im Feld). Gegenprobe (muss rot werden): Backspace-Zweig greift auch ohne offenen Dialog.
 - `tests/start-frame.test.js` – Spielstart im Rahmen (Headless Chromium): Tipp im Rahmen startet, Dokument
   (Kennung `doc`) und iframe-Element vor und nach dem Start dieselben, kein erneutes Laden, Attribute unverändert;
   Nachrichten aus falscher Quelle (Seite, Klon-iframe, alter Start-Rahmen) starten nichts; Build-Wechsel und Beenden

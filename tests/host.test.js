@@ -1087,6 +1087,72 @@ describe('Feedback-Dialog: Backspace', () => {
     assert.deepEqual(log.errors, []);
     await context.close();
   });
+
+  test('Token-Feld: einzelner Druck löscht genau ein Zeichen, gehaltene Taste mehrere; nichts sonst (Dummy-Wert, nichts gespeichert)', async () => {
+    const DUMMY = 'dummy-kein-token-123'; // bewusst kein echter Token und kein Token-Format
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await page.evaluate(() => localStorage.removeItem('aether.githubToken'));
+    await page.reload();
+    await page.waitForSelector('#tokenView:not([hidden])');
+    const url = page.url();
+    const hist = await page.evaluate(() => history.length);
+    const storageBefore = await page.evaluate(() => JSON.stringify([Object.entries(localStorage).sort(), Object.entries(sessionStorage).sort()]));
+    // Jeder Backspace-Keydown: Wiederholung? Vom Dashboard abgefangen (preventDefault)? (Beobachter am Ende der Kette)
+    await page.evaluate(() => {
+      window.__bs = [];
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace') window.__bs.push({ repeat: e.repeat, prevented: e.defaultPrevented, target: document.activeElement.id });
+      });
+    });
+    const nothingElse = async (label) => {
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      assert.equal(page.url(), url, `${label}: keine Navigation`);
+      assert.equal(await page.evaluate(() => history.length), hist, `${label}: kein neuer Verlaufseintrag`);
+      assert.equal(await page.evaluate(() => !document.getElementById('tokenView').hidden && document.getElementById('buildsView').hidden), true, `${label}: Ansicht unverändert`);
+      assert.equal(await page.evaluate(() => document.getElementById('feedback').hidden), true, `${label}: kein Dialog betroffen`);
+    };
+
+    // Einzelner Druck: genau ein Zeichen weg, Fokus bleibt im Feld.
+    await page.click('#tokenInput');
+    await page.keyboard.type(DUMMY);
+    assert.equal(await page.inputValue('#tokenInput'), DUMMY);
+    await page.keyboard.press('Backspace');
+    assert.equal(await page.inputValue('#tokenInput'), DUMMY.slice(0, -1), 'genau ein Zeichen gelöscht');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'tokenInput');
+    await nothingElse('einzelner Druck');
+
+    // Gehaltene Taste: erster Druck plus 4 Wiederholungen löschen 5 Zeichen (normales Verhalten des Feldes).
+    await page.keyboard.down('Backspace');
+    for (let i = 0; i < 4; i++) await page.keyboard.down('Backspace'); // autoRepeat
+    await page.keyboard.up('Backspace');
+    assert.equal(await page.inputValue('#tokenInput'), DUMMY.slice(0, -6), 'gehaltene Taste löscht mehrere Zeichen');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'tokenInput');
+    await nothingElse('gehaltene Taste');
+
+    // Ohne Fokus im Feld und ohne Dialog: Backspace wird vom Dashboard nicht abgefangen und bewirkt nichts.
+    await page.evaluate(() => document.activeElement.blur());
+    await page.keyboard.press('Backspace');
+    await nothingElse('ohne Fokus');
+    assert.equal(await page.inputValue('#tokenInput'), DUMMY.slice(0, -6), 'Feldinhalt unverändert');
+
+    assert.deepEqual(await page.evaluate(() => window.__bs), [
+      { repeat: false, prevented: false, target: 'tokenInput' },
+      { repeat: false, prevented: false, target: 'tokenInput' },
+      { repeat: true, prevented: false, target: 'tokenInput' },
+      { repeat: true, prevented: false, target: 'tokenInput' },
+      { repeat: true, prevented: false, target: 'tokenInput' },
+      { repeat: true, prevented: false, target: 'tokenInput' },
+      { repeat: false, prevented: false, target: '' }
+    ], 'jeder Backspace erreicht das Feld bzw. die Seite unverändert');
+    // Nichts gespeichert (Token wird nur über „Speichern“ übernommen).
+    assert.equal(await page.evaluate(() => JSON.stringify([Object.entries(localStorage).sort(), Object.entries(sessionStorage).sort()])), storageBefore, 'Speicher unverändert');
+    assert.equal(await page.evaluate(() => localStorage.getItem('aether.githubToken')), null);
+    await page.evaluate(() => { document.getElementById('tokenInput').value = ''; });
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
