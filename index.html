@@ -3358,10 +3358,28 @@
     var i = fbButtons().indexOf(e.target);
     if (i >= 0 && i !== fbSel) { fbSel = i; renderPad(); }
   });
+  // Aktives Texteingabefeld: Dort löscht Backspace Zeichen und schließt nichts.
+  // Die schreibgeschützte Vorschau (#fbText) zählt nicht als Texteingabe.
+  var TEXT_INPUT_TYPES = ['text', 'password', 'search', 'email', 'url', 'tel', 'number'];
+  function isTextEntry(el) {
+    if (!el) return false;
+    var tag = el.tagName;
+    if (tag === 'INPUT') return TEXT_INPUT_TYPES.indexOf((el.type || 'text').toLowerCase()) >= 0 && !el.readOnly && !el.disabled;
+    if (tag === 'TEXTAREA') return !el.readOnly && !el.disabled;
+    return !!el.isContentEditable;
+  }
   document.addEventListener('keydown', function (e) {
     if (!feedback) return;
     clearPadBlocked();
     if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); closeFeedback(true); return; }
+    // Backspace wirkt wie B (iPad-Tastatur ohne Esc), außer in einem Texteingabefeld.
+    // Gehaltene Taste (repeat) löst nichts aus: ein Druck = höchstens ein Schließen.
+    if (e.key === 'Backspace') {
+      if (e.repeat || isTextEntry(document.activeElement)) return;
+      e.preventDefault();
+      closeFeedback(true);
+      return;
+    }
     var btns = [$('fbMail'), $('fbCopy'), $('fbClose')];
     var i = btns.indexOf(document.activeElement);
     var step = 0;

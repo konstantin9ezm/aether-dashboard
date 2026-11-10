@@ -273,6 +273,12 @@ async function mailtoAttempts(cdp) {
   await cdp.send('Page.enable');
   return list;
 }
+// Wie assertClosedAndFocused, aber ohne Probe-Taste (für Fälle, in denen eine Taste noch gehalten wird).
+async function assertClosedAndFocusedNoKey(page, frame, count) {
+  await page.waitForSelector('#feedback', { state: 'hidden' });
+  await frame.waitForFunction((n) => window.__t.states.filter((s) => s === false).length === n, count);
+  await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === 'IFRAME');
+}
 async function assertClosedAndFocused(page, frame, count) {
   await page.waitForSelector('#feedback', { state: 'hidden' });
   await frame.waitForFunction((n) => window.__t.states.filter((s) => s === false).length === n, count);
@@ -923,6 +929,161 @@ describe('Feedback-Dialog: Controller', () => {
     // Keine dieser Tasten ist im Spiel angekommen (dort würde sie seit aether PR #31 als Controller zählen).
     assert.deepEqual(await gameKeys(), keysBefore);
     assert.equal(await dialogOpen(page), true);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Feedback-Dialog: Backspace wirkt wie Esc/B (iPad-Tastatur ohne Esc), nie in einem Texteingabefeld
+// ---------------------------------------------------------------------------
+describe('Feedback-Dialog: Backspace', () => {
+  const openWith = async (page, frame, subject, body, n) => {
+    await post(frame, { type: 'aether:feedback', subject, body });
+    await page.waitForSelector('#feedback:not([hidden])');
+    await frame.waitForFunction((k) => window.__t.states.filter((s) => s === true).length === k, n);
+  };
+
+  test('schließt den Dialog bei „Feedback senden“ und bei „Werte kopieren“ (open:false, Fokus im Spiel)', async () => {
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+
+    // „Feedback senden“: Fokus auf "Mail öffnen" (wie nach dem Öffnen).
+    await openFeedbackByKey(page, frame);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'fbMail');
+    await page.keyboard.press('Backspace');
+    await assertClosedAndFocused(page, frame, 1);
+    assert.equal(await page.inputValue('#fbText'), '', 'Vorschau geleert wie beim Schließen');
+
+    // „Werte kopieren“ (derselbe Dialog mit anderem Inhalt), Fokus auf "Text kopieren".
+    await openWith(page, frame, 'Werte kopieren', 'boost=1\nfov=90', 2);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'fbCopy');
+    await page.keyboard.press('Backspace');
+    await assertClosedAndFocused(page, frame, 2);
+
+    // Fokus auf der schreibgeschützten Vorschau: zählt NICHT als Texteingabe → schließt.
+    await openWith(page, frame, 'Werte kopieren', 'boost=1', 3);
+    await page.focus('#fbText');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'fbText');
+    await page.keyboard.press('Backspace');
+    await assertClosedAndFocused(page, frame, 3);
+
+    // Ohne offenen Dialog: keine weitere Zustandsmeldung; die Taste kommt beim Spiel an.
+    await page.keyboard.press('Backspace');
+    await frame.waitForFunction(() => window.__t.keys[window.__t.keys.length - 1] === 'Backspace');
+    await sentinel(page, frame, 'bs');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false, true, false, true, false]);
+    assert.equal(launched(log).length, 0, 'keine Mail');
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('gehaltene Taste (repeat): ein Druck schließt höchstens einmal, Wiederholungen lösen nichts aus', async () => {
+    const { context, page } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+
+    // Halten: erster Druck schließt, Wiederholungen danach landen im Spiel und schließen nichts mehr.
+    await openFeedbackByKey(page, frame);
+    await page.keyboard.down('Backspace');
+    await assertClosedAndFocusedNoKey(page, frame, 1);
+    for (let i = 0; i < 3; i++) await page.keyboard.down('Backspace'); // autoRepeat
+    await page.keyboard.up('Backspace');
+    await sentinel(page, frame, 'r1');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false]);
+
+    // Taste gehalten, während sich der Dialog öffnet: Wiederholungen (repeat) schließen ihn nicht.
+    await page.keyboard.down('Backspace');
+    await openWith(page, frame, 'Werte kopieren', 'boost=1', 2);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'fbMail');
+    await page.evaluate(() => {
+      window.__bsRepeat = [];
+      document.addEventListener('keydown', (e) => { if (e.key === 'Backspace') window.__bsRepeat.push(e.repeat); });
+    });
+    for (let i = 0; i < 3; i++) await page.keyboard.down('Backspace');
+    assert.deepEqual(await page.evaluate(() => window.__bsRepeat), [true, true, true], 'Wiederholungen kamen im Dashboard an');
+    await sentinel(page, frame, 'r2');
+    assert.equal(await dialogOpen(page), true, 'repeat schließt nicht');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false, true]);
+    // Loslassen und neu drücken: genau ein Schließen.
+    await page.keyboard.up('Backspace');
+    await page.keyboard.press('Backspace');
+    await assertClosedAndFocused(page, frame, 2);
+    await sentinel(page, frame, 'r3');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true, false, true, false]);
+    await context.close();
+  });
+
+  test('Fokus in einem Textfeld innerhalb des offenen Dialogs: Backspace löscht und schließt NICHT', async () => {
+    const { context, page } = await newPage(null);
+    await page.goto(baseUrl);
+    const frame = await startGame(page);
+    await openFeedbackByKey(page, frame);
+
+    const kinds = [
+      ['input', 'text'], ['input', 'password'], ['input', 'search'], ['input', 'email'],
+      ['input', 'url'], ['input', 'tel'], ['input', 'number'], ['textarea', null], ['div', 'contenteditable']
+    ];
+    for (const [tag, type] of kinds) {
+      const label = `${tag}${type ? ' ' + type : ''}`;
+      await page.evaluate(([tag, type]) => {
+        const el = document.createElement(tag);
+        el.id = 'testField';
+        if (tag === 'input') el.type = type;
+        if (type === 'contenteditable') el.contentEditable = 'true';
+        document.querySelector('#feedback .fb-box').appendChild(el);
+        el.focus();
+      }, [tag, type]);
+      await page.keyboard.type(type === 'number' ? '123' : 'abc');
+      await page.keyboard.press('Backspace');
+      const v = await page.evaluate(() => { const el = document.getElementById('testField'); return 'value' in el && el.tagName !== 'DIV' ? el.value : el.textContent; });
+      assert.equal(v, type === 'number' ? '12' : 'ab', `${label}: ein Zeichen gelöscht`);
+      assert.equal(await dialogOpen(page), true, `${label}: Dialog bleibt offen`);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'testField', `${label}: Fokus bleibt im Feld`);
+      await page.evaluate(() => document.getElementById('testField').remove());
+    }
+    await sentinel(page, frame, 'tf');
+    assert.deepEqual(await frame.evaluate(() => window.__t.states), [true], 'kein open:false');
+
+    // Gegenstück: dasselbe Feld schreibgeschützt zählt nicht als Texteingabe → schließt.
+    await page.evaluate(() => {
+      const el = document.createElement('input');
+      el.id = 'testField';
+      el.readOnly = true;
+      el.value = 'nur lesen';
+      document.querySelector('#feedback .fb-box').appendChild(el);
+      el.focus();
+    });
+    await page.keyboard.press('Backspace');
+    await assertClosedAndFocused(page, frame, 1);
+    await context.close();
+  });
+
+  test('Token-Feld: Backspace löscht ein Zeichen und tut sonst nichts (keine Navigation, Ansicht bleibt)', async () => {
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await page.evaluate(() => localStorage.removeItem('aether.githubToken'));
+    await page.reload();
+    await page.waitForSelector('#tokenView:not([hidden])');
+    const url = page.url();
+    const hist = await page.evaluate(() => history.length);
+    await page.click('#tokenInput');
+    await page.keyboard.type('github_pat_abc');
+    await page.keyboard.press('Backspace');
+    assert.equal(await page.inputValue('#tokenInput'), 'github_pat_ab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'tokenInput');
+    // Ohne Fokus im Feld (Seite): ebenfalls nichts Neues.
+    await page.evaluate(() => document.activeElement.blur());
+    await page.keyboard.press('Backspace');
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    assert.equal(page.url(), url, 'keine Navigation');
+    assert.equal(await page.evaluate(() => history.length), hist, 'kein neuer Verlaufseintrag');
+    assert.equal(await page.evaluate(() => !document.getElementById('tokenView').hidden && document.getElementById('buildsView').hidden), true, 'Ansicht unverändert');
+    assert.equal(await page.inputValue('#tokenInput'), 'github_pat_ab');
+    assert.equal(await page.evaluate(() => document.getElementById('feedback').hidden), true);
     assert.deepEqual(log.errors, []);
     await context.close();
   });
