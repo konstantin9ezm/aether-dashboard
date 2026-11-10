@@ -452,6 +452,7 @@
   .ci-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
   .ci-val { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
   .ci-runbar { width: 100%; max-width: 56px; border-radius: 4px 4px 0 0; background: var(--ok); }
+  .ci-runbar.ci-stub { height: 6px; opacity: .75; }
   .ci-col[data-result="rerun"] .ci-runbar { background: var(--rerun); }
   .ci-col[data-result="err"] .ci-runbar { background: var(--err); }
   .ci-col[data-result="other"] .ci-runbar { background: var(--muted); }
@@ -2516,6 +2517,16 @@
     h.unshift(rec);
     writeJson(CI_HISTORY_KEY, h.slice(0, CI_HISTORY_MAX));
   }
+  // Nachgeladene Gesamtdauer eines älteren (abgeschlossenen, also unveränderlichen) Laufs dauerhaft merken.
+  // Nur id und Sekunden, kein Token. Vorhandene Einträge (Trend) bleiben erhalten.
+  function rememberCiTotal(id, total) {
+    var h = readCiHistory();
+    var rec = h.filter(function (x) { return x.id === id; })[0];
+    if (rec) rec.total = Math.round(total);
+    else h.splice(Math.min(1, h.length), 0, { id: id, entries: {}, total: Math.round(total) });
+    writeJson(CI_HISTORY_KEY, h.slice(0, CI_HISTORY_MAX));
+  }
+  var CI_BACKFILL_MAX = 4; // höchstens so viele zusätzliche Job-Anfragen pro Laden
 
   function workflowFilePath(wf) {
     var p = String((wf && wf.path) || '');
@@ -2571,13 +2582,28 @@
       if (typeof prev === 'number' && isFinite(prev)) trend = { seconds: tight.seconds - prev, run: oldest };
     }
     var maxJobLimit = detail.yjobs.reduce(function (m, yj) { return yj.limit && yj.limit > m ? yj.limit : m; }, 0) || null;
-    // Gesamtdauern der gezeigten Läufe; ältere Re-runs nur, wenn früher schon ermittelt (sonst unbekannt).
+    // Gesamtdauern der gezeigten Läufe: ohne Re-run aus der Laufliste, sonst aus dem Verlauf.
     var totals = runs.map(function (r) {
       if (r === run) return total;
-      if (runAttempt(r) === 1) return runSeconds(r);
       var h = hist.filter(function (x) { return x.id === r.id; })[0];
-      return h && typeof h.total === 'number' && isFinite(h.total) ? h.total : null;
+      if (h && typeof h.total === 'number' && isFinite(h.total)) return h.total;
+      return runAttempt(r) === 1 ? runSeconds(r) : null;
     });
+    // Noch unbekannte Dauern (meist ältere Re-runs) einmalig nachladen: Jobs aller Versuche, dieselbe
+    // Rechnung wie beim letzten Lauf (jobUnionSeconds). Ergebnis dauerhaft im Verlauf, Fehler → unbekannt.
+    var todo = runs.map(function (r, i) { return i; }).filter(function (i) { return runs[i] !== run && totals[i] === null; }).slice(0, CI_BACKFILL_MAX);
+    await Promise.all(todo.map(function (i) {
+      var r = runs[i];
+      return cached('ciJobsAll:' + r.id, PROJECT_TTL, force, async function () {
+        var x = await api(REPO_PATH + '/actions/runs/' + encodeURIComponent(r.id) + '/jobs?filter=all&per_page=100', { perm: perm });
+        var j = await x.json();
+        return jobUnionSeconds(j && Array.isArray(j.jobs) ? j.jobs : []);
+      }).then(function (sec) {
+        if (typeof sec !== 'number' || !isFinite(sec)) return;
+        totals[i] = sec;
+        rememberCiTotal(r.id, sec);
+      }, function () { /* bleibt unbekannt: Stummel „Dauer ?“ */ });
+    }));
     return { runs: runs, run: run, attempt: attempt, total: total, totals: totals, file: file.replace(/^.*\//, ''), entries: entries, tight: tight, trend: trend, maxJobLimit: maxJobLimit };
   }
 
@@ -2686,9 +2712,10 @@
       var outcome = ciOutcome(r);
       col.dataset.result = outcome;
       var s = secs[i];
-      var val = el('span', 'ci-val', s === null ? '–' : fmtMinNum(s));
+      var val = el('span', 'ci-val', s === null ? 'Dauer ?' : fmtMinNum(s));
       var b = el('div', 'ci-runbar');
-      b.style.height = (s === null ? 0 : Math.max(2, s / top * 100)) + '%';
+      // Unbekannte Dauer: kurzer Stummel in der Statusfarbe statt eines leeren Platzes.
+      if (s === null) { b.classList.add('ci-stub'); col.dataset.unknown = '1'; } else b.style.height = Math.max(2, s / top * 100) + '%';
       b.title = 'Lauf #' + r.run_number + ': ' + (s === null ? 'Dauer unbekannt' : fmtMin(s)) + ' (' + CI_OUTCOME_TEXT[outcome] + (outcome === 'other' && r.conclusion ? ': ' + r.conclusion : '') + ')' + (runAttempt(r) > 1 ? ' (Re-run, Versuch ' + runAttempt(r) + ')' : '');
       if (runAttempt(r) > 1) col.dataset.attempt = String(runAttempt(r));
       col.appendChild(val);

@@ -215,7 +215,7 @@ const mock = {
   reset() {
     Object.assign(this, { mode: 'ok', run: 'success', actions: 'ok', roadmap: 'normal', requests: [],
       ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok',
-      wfId: 42, latest: undefined });
+      wfId: 42, latest: undefined, ciJobsByRun: {}, ciJobsFail: [] });
   }
 };
 mock.reset();
@@ -279,8 +279,10 @@ async function githubApi(route) {
   if (jobsM) {
     if (mock.ci === 'jobs500') return json(route, 500, { message: 'Server Error' });
     if (mock.ci === 'jobsRate') return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
+    // Jobs je Lauf-ID (falls hinterlegt), einzelne Läufe können scheitern.
+    if (mock.ciJobsFail.includes(Number(jobsM[1]))) return json(route, 502, { message: 'Bad Gateway' });
     // Wie GitHub: filter=latest (Standard) liefert nur die Jobs des letzten Versuchs, filter=all alle Versuche.
-    let jobs = mock.ciJobs;
+    let jobs = mock.ciJobsByRun[jobsM[1]] || mock.ciJobs;
     if (q.get('filter') !== 'all' && jobs.some((j) => j.run_attempt)) {
       const last = Math.max(...jobs.map((j) => j.run_attempt || 1));
       jobs = jobs.filter((j) => (j.run_attempt || 1) === last);
@@ -1175,6 +1177,15 @@ function jobs101() {
     realJob(id, 1, 'web / veröffentlichen (web-build)', T('20:29:10'), T('20:31:10'), [['Veröffentlichen', T('20:29:20'), T('20:31:00')]])
   ];
 }
+// #99 (Re-run, Versuch 2): Versuch 1 15:00:10–15:18:10 (18 min, Veröffentlichen rot), Versuch 2 nur Veröffentlichen 20 s.
+function jobs99() {
+  const id = 19232000099;
+  return [
+    realJob(id, 1, 'web / bauen (web-build)', T('15:00:10'), T('15:16:00'), [['Browser-Test', T('15:01:00'), T('15:12:00')]]),
+    realJob(id, 1, 'web / veröffentlichen (web-build)', T('15:16:00'), T('15:18:10'), [['Veröffentlichen', T('15:16:20'), T('15:18:00'), 'failure']], 'failure'),
+    realJob(id, 2, 'web / veröffentlichen (web-build)', T('16:40:05'), T('16:40:25'), [['Veröffentlichen', T('16:40:08'), T('16:40:20')]])
+  ];
+}
 function realMock() {
   mock.reset();
   mock.wfId = RW.wfId;
@@ -1195,8 +1206,9 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     // 20:10:02 → 20:31:20 = 21,3 min (Lauf ohne Re-run: wie bisher aus run_started_at/updated_at)
     assert.equal(await ciLine(page), 'CI: 21,3 min · web / bauen (web-build) › Browser-Test 12,0 / 15 min (80 %)');
     assert.equal(await page.getAttribute('#ciLight', 'href'), `${GH}/actions/runs/19234112233`);
+    // + einmalig die Jobs des älteren Re-runs #99 (Gesamtdauer bisher unbekannt, Teil 2)
     assert.deepEqual(mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path + r.query),
-      [`${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`]);
+      [`${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`, `${BASE}/actions/runs/19232000099/jobs?filter=all&per_page=100`]);
     assert.ok(mock.requests.some((r) => r.path.endsWith('build.yml') && r.query === `?ref=${RW.sha101}`));
     await assertNoLeak(log, page);
     await context.close();
@@ -1207,6 +1219,7 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     mock.latest = RUN103();
     mock.ciRuns = [RUN103(), RUN101(), ...olderRuns()];
     mock.ciJobs = jobs103();
+    mock.ciJobsByRun = { 19232000099: jobs99() };
     const { context, page, log } = await newPage(null);
     await openProject(page);
     await waitCiTime(page);
@@ -1217,16 +1230,17 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     assert.equal(await ciLine(page), 'CI: 22,6 min (Re-run, Versuch 2) · web / bauen (web-build) › Browser-Test 10,5 / 15 min (70 %)');
     assert.equal(await page.getAttribute('#ciTime', 'data-level'), 'warn');
     assert.doesNotMatch(await ciLine(page), /0,3 min/, 'keine irreführend kurze Dauer');
+    // dazu einmalig die Jobs des älteren Re-runs #99 (Dauer bisher unbekannt)
     assert.deepEqual(mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path + r.query),
-      [`${BASE}/actions/runs/19234567890/jobs?filter=all&per_page=100`], 'bei Re-run Jobs aller Versuche');
+      [`${BASE}/actions/runs/19234567890/jobs?filter=all&per_page=100`, `${BASE}/actions/runs/19232000099/jobs?filter=all&per_page=100`], 'bei Re-run Jobs aller Versuche');
     await page.click('#ciMore');
     const blk = await itext(page, '#ciTightBlock');
     assert.match(blk, /web \/ bauen \(web-build\) › Browser-Test 10,5 von 15 min 70 %/);
     assert.match(blk, /Gemessen in Versuch 1 von 2/);
     assert.match(blk, /Re-run \(Versuch 2\): Gesamtdauer = Laufzeit der Jobs aller Versuche/);
-    // Balken: #103 mit 22,6 min; älterer Re-run #99 ohne bekannte Gesamtdauer → „–“ statt 0,5 min.
+    // Balken: #103 mit 22,6 min; älterer Re-run #99 nachgeladen (15:00:10–15:18:10 + 16:40:05–16:40:25 = 18,3 min) statt 0,5 min.
     const cols = await page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent, c.dataset.attempt || '']));
-    assert.deepEqual(cols, [['98', 'ok', '20,0', ''], ['99', 'rerun', '–', '2'], ['100', 'err', '12,0', ''], ['101', 'ok', '21,3', ''], ['103', 'rerun', '22,6', '2']]);
+    assert.deepEqual(cols, [['98', 'ok', '20,0', ''], ['99', 'rerun', '18,3', '2'], ['100', 'err', '12,0', ''], ['101', 'ok', '21,3', ''], ['103', 'rerun', '22,6', '2']]);
     // Gesamtdauer wird (ohne Token) gemerkt, damit #103 später als älterer Lauf richtig erscheint.
     const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ciHistory')));
     assert.equal(hist[0].id, 19234567890);
@@ -1261,6 +1275,110 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     assert.deepEqual(await res(), [['92', 'other', muted], ['93', 'other', muted], ['94', 'other', muted], ['95', 'err', err], ['101', 'ok', ok]]);
     // Prozentfarben des knappsten Schritts unverändert (80 % → gelb wie bisher)
     assert.equal(await page.$eval('#ciTightBlock .ci-pct', (d) => getComputedStyle(d).color), await cssVar(page, '--warn'));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Dauer älterer Re-run-Läufe wird nachgeladen, gemerkt und beim zweiten Laden nicht erneut angefragt', async () => {
+    realMock();
+    // Gerätebefund: #95 und #98 fehlgeschlagen mit Re-run (auch Versuch 2 rot) → bisher „–“.
+    const R = (id, n, o) => realRun(id, n, 'a'.repeat(40), o);
+    const run98 = R(19231000098, 98, { conclusion: 'failure', attempt: 2, created: T('18:00:00'), started: T('18:30:00'), updated: T('18:41:00') });
+    const run95 = R(19230000095, 95, { conclusion: 'failure', attempt: 2, created: T('12:00:00'), started: T('13:00:00'), updated: T('13:12:00') });
+    mock.latest = RUN101();
+    mock.ciJobs = jobs101();
+    mock.ciRuns = [RUN101(), R(19233000100, 100, { created: T('19:00:00'), started: T('19:00:00'), updated: T('19:20:00') }), run98, R(19230500096, 96, { created: T('14:00:00'), started: T('14:00:00'), updated: T('14:10:00') }), run95];
+    mock.ciJobsByRun = {
+      // #98: Versuch 1 18:00:10–18:15:10 (15 min), Versuch 2 alle Jobs neu 18:30:05–18:40:35 (10,5 min) = 25,5 min
+      19231000098: [
+        realJob(19231000098, 1, 'web / bauen (web-build)', T('18:00:10'), T('18:15:10'), [], 'failure'),
+        realJob(19231000098, 2, 'web / bauen (web-build)', T('18:30:05'), T('18:40:35'), [], 'failure')
+      ],
+      // #95: zwei überlappende Jobs 12:00:10–12:09:10 und 12:01:10–12:10:10 (10 min), Versuch 2 13:00:10–13:11:10 (11 min) = 21 min
+      19230000095: [
+        realJob(19230000095, 1, 'native / bauen', T('12:00:10'), T('12:09:10'), []),
+        realJob(19230000095, 1, 'web / bauen (web-build)', T('12:01:10'), T('12:10:10'), [], 'failure'),
+        realJob(19230000095, 2, 'web / bauen (web-build)', T('13:00:10'), T('13:11:10'), [], 'failure')
+      ]
+    };
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    const jobReq = () => mock.requests.filter((r) => r.path.endsWith('/jobs')).map((r) => r.path + r.query);
+    assert.deepEqual(jobReq().sort(), [
+      `${BASE}/actions/runs/19230000095/jobs?filter=all&per_page=100`,
+      `${BASE}/actions/runs/19231000098/jobs?filter=all&per_page=100`,
+      `${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`
+    ], 'nur die Läufe mit unbekannter Dauer, mit filter=all');
+    await page.click('#ciMore');
+    const cols = () => page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent]));
+    assert.deepEqual(await cols(), [['95', 'err', '21,0'], ['96', 'ok', '10,0'], ['98', 'err', '25,5'], ['100', 'ok', '20,0'], ['101', 'ok', '21,3']]);
+    const h98 = await page.$eval('#ciChart .ci-col[data-run="98"] .ci-runbar', (b) => b.getBoundingClientRect().height);
+    assert.ok(h98 > 50, `Balken #98 sichtbar (${h98}px)`);
+    // Verlauf: Dauer gemerkt, ohne Token
+    const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ciHistory')));
+    assert.equal(hist.find((x) => x.id === 19231000098).total, 1530);
+    assert.equal(hist.find((x) => x.id === 19230000095).total, 1260);
+    assert.ok(!JSON.stringify(hist).includes(TOKEN));
+    // Zweites Laden (Aktualisieren, also ohne 60-s-Cache): keine erneute Anfrage für #95/#98.
+    mock.requests = [];
+    await ciReload(page);
+    assert.deepEqual(jobReq(), [`${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`], 'Dauer aus dem Verlauf');
+    await page.click('#ciMore');
+    assert.deepEqual((await cols()).map((c) => c[2]), ['21,0', '10,0', '25,5', '20,0', '21,3']);
+    // Auch nach Neuladen der Seite (localStorage bleibt): 0 zusätzliche Anfragen.
+    mock.requests = [];
+    await page.reload();
+    await page.waitForSelector('#projectView:not([hidden])');
+    await waitProjectLoaded(page);
+    await waitCiTime(page);
+    assert.deepEqual(jobReq(), [`${BASE}/actions/runs/19234112233/jobs?filter=latest&per_page=100`]);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Höchstens 4 zusätzliche Anfragen; gescheiterte Job-Anfrage → Stummel „Dauer ?“, keine Fehlerkarte', async () => {
+    realMock();
+    const R = (id, n, conclusion) => realRun(id, n, 'a'.repeat(40), { conclusion, attempt: 2, created: T('10:00:00'), started: T('11:00:00'), updated: T('11:00:20') });
+    const ids = [19233900099, 19233800098, 19233700097, 19233600096];
+    mock.latest = RUN101();
+    mock.ciJobs = jobs101();
+    mock.ciRuns = [RUN101(), R(ids[0], 99, 'success'), R(ids[1], 98, 'failure'), R(ids[2], 97, 'cancelled'), R(ids[3], 96, 'success')];
+    // #99: 8 min; #98 scheitert (502); #97 ohne verwertbare Jobs; #96: 5 min
+    mock.ciJobsByRun = {
+      [ids[0]]: [realJob(ids[0], 1, 'web / bauen (web-build)', T('10:00:00'), T('10:08:00'), [])],
+      [ids[2]]: [],
+      [ids[3]]: [realJob(ids[3], 2, 'web / bauen (web-build)', T('11:00:00'), T('11:05:00'), [])]
+    };
+    mock.ciJobsFail = [ids[1]];
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    const extra = mock.requests.filter((r) => r.path.endsWith('/jobs') && r.query.includes('filter=all'));
+    assert.equal(extra.length, 4, 'höchstens 4 zusätzliche Anfragen');
+    assert.equal(await page.getAttribute('#ciTime', 'data-state'), 'ok');
+    assert.equal(await ciLine(page), 'CI: 21,3 min · web / bauen (web-build) › Browser-Test 12,0 / 15 min (80 %)', 'übrige Anzeige unverändert');
+    assert.equal(await page.$('#ciBody .msg'), null, 'keine Fehlerkarte');
+    assert.equal(await page.getAttribute('#ciLight', 'data-state'), 'ok');
+    await page.click('#ciMore');
+    const cols = await page.$$eval('#ciChart .ci-col', (cs) => cs.map((c) => {
+      const b = c.querySelector('.ci-runbar');
+      return [c.dataset.run, c.dataset.result, c.querySelector('.ci-val').textContent, Math.round(b.getBoundingClientRect().height), getComputedStyle(b).backgroundColor];
+    }));
+    const err = await cssVar(page, '--err');
+    assert.deepEqual(cols.map((c) => c.slice(0, 3)), [['96', 'rerun', '5,0'], ['97', 'err', 'Dauer ?'], ['98', 'err', 'Dauer ?'], ['99', 'rerun', '8,0'], ['101', 'ok', '21,3']]);
+    for (const c of cols.filter((x) => x[2] === 'Dauer ?')) {
+      assert.ok(c[3] >= 4 && c[3] <= 8, `Stummel #${c[0]} kurz (${c[3]}px)`);
+      assert.equal(c[4], err, `Stummel #${c[0]} in Statusfarbe`);
+    }
+    // Gescheitertes wird nicht gemerkt → beim nächsten Laden erneut versucht (nur diese beiden).
+    const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.ciHistory')));
+    assert.ok(!hist.some((x) => x.id === ids[1] || x.id === ids[2]));
+    mock.ciJobsFail = [];
+    mock.requests = [];
+    await ciReload(page);
+    assert.deepEqual(mock.requests.filter((r) => r.query.includes('filter=all')).map((r) => r.path).sort(),
+      [`${BASE}/actions/runs/${ids[2]}/jobs`, `${BASE}/actions/runs/${ids[1]}/jobs`].sort());
     await assertNoLeak(log, page);
     await context.close();
   });
