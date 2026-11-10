@@ -277,14 +277,34 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
      Namen; Matrix-Varianten („e2e (2)“) erben das Limit des Matrix-Jobs. Ohne Zuordnung oder ohne Limit:
      „Limit unbekannt“ (zählt nicht für den knappsten Schritt). Ohne `timeout-minutes` gilt hier *kein* Standardwert.
    - *▸ Details* (standardmäßig zu, Zustand wird nicht gespeichert): Balken der letzten 5 abgeschlossenen Läufe
-     (Gesamtdauer `run_started_at` → `updated_at`, grün = erfolgreich, rot = fehlgeschlagen/abgebrochen) mit
-     waagerechter Linie beim höchsten Job-Limit, dazu der Block „Knappster Schritt (letzter Lauf)“ mit Trend
-     gegenüber dem ältesten der 5 Läufe. Damit dafür keine weiteren Jobs abgefragt werden müssen, merkt sich das
-     Dashboard die Dauern gesehener Läufe in `localStorage` (`aether.ciHistory`, höchstens 12 Läufe, ohne Token);
-     ist der älteste Lauf dort nicht bekannt (oder der Eintrag hieß damals anders), entfällt der Trend.
+     mit waagerechter Linie beim höchsten Job-Limit, dazu der Block „Knappster Schritt (letzter Lauf)“ mit Trend
+     gegenüber dem ältesten der 5 Läufe. Das Dashboard merkt sich Dauern gesehener Läufe in `localStorage`
+     (`aether.ciHistory`, höchstens 12 Läufe, nur Lauf-ID und Sekunden, ohne Token); ist der älteste Lauf dort nicht
+     bekannt (oder der Eintrag hieß damals anders), entfällt der Trend.
+     - *Balkenfarben nach Ausgang* (nur aus `conclusion` und `run_attempt` der Laufliste, keine weitere Anfrage):
+       grün = beim ersten Mal erfolgreich (`success`, Versuch 1), gelb `#E8B54A` = nach Re-run erfolgreich
+       (`success`, Versuch > 1), rot = fehlgeschlagen/abgebrochen (`failure`, `cancelled`, `timed_out`,
+       `startup_failure`), grau = sonstige Ergebnisse (`neutral`, `skipped`, `stale`, `action_required`, …).
+       Die Prozentfarben des knappsten Schritts sind davon unabhängig.
+     - *Gesamtdauer*: ohne Re-run `run_started_at` → `updated_at`; bei Re-runs die Zeit, in der Jobs aller Versuche
+       liefen (ohne Wartezeit dazwischen). Ist sie für einen der älteren Läufe unbekannt (meist ältere Re-runs),
+       werden dessen Jobs einmalig mit `filter=all` nachgeladen und mit derselben Rechnung ermittelt; das Ergebnis
+       bleibt dauerhaft in `aether.ciHistory` (abgeschlossene Läufe ändern sich nicht). Höchstens 4 solche
+       Anfragen pro Laden, im Normalfall keine. Scheitert eine oder fehlen Daten: kurzer Stummel in der Statusfarbe
+       mit „Dauer ?“, keine Fehlerkarte; beim nächsten Laden wird es erneut versucht.
+     - *Beschriftung*: der Wert steht 2 px über dem Balken. Würde er die Limit-Linie oder ihren Text berühren
+       (Zone 2 px unter bis 17 px über der Linie), steht er innerhalb des Balkens oben in dunkler Schrift –
+       direkt unter der Linie, wenn sie durch den Balken läuft; ist dafür kein Platz (unter 19 px), über der Linie.
+     - *Versuchs-Hinweis* beim knappsten Schritt eines Re-runs: Bei „Re-run failed jobs“ führt GitHub nicht neu
+       gestartete Jobs in der Jobliste des neuen Versuchs mit neuer ID, neuem `run_attempt` und neuem `created_at`,
+       aber mit `started_at`/`completed_at` des Versuchs, in dem sie liefen. Erkennung: `started_at` vor
+       `created_at` und gleiches Zeitfenster wie ein Job eines früheren Versuchs → „Lief in Versuch 1, in Versuch 2
+       übernommen“; lief der Job wirklich im genannten Versuch → „Gemessen in Versuch x von n“. Ist der Versuch
+       nicht sicher bekannt (nur die Kopie liegt vor), entfällt die Zeile.
    - *Zusätzliche API-Anfragen*: 3 pro Laden – `actions/workflows/{id}/runs?branch=main&status=completed&per_page=5`,
-     `actions/runs/{id}/jobs?filter=latest` (nur letzter abgeschlossener Lauf) und die Workflow-Datei. Gleicher
-     60-s-Cache wie die übrige Projektansicht; das automatische Nachladen eines laufenden Builds nutzt den Cache.
+     `actions/runs/{id}/jobs` des letzten abgeschlossenen Laufs (`filter=latest`, bei Re-run `filter=all`) und die
+     Workflow-Datei – plus höchstens 4 einmalige Nachlade-Anfragen (siehe oben). Gleicher 60-s-Cache wie die übrige
+     Projektansicht; das automatische Nachladen eines laufenden Builds nutzt den Cache.
    - *Fehler* (API, Rate-Limit, Datei nicht lesbar): Statt der Zeile steht „CI-Laufzeit nicht verfügbar“, die Ampel und
      die anderen Teile bleiben unberührt. Offline zeigt die Projektansicht wie bisher nur ihren Hinweis.
 2. **Zeitleiste** – gemergte PRs (`pulls?state=closed&base=main`) und Commits auf `main` (`commits?sha=main`),
@@ -394,7 +414,9 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   fehlende Dateien, kaputte `engine-map.json`). Dazu die CI-Laufzeit: Werte der Zeile, Farben an den Schwellen
   69/70/89/90 %, knappster Schritt über aufgeteilte Jobs und Matrix-Varianten, `build.yml` mit Kommentaren/CRLF,
   fehlendes Limit, laufender neuerer Lauf, API-Fehler ohne Fehlerkarte, Details auf/zu, Trend und Layout in
-  402×874, 874×402, 1194×834 und 1280×800.
+  402×874, 874×402, 1194×834 und 1280×800; Balkenfarben je Ausgang samt Legende, Nachladen und Merken der Dauer
+  älterer Re-runs (zweites Laden ohne Anfrage, Stummel „Dauer ?“ bei Fehler), Beschriftung nie unter der
+  Limit-Linie (geometrisch) und der Versuchs-Hinweis mit übernommenen Jobs wie in echten Re-run-Daten.
 - `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
   Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
   64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste

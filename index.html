@@ -450,14 +450,16 @@
   .ci-chart { max-width: 520px; }
   .ci-plot { position: relative; height: 120px; display: flex; align-items: flex-end; gap: 10px; border-bottom: 1px solid var(--line); }
   .ci-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
-  .ci-val { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .ci-val { font-size: 12px; line-height: 16px; height: 16px; white-space: nowrap; color: var(--muted); margin-bottom: 2px; }
+  /* Wert nahe der Limit-Linie: innerhalb des Balkens oben, dunkle Schrift */
+  .ci-val.ci-val-in { position: relative; z-index: 1; color: #0b0e14; font-weight: 700; }
   .ci-runbar { width: 100%; max-width: 56px; border-radius: 4px 4px 0 0; background: var(--ok); }
   .ci-runbar.ci-stub { height: 6px; opacity: .75; }
   .ci-col[data-result="rerun"] .ci-runbar { background: var(--rerun); }
   .ci-col[data-result="err"] .ci-runbar { background: var(--err); }
   .ci-col[data-result="other"] .ci-runbar { background: var(--muted); }
   .ci-limit { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
-  .ci-limit span { position: absolute; right: 0; bottom: 2px; font-size: 11px; color: var(--muted); background: var(--panel-2); padding: 0 3px; }
+  .ci-limit span { position: absolute; right: 0; bottom: 2px; font-size: 11px; line-height: 13px; color: var(--muted); background: var(--panel-2); padding: 0 3px; }
   .ci-axis { display: flex; gap: 10px; margin-top: 4px; }
   .ci-axis span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 12px; color: var(--muted); }
   .ci-unit { margin-top: 4px; }
@@ -2435,8 +2437,20 @@
 
   function runAttempt(x) { var n = Number(x && x.run_attempt); return Number.isInteger(n) && n > 0 ? n : 1; }
   function jobRan(j) { return j && j.status === 'completed' && j.conclusion !== 'skipped' && secondsBetween(j.started_at, j.completed_at) !== null; }
+  // „Re-run failed jobs“: GitHub führt nicht neu gestartete Jobs in der Jobliste des neuen Versuchs erneut auf –
+  // mit neuer Job-ID, run_attempt = neuer Versuch und created_at = Zeit des neuen Versuchs, aber mit started_at/
+  // completed_at aus dem Versuch, in dem sie wirklich liefen. Erkennung: started_at liegt vor created_at
+  // (ein tatsächlich gelaufener Job startet nie vor seiner Anlage).
+  function jobCarried(j) {
+    var c = Date.parse(j && j.created_at), s = Date.parse(j && j.started_at);
+    return isFinite(c) && isFinite(s) && s < c;
+  }
+  function sameWindow(a, b) {
+    return String(a.name) === String(b.name) && Date.parse(a.started_at) === Date.parse(b.started_at) && Date.parse(a.completed_at) === Date.parse(b.completed_at);
+  }
   // Neu gestarteter Lauf (run_attempt > 1, Jobs mit filter=all): je Job nur der letzte Versuch, in dem er
-  // tatsächlich lief. So stammen Job- und Schrittdauern aus dem Versuch, in dem sie gelaufen sind.
+  // tatsächlich lief (Original vor übernommener Kopie). Dazu: ranIn = Versuch, in dem er lief (null, wenn nur
+  // eine Kopie ohne Original vorliegt), carriedTo = höchster Versuch, in den er übernommen wurde.
   function effectiveJobs(apiJobs) {
     var by = {}, order = [];
     apiJobs.forEach(function (j) {
@@ -2444,11 +2458,20 @@
       var k = String(j.name), cur = by[k];
       if (!cur) { by[k] = j; order.push(k); return; }
       var better = jobRan(j) !== jobRan(cur) ? jobRan(j)
+        : jobCarried(j) !== jobCarried(cur) ? !jobCarried(j)
         : runAttempt(j) !== runAttempt(cur) ? runAttempt(j) > runAttempt(cur)
         : (Date.parse(j.started_at) || 0) > (Date.parse(cur.started_at) || 0);
       if (better) by[k] = j;
     });
-    return order.map(function (k) { return by[k]; });
+    return order.map(function (k) {
+      var j = by[k], copies = apiJobs.filter(function (x) { return x && x !== j && jobCarried(x) && sameWindow(x, j); });
+      var carriedTo = copies.reduce(function (m, x) { return Math.max(m, runAttempt(x)); }, 0) || null;
+      var out = {};
+      for (var p in j) if (Object.prototype.hasOwnProperty.call(j, p)) out[p] = j[p];
+      out.aetherRanIn = jobCarried(j) ? null : runAttempt(j);
+      out.aetherCarriedTo = jobCarried(j) ? null : carriedTo;
+      return out;
+    });
   }
   // Zeit, in der mindestens ein Job lief (überlappende Jobs zählen einmal, Wartezeit zwischen Versuchen nicht).
   function jobUnionSeconds(jobs) {
@@ -2471,8 +2494,9 @@
       if (dur === null) return;
       var yj = matchYamlJob(j.name, yjobs);
       var jobName = String(j.name);
-      var att = runAttempt(j);
-      out.push({ label: jobName, job: jobName, step: '', seconds: dur, limit: yj ? yj.limit : null, attempt: att });
+      var att = 'aetherRanIn' in j ? j.aetherRanIn : runAttempt(j);
+      var carried = j.aetherCarriedTo || null;
+      out.push({ label: jobName, job: jobName, step: '', seconds: dur, limit: yj ? yj.limit : null, attempt: att, carriedTo: carried });
       if (!yj) return;
       (Array.isArray(j.steps) ? j.steps : []).forEach(function (st) {
         if (!st || !st.name || st.conclusion === 'skipped') return;
@@ -2480,7 +2504,7 @@
         if (!ys) return; // Schritte ohne eigenes Limit zählen nicht
         var sd = secondsBetween(st.started_at, st.completed_at);
         if (sd === null) return;
-        out.push({ label: jobName + ' › ' + st.name, job: jobName, step: String(st.name), seconds: sd, limit: ys.limit, attempt: att });
+        out.push({ label: jobName + ' › ' + st.name, job: jobName, step: String(st.name), seconds: sd, limit: ys.limit, attempt: att, carriedTo: carried });
       });
     });
     out.forEach(function (e) { e.ratio = e.limit ? e.seconds / (e.limit * 60) : null; });
@@ -2696,6 +2720,27 @@
     });
   }
 
+  // Beschriftung eines Balkens nie unter der Limit-Linie (samt ihrem Text „Limit … min“).
+  // Alles in px ab Unterkante der Zeichenfläche. Normal steht der Wert (16 px hoch) 2 px über dem Balken.
+  // Würde er die Zone der Linie [L − 2, L + 17] berühren, steht er innerhalb des Balkens oben – bzw. direkt
+  // unter der Linie, wenn diese durch den Balken läuft – mit dunkler Schrift. Ist dort kein Platz
+  // (Balken bzw. Linie unter 19 px), wird er über die Linie angehoben.
+  var CI_PLOT_PX = 119; // .ci-plot: 120 px minus 1 px Rand unten (box-sizing: border-box)
+  var CI_LABEL_PX = 16;
+  var CI_STUB_PX = 6;
+  function ciPlaceLabel(val, barPx, linePx) {
+    if (linePx === null) return;
+    var lo = linePx - 2, hi = linePx + 17;
+    if (!(barPx + 2 < hi && barPx + 2 + CI_LABEL_PX > lo)) return;
+    var tp = Math.min(barPx - 1, linePx - 3); // Oberkante des Werts innerhalb des Balkens
+    if (tp - CI_LABEL_PX >= 0) {
+      val.classList.add('ci-val-in');
+      val.style.marginBottom = (tp - CI_LABEL_PX - barPx) + 'px';
+    } else {
+      val.style.marginBottom = (hi - barPx) + 'px';
+    }
+  }
+
   function renderCiDetails(det, st, pct, level) {
     // Balken der letzten Läufe (älteste links), dazu eine Linie beim höchsten Job-Limit.
     var runs = st.runs.slice().reverse();
@@ -2716,6 +2761,7 @@
       var b = el('div', 'ci-runbar');
       // Unbekannte Dauer: kurzer Stummel in der Statusfarbe statt eines leeren Platzes.
       if (s === null) { b.classList.add('ci-stub'); col.dataset.unknown = '1'; } else b.style.height = Math.max(2, s / top * 100) + '%';
+      ciPlaceLabel(val, s === null ? CI_STUB_PX : Math.max(2, s / top * 100) * CI_PLOT_PX / 100, limitSec ? limitSec / top * CI_PLOT_PX : null);
       b.title = 'Lauf #' + r.run_number + ': ' + (s === null ? 'Dauer unbekannt' : fmtMin(s)) + ' (' + CI_OUTCOME_TEXT[outcome] + (outcome === 'other' && r.conclusion ? ': ' + r.conclusion : '') + ')' + (runAttempt(r) > 1 ? ' (Re-run, Versuch ' + runAttempt(r) + ')' : '');
       if (runAttempt(r) > 1) col.dataset.attempt = String(runAttempt(r));
       col.appendChild(val);
@@ -2754,7 +2800,14 @@
         row.appendChild(tr);
       }
       blk.appendChild(row);
-      if (st.attempt > 1) blk.appendChild(el('div', 'note', 'Gemessen in Versuch ' + st.tight.attempt + ' von ' + st.attempt));
+      // Versuch nur nennen, wenn sicher bekannt (sonst weglassen statt raten).
+      var ta = st.tight.attempt;
+      if (st.attempt > 1 && ta) {
+        var hint = st.tight.carriedTo ? 'Lief in Versuch ' + ta + ', in Versuch ' + st.tight.carriedTo + ' übernommen' : 'Gemessen in Versuch ' + ta + ' von ' + st.attempt;
+        var hn = el('div', 'note', hint);
+        hn.id = 'ciAttemptHint';
+        blk.appendChild(hn);
+      }
       blk.appendChild(ciBar('ci-bar', pct, level));
     } else {
       blk.appendChild(el('div', 'muted', 'Limit unbekannt'));

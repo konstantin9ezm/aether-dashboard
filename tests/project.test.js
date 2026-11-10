@@ -1383,6 +1383,107 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     await context.close();
   });
 
+  test('Balkenbeschriftung wird nie von der Limit-Linie überdeckt (geometrisch)', async () => {
+    realMock();
+    // Gerätebefund: „26,8“ über #101 von der 30-min-Linie durchgestrichen.
+    mock.ciYaml = 'jobs:\n  w:\n    name: web / bauen (web-build)\n    timeout-minutes: 30\n';
+    const R = (id, n, min, conclusion = 'success') => realRun(id, n, 'a'.repeat(40), { conclusion, created: T('10:00:00'), started: T('10:00:00'),
+      updated: new Date(Date.parse(T('10:00:00')) + min * 60000).toISOString().replace('.000', '') });
+    mock.ciJobs = [realJob(19234112233, 1, 'web / bauen (web-build)', T('10:00:00'), T('10:20:00'), [])];
+    const { context, page, log } = await newPage(null);
+    const geo = () => page.evaluate(() => {
+      const r = (e) => { const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right }; };
+      const line = document.getElementById('ciLimitLine');
+      return {
+        line: r(line), text: r(line.querySelector('span')),
+        cols: [...document.querySelectorAll('#ciChart .ci-col')].map((c) => ({ run: c.dataset.run, val: r(c.querySelector('.ci-val')), bar: r(c.querySelector('.ci-runbar')),
+          inside: c.querySelector('.ci-val').classList.contains('ci-val-in'), color: getComputedStyle(c.querySelector('.ci-val')).color, txt: c.querySelector('.ci-val').textContent }))
+      };
+    });
+    const hit = (a, b) => a.t < b.b && a.b > b.t && a.l < b.r && a.r > b.l;
+    const scenarios = [
+      [26.8, 20, 12, 18, 22],          // Gerätebefund #101
+      [26.8, 28.5, 29.8, 30.6, 31.8],  // knapp unter, auf und über der Linie
+      [24, 25.5, 27, 29, 33],
+      [1, 2, 29.4, 29.9, 30.2]
+    ];
+    let first = true, sawInside = false;
+    for (const sc of scenarios) {
+      mock.latest = R(19234112233, 101, sc[0]);
+      mock.ciRuns = [mock.latest, R(19233000100, 100, sc[1]), R(19232000099, 99, sc[2], 'failure'), R(19231000098, 98, sc[3]), R(19230000097, 97, sc[4])];
+      if (first) { await openProject(page); await waitCiTime(page); first = false; } else await ciReload(page);
+      await page.click('#ciMore');
+      const g = await geo();
+      assert.equal(await text(page, '#ciLimitLine'), 'Limit 30 min');
+      for (const c of g.cols) {
+        assert.ok(!hit(c.val, g.line), `#${c.run} (${c.txt}) überlappt die Linie nicht: ${JSON.stringify([c.val, g.line])}`);
+        assert.ok(!hit(c.val, g.text), `#${c.run} (${c.txt}) überlappt „Limit 30 min“ nicht`);
+        if (c.inside) {
+          sawInside = true;
+          assert.ok(c.val.t >= c.bar.t - 0.5 && c.val.b <= c.bar.b + 0.5, `#${c.run} innerhalb des Balkens`);
+          assert.equal(c.color, 'rgb(11, 14, 20)', 'dunkle Schrift');
+        } else {
+          assert.ok(c.val.b <= c.bar.t + 0.5, `#${c.run} über dem Balken`);
+        }
+      }
+      if (sc === scenarios[0]) {
+        const c101 = g.cols.find((c) => c.run === '101');
+        assert.equal(c101.txt, '26,8');
+        assert.ok(c101.inside, '26,8 steht im Balken (Gerätebefund)');
+        assert.ok(!g.cols.find((c) => c.run === '100').inside, 'weit unter der Linie: normal über dem Balken');
+      }
+    }
+    assert.ok(sawInside);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Versuchs-Hinweis: übernommene Jobs (Re-run failed jobs) werden erkannt, sonst Zeile weglassen', async () => {
+    realMock();
+    // Aufbau wie die echten Jobs von aether #103 (filter=all, gelesen am 10.11.2026): Jobs, die in Versuch 2
+    // nicht neu liefen, stehen dort mit neuer ID, run_attempt 2 und created_at des Versuchs 2, aber
+    // started_at/completed_at aus Versuch 1.
+    const id = 19234567890;
+    const copy = (j, created) => ({ ...j, id: realJobId++, run_attempt: 2, created_at: created });
+    const nat1 = realJob(id, 1, 'native / bauen', T('21:45:37'), T('21:48:43'), [['Bauen', T('21:45:40'), T('21:48:40')]]);
+    const web1 = realJob(id, 1, 'web / bauen (web-build)', T('21:45:37'), T('22:05:00'), [['Browser-Test', T('21:47:00'), T('21:59:00')]]); // 12/15 = 80 %
+    const pub1 = realJob(id, 1, 'web / veröffentlichen (web-build)', T('22:08:47'), T('22:09:04'), [['Veröffentlichen', T('22:08:50'), T('22:09:00'), 'failure']], 'failure');
+    const pub2 = realJob(id, 2, 'web / veröffentlichen (web-build)', T('22:19:20'), T('22:19:31'), [['Veröffentlichen', T('22:19:22'), T('22:19:30')]]);
+    mock.latest = realRun(id, 103, RW.sha103, { attempt: 2, created: T('21:45:30'), started: T('22:19:16'), updated: T('22:19:32') });
+    mock.ciRuns = [mock.latest, RUN101()];
+    mock.ciJobsByRun = { [id]: [nat1, web1, pub1, pub2, copy(nat1, T('22:19:18')), copy(web1, T('22:19:23'))] };
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await ciLine(page), 'CI: 19,9 min (Re-run, Versuch 2) · web / bauen (web-build) › Browser-Test 12,0 / 15 min (80 %)'); // 19:23 + 0:17 + 0:11, Kopien zählen nicht doppelt
+    await page.click('#ciMore');
+    assert.equal(await text(page, '#ciAttemptHint'), 'Lief in Versuch 1, in Versuch 2 übernommen');
+
+    // Wie aether #95: der knappste Job lief in Versuch 2 wirklich neu → „Gemessen in Versuch 2 von 2“.
+    const webA = realJob(id, 1, 'web / bauen (web-build)', T('05:01:11'), T('05:25:02'), [['Browser-Test', T('05:02:00'), T('05:24:00'), 'failure']], 'failure');
+    const webB = realJob(id, 2, 'web / bauen (web-build)', T('14:50:05'), T('15:03:14'), [['Browser-Test', T('14:51:00'), T('15:02:00')]]); // 11/15 = 73 %
+    const natA = realJob(id, 1, 'native / bauen', T('05:01:11'), T('05:04:17'), []);
+    mock.latest = realRun(id, 103, RW.sha103, { attempt: 2, conclusion: 'failure', created: T('05:01:00'), started: T('14:49:59'), updated: T('15:03:15') });
+    mock.ciRuns = [mock.latest, RUN101()];
+    mock.ciJobsByRun = { [id]: [webA, natA, webB, copy(natA, T('14:50:03'))] };
+    await ciReload(page);
+    await page.click('#ciMore');
+    assert.match(await itext(page, '#ciTightBlock'), /Browser-Test 11,0 von 15 min 73 %/);
+    assert.equal(await text(page, '#ciAttemptHint'), 'Gemessen in Versuch 2 von 2');
+
+    // Nur die Kopie ist da (Original fehlt in der Liste): Versuch nicht sicher bekannt → Zeile fehlt.
+    mock.latest = realRun(id, 103, RW.sha103, { attempt: 2, created: T('21:45:30'), started: T('22:19:16'), updated: T('22:19:32') });
+    mock.ciRuns = [mock.latest, RUN101()];
+    mock.ciJobsByRun = { [id]: [pub2, copy(web1, T('22:19:23'))] };
+    await ciReload(page);
+    await page.click('#ciMore');
+    assert.match(await itext(page, '#ciTightBlock'), /Browser-Test 12,0 von 15 min 80 %/);
+    assert.equal(await page.$('#ciAttemptHint'), null, 'lieber weglassen als raten');
+    assert.doesNotMatch(await itext(page, '#ciTightBlock'), /Gemessen in Versuch|übernommen/);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
   test('Neuerer laufender Lauf und laufender Re-run werden übergangen', async () => {
     realMock();
     // #104 läuft, letzter abgeschlossener ist #103 (Re-run)
