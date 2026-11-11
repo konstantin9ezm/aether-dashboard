@@ -436,6 +436,7 @@
   .ci-line { flex: 1 1 260px; min-width: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
   .ci-line .ci-name { font-weight: 600; }
   .ci-line .ci-rerun { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .ci-line .ci-meas { white-space: nowrap; }
   .ci-pct[data-level="ok"] { color: var(--ok); }
   .ci-pct[data-level="warn"] { color: var(--warn); }
   .ci-pct[data-level="err"] { color: var(--err); }
@@ -2683,10 +2684,13 @@
       level = ciLevel(pct);
       var t = el('span', 'ci-tight');
       t.appendChild(el('span', 'ci-name', st.tight.label));
-      t.appendChild(document.createTextNode(' ' + fmtMinNum(st.tight.seconds) + ' / ' + fmtLimit(st.tight.limit) + ' min '));
+      t.appendChild(document.createTextNode(' '));
+      // Messwert und Prozent als untrennbarer Block: passt er nicht mehr, rutscht er ganz in die nächste Zeile.
+      var meas = el('span', 'ci-meas', fmtMinNum(st.tight.seconds) + ' / ' + fmtLimit(st.tight.limit) + ' min ');
       var pc = el('span', 'ci-pct', '(' + pct + ' %)');
       pc.dataset.level = level;
-      t.appendChild(pc);
+      meas.appendChild(pc);
+      t.appendChild(meas);
       parts.push(t);
     } else {
       parts.push(el('span', 'ci-tight muted', 'Limit unbekannt'));

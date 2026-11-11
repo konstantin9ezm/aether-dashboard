@@ -281,6 +281,8 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
    **CI-Laufzeit** (Zeile unter der Ampel) – immer für den letzten *abgeschlossenen* Lauf „Build“ auf `main`
    (läuft gerade ein neuerer Lauf, steht dessen Vorgänger mit Lauf-Nr. da: „CI (Lauf #57): …“):
    `CI: <Gesamtdauer> · <Job › Schritt> <Dauer> / <Limit> min (<Prozent> %)  ▸ Details`, darunter ein schmaler Balken.
+   „<Dauer> / <Limit> min (<Prozent> %)“ bricht nie in sich um: Passt der Block nicht mehr in die Zeile, rutscht er
+   als Ganzes in die nächste.
    - *Knappster Schritt*: Für jeden Job des Laufs und jeden Schritt mit eigenem `timeout-minutes` wird
      Dauer / Limit berechnet; angezeigt wird der höchste Wert. Es gibt keine festen Job- oder Schrittnamen –
      wird der Browser-Test auf mehrere Jobs aufgeteilt, funktioniert die Anzeige unverändert.
@@ -431,7 +433,10 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   fehlendes Limit, laufender neuerer Lauf, API-Fehler ohne Fehlerkarte, Details auf/zu, Trend und Layout in
   402×874, 874×402, 1194×834 und 1280×800; Balkenfarben je Ausgang samt Legende, Nachladen und Merken der Dauer
   älterer Re-runs (zweites Laden ohne Anfrage, Stummel „Dauer ?“ bei Fehler), Beschriftung nie unter der
-  Limit-Linie (geometrisch) und der Versuchs-Hinweis mit übernommenen Jobs wie in echten Re-run-Daten.
+  Limit-Linie (geometrisch) und der Versuchs-Hinweis mit übernommenen Jobs wie in echten Re-run-Daten. Außerdem die
+  CI-Zeile mit langen Job- und Schrittnamen (Re-run): „Dauer / Limit (Prozent)“ liegt bei 1194×834, 834×1194,
+  874×402, 402×874, 390×844, 360 und 320 px sowie in 10-px-Schritten von 320 bis 1400 px immer in einer Zeile,
+  ohne Überlauf aus der Karte. Gegenprobe (muss rot werden): ohne `white-space: nowrap` am Block.
 - `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
   Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
   64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste
