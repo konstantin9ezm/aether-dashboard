@@ -1553,4 +1553,144 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     await assertNoLeak(log, page);
     await context.close();
   });
+
+  // Gerätebefund 11.11.2026 (iPad): „(43“ am Ende von Zeile 1, „%)“ allein in Zeile 2. Messwert und Prozent
+  // „10,7 / 25 min (43 %)“ bilden einen untrennbaren Block: passt er nicht mehr, rutscht er ganz in die nächste Zeile.
+  test('CI-Zeile: „Dauer / Limit (Prozent)“ bricht nie innerhalb um (alle Breiten 320–1400 px, kein Überlauf)', async () => {
+    realMock();
+    const D = (hms) => `2026-11-11T${hms}Z`;
+    const RUN104 = () => realRun(19235550104, 104, 'e'.repeat(40), { attempt: 2, created: D('05:00:01'), started: D('05:30:00'), updated: D('05:33:50') });
+    const JOB = 'web / Browser-Test Teil 3 (I, E, F, H, M, N, O)';
+    const STEP = 'Browser-Test Teil 3 (Abschnitte I, E, F, H, M, O, P, R, S)';
+    mock.ciYaml = [
+      'name: Build', 'on:', '  push:', '    branches: [main]', 'jobs:',
+      '  native:', '    name: native / bauen', '    timeout-minutes: 20', '    steps:', '      - name: Bauen', '        run: cmake --build out',
+      '  web-test-3:', `    name: '${JOB}'`, '    timeout-minutes: 45', '    steps:',
+      `      - name: '${STEP}'`, '        timeout-minutes: 25', '        run: npm test',
+      '  web-publish:', '    name: web / veröffentlichen (web-build)', '    timeout-minutes: 10', '    steps:',
+      '      - name: Veröffentlichen', '        timeout-minutes: 10', '        run: ./publish.sh', ''
+    ].join('\n');
+    // Versuch 1: 05:00:00–05:13:00 (780 s) + 05:13:10–05:20:00 (410 s, Veröffentlichen rot); Versuch 2: 05:30:00–05:33:46 (226 s)
+    // = 1416 s = 23,6 min. Knappster Schritt: 05:01:00–05:11:42 = 642 s = 10,7 von 25 min = 43 %.
+    const id = 19235550104;
+    mock.latest = RUN104();
+    mock.ciRuns = [RUN104(), RUN101(), ...olderRuns()];
+    mock.ciJobs = [
+      realJob(id, 1, 'native / bauen', D('05:00:00'), D('05:08:00'), [['Bauen', D('05:00:10'), D('05:07:50')]]),
+      realJob(id, 1, JOB, D('05:00:10'), D('05:13:00'), [['Set up job', D('05:00:10'), D('05:00:12')], [STEP, D('05:01:00'), D('05:11:42')]]),
+      realJob(id, 1, 'web / veröffentlichen (web-build)', D('05:13:10'), D('05:20:00'), [['Veröffentlichen', D('05:13:20'), D('05:19:50'), 'failure']], 'failure'),
+      realJob(id, 2, 'web / veröffentlichen (web-build)', D('05:30:00'), D('05:33:46'), [['Veröffentlichen', D('05:30:05'), D('05:31:00')]])
+    ];
+    mock.ciJobsByRun = { 19232000099: jobs99() };
+    const BLOCK = '10,7 / 25 min (43 %)';
+    const { context, page, log } = await newPage(null);
+    // Elemente, die links oder rechts über den sichtbaren Bereich hinausragen (für die Prüfung „kein waagerechtes Scrollen“).
+    await context.addInitScript(() => {
+      window.beyondViewport = () => [...document.querySelectorAll('body *')].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && (r.right > window.innerWidth + 0.5 || r.left < -0.5);
+      }).map((e) => ({ el: e.tagName + (e.id ? '#' + e.id : ''), inHeader: !!e.closest('header.top') }));
+    });
+    const headerOverflow = [];
+    await page.setViewportSize({ width: 1194, height: 834 });
+    await openProject(page);
+    await waitCiTime(page);
+    assert.equal(await ciLine(page), `CI: 23,6 min (Re-run, Versuch 2) · ${JOB} › ${STEP} ${BLOCK}`);
+    assert.equal(await page.getAttribute('#ciTime .ci-pct', 'data-level'), 'ok', '43 % bleibt grün');
+    // Anfragen der Projektansicht beim ersten Laden unverändert (9: Workflows, letzter Lauf, 5 abgeschlossene, Jobs,
+    // build.yml, PRs, Commits, ROADMAP.md, einmalig Jobs des älteren Re-runs #99) – ohne die Spielansicht davor.
+    const projReq = mock.requests.filter((r) => !/\/contents\/(index\.json|builds\/)/.test(r.path));
+    assert.equal(projReq.length, 9, projReq.map((r) => r.path).join('\n'));
+
+    // Lage jedes Zeichens eines Textes (ohne Leerzeichen) – unabhängig davon, wie das DOM aufgebaut ist.
+    const measure = (rootSel, want) => page.evaluate(([rootSel, want]) => {
+      const root = document.querySelector(rootSel);
+      const chars = [];
+      const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) for (let i = 0; i < n.data.length; i++) chars.push([n, i]);
+      const full = chars.map(([n, i]) => n.data[i]).join('');
+      const at = full.lastIndexOf(want);
+      if (at < 0) return { missing: full };
+      const lh = parseFloat(getComputedStyle(root).lineHeight);
+      const rootTop = root.getBoundingClientRect().top;
+      const card = document.getElementById('ciCard').getBoundingClientRect();
+      const rects = [];
+      for (let k = at; k < at + want.length; k++) {
+        const [n, i] = chars[k];
+        if (/\s/.test(n.data[i])) continue;
+        const r = document.createRange();
+        r.setStart(n, i); r.setEnd(n, i + 1);
+        const b = r.getBoundingClientRect();
+        rects.push({ c: n.data[i], mid: (b.top + b.bottom) / 2, l: b.left, r: b.right });
+      }
+      const lineOf = (mid) => Math.floor((mid - rootTop) / lh) + 1;
+      return {
+        lines: [...new Set(rects.map((x) => lineOf(x.mid)))],
+        totalLines: Math.round(root.getBoundingClientRect().height / lh),
+        left: Math.min(...rects.map((x) => x.l)), right: Math.max(...rects.map((x) => x.r)),
+        inCard: rects.every((x) => x.l >= card.left - 0.5 && x.r <= card.right + 0.5),
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        beyond: beyondViewport(),
+        cardOverflow: document.getElementById('ciCard').scrollWidth - document.getElementById('ciCard').clientWidth,
+        lineOverflow: root.scrollWidth - root.clientWidth
+      };
+    }, [rootSel, want]);
+    const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const log2 = [];
+    const check = async (w, h, where) => {
+      await page.setViewportSize({ width: w, height: h });
+      await frame();
+      const m = await measure('#ciTimeLine', BLOCK);
+      assert.ok(!m.missing, `${w}px: Block fehlt in „${m.missing}“`);
+      assert.equal(m.lines.length, 1, `${w}×${h} (${where}): „${BLOCK}“ liegt in einer Zeile, gemessen in Zeilen ${m.lines}`);
+      assert.ok(m.inCard, `${w}px: Block ragt aus der Karte (${m.left}–${m.right})`);
+      // Kein waagerechtes Scrollen durch die CI-Karte. Bekannte, schon vor dieser Änderung vorhandene Ausnahme: die
+      // Kopfzeile (Logo, Titel, „WebGPU-Check“, Umschalter) ist in manchen Breiten ein paar px zu breit (lokal 461–474 px,
+      // mit den Schriften des CI-Runners auch bei 320 px). Dann darf NUR sie überstehen – nie die CI-Karte oder etwas anderes.
+      const outside = m.beyond.filter((b) => !b.inHeader);
+      assert.deepEqual(outside, [], `${w}px: außerhalb der Kopfzeile ragt nichts über den Rand`);
+      if (m.pageOverflow > 0) {
+        assert.ok(m.beyond.length > 0 && m.beyond.every((b) => b.inHeader), `${w}px: waagerechtes Scrollen ${m.pageOverflow}px nur durch die Kopfzeile, überstehend: ${JSON.stringify(m.beyond)}`);
+        headerOverflow.push(`${w}×${h}: ${m.pageOverflow}px (${m.beyond.map((b) => b.el).join(', ')})`);
+      }
+      assert.ok(m.cardOverflow <= 0, `${w}px: Karte läuft über ${m.cardOverflow}px`);
+      assert.ok(m.lineOverflow <= 0, `${w}px: Zeile läuft über ${m.lineOverflow}px`);
+      // Dasselbe am Element des Blocks: alle seine Rechtecke (Chromium liefert je Kind eines) auf derselben Höhe.
+      const tops = await page.$eval('#ciTimeLine .ci-meas', (e) => [...e.getClientRects()].map((r) => [Math.round(r.top), Math.round(r.bottom)]));
+      assert.ok(tops.length >= 1 && tops.every((t) => Math.abs(t[0] - tops[0][0]) <= 1 && Math.abs(t[1] - tops[0][1]) <= 1), `${w}px: .ci-meas in einer Zeile ${JSON.stringify(tops)}`);
+      log2.push({ w, h, where, line: m.lines[0], of: m.totalLines, left: Math.round(m.left), right: Math.round(m.right) });
+    };
+    const SIZES = [[1194, 834], [834, 1194], [874, 402], [402, 874], [390, 844], [360, 780], [320, 568]];
+    for (const [w, h] of SIZES) {
+      await check(w, h, 'fest');
+      await (await page.$('#ciCard')).screenshot({ path: path.join(OUT, `ci-zeile-block-${w}x${h}.png`) });
+    }
+    for (let w = 320; w <= 1400; w += 10) await check(w, 900, 'Durchlauf');
+    // Der Durchlauf trifft Breiten, in denen der Block am Zeilenanfang einer Folgezeile steht.
+    assert.ok(log2.some((x) => x.line > 1), 'Block rutscht bei schmalen Breiten in eine Folgezeile');
+
+    // Details „Knappster Schritt“: „10,7 von 25 min“ und „43 %“ stehen in derselben Zeile (bei allen Breiten).
+    await page.click('#ciMore');
+    const det = [];
+    for (const w of [...SIZES.map((s) => s[0]), ...Array.from({ length: 109 }, (_, i) => 320 + i * 10)]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await frame();
+      const m = await page.evaluate(() => {
+        const row = document.querySelector('#ciTightBlock .ci-tightrow');
+        const box = (e) => { const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, rects: e.getClientRects().length }; };
+        return { val: box(row.children[0]), pct: box(row.children[1]), overflow: document.documentElement.scrollWidth - window.innerWidth, beyond: window.beyondViewport() };
+      });
+      assert.equal(m.val.rects, 1, `${w}px: „10,7 von 25 min“ einzeilig`);
+      assert.equal(m.pct.rects, 1, `${w}px: „43 %“ einzeilig`);
+      assert.ok(Math.abs(m.val.t - m.pct.t) < 1 && Math.abs(m.val.b - m.pct.b) < 1, `${w}px: Wert und Prozent in derselben Zeile`);
+      assert.deepEqual(m.beyond.filter((b) => !b.inHeader), [], `${w}px (Details offen): außerhalb der Kopfzeile ragt nichts über den Rand`);
+      if (m.overflow > 0) assert.ok(m.beyond.every((b) => b.inHeader), `${w}px (Details offen): Überlauf ${m.overflow}px nur durch die Kopfzeile`);
+      det.push(w);
+    }
+    assert.equal(await page.$eval('#ciTightBlock .ci-tightrow', (r) => r.textContent.replace(/\s+/g, ' ')), '10,7 von 25 min43 %');
+    fs.writeFileSync(path.join(OUT, 'ci-zeile-block-lage.json'), JSON.stringify({ lage: log2, kopfzeileZuBreit: headerOverflow }, null, 1));
+    if (headerOverflow.length) console.log('# Kopfzeile zu breit (nicht Teil der CI-Karte, vorher schon so): ' + headerOverflow.join('; '));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
 });

@@ -1061,34 +1061,9 @@ describe('Feedback-Dialog: Backspace', () => {
     await context.close();
   });
 
-  test('Token-Feld: Backspace löscht ein Zeichen und tut sonst nichts (keine Navigation, Ansicht bleibt)', async () => {
-    const { context, page, log } = await newPage(null);
-    await page.goto(baseUrl);
-    await page.waitForSelector('#buildsView:not([hidden])');
-    await page.evaluate(() => localStorage.removeItem('aether.githubToken'));
-    await page.reload();
-    await page.waitForSelector('#tokenView:not([hidden])');
-    const url = page.url();
-    const hist = await page.evaluate(() => history.length);
-    await page.click('#tokenInput');
-    await page.keyboard.type('github_pat_abc');
-    await page.keyboard.press('Backspace');
-    assert.equal(await page.inputValue('#tokenInput'), 'github_pat_ab');
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'tokenInput');
-    // Ohne Fokus im Feld (Seite): ebenfalls nichts Neues.
-    await page.evaluate(() => document.activeElement.blur());
-    await page.keyboard.press('Backspace');
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    assert.equal(page.url(), url, 'keine Navigation');
-    assert.equal(await page.evaluate(() => history.length), hist, 'kein neuer Verlaufseintrag');
-    assert.equal(await page.evaluate(() => !document.getElementById('tokenView').hidden && document.getElementById('buildsView').hidden), true, 'Ansicht unverändert');
-    assert.equal(await page.inputValue('#tokenInput'), 'github_pat_ab');
-    assert.equal(await page.evaluate(() => document.getElementById('feedback').hidden), true);
-    assert.deepEqual(log.errors, []);
-    await context.close();
-  });
-
-  test('Token-Feld: einzelner Druck löscht genau ein Zeichen, gehaltene Taste mehrere; nichts sonst (Dummy-Wert, nichts gespeichert)', async () => {
+  // Zusammengelegt aus den beiden früheren Token-Feld-Tests (Dashboard PR #15 und PR #16); alle Prüfungen beider
+  // stecken hier. Markierung „(#15)“: Prüfung stammt (auch) aus dem kürzeren Test von PR #15.
+  test('Token-Feld: Backspace löscht ein Zeichen (einzeln) bzw. mehrere (gehalten) und tut sonst nichts (keine Navigation, Ansicht bleibt; Dummy-Wert, nichts gespeichert)', async () => {
     const DUMMY = 'dummy-kein-token-123'; // bewusst kein echter Token und kein Token-Format
     const { context, page, log } = await newPage(null);
     await page.goto(baseUrl);
@@ -1114,7 +1089,7 @@ describe('Feedback-Dialog: Backspace', () => {
       assert.equal(await page.evaluate(() => document.getElementById('feedback').hidden), true, `${label}: kein Dialog betroffen`);
     };
 
-    // Einzelner Druck: genau ein Zeichen weg, Fokus bleibt im Feld.
+    // Einzelner Druck: genau ein Zeichen weg, Fokus bleibt im Feld (#15).
     await page.click('#tokenInput');
     await page.keyboard.type(DUMMY);
     assert.equal(await page.inputValue('#tokenInput'), DUMMY);
@@ -1131,7 +1106,8 @@ describe('Feedback-Dialog: Backspace', () => {
     assert.equal(await page.evaluate(() => document.activeElement.id), 'tokenInput');
     await nothingElse('gehaltene Taste');
 
-    // Ohne Fokus im Feld und ohne Dialog: Backspace wird vom Dashboard nicht abgefangen und bewirkt nichts.
+    // Ohne Fokus im Feld und ohne Dialog: Backspace wird vom Dashboard nicht abgefangen und bewirkt nichts
+    // (#15: keine Navigation, kein Verlaufseintrag, Ansicht unverändert, Dialog zu, Feldinhalt unverändert).
     await page.evaluate(() => document.activeElement.blur());
     await page.keyboard.press('Backspace');
     await nothingElse('ohne Fokus');
@@ -1150,7 +1126,7 @@ describe('Feedback-Dialog: Backspace', () => {
     assert.equal(await page.evaluate(() => JSON.stringify([Object.entries(localStorage).sort(), Object.entries(sessionStorage).sort()])), storageBefore, 'Speicher unverändert');
     assert.equal(await page.evaluate(() => localStorage.getItem('aether.githubToken')), null);
     await page.evaluate(() => { document.getElementById('tokenInput').value = ''; });
-    assert.deepEqual(log.errors, []);
+    assert.deepEqual(log.errors, []); // (#15)
     await context.close();
   });
 });
