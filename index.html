@@ -644,7 +644,7 @@
       <div class="tools" id="tools">
         <a class="btn" id="toolEditor" href="screen-editor.html">Screen-Editor ›</a>
         <a class="btn" id="toolProfile" href="https://github.com/konstantin9ezm/aether/actions/workflows/profile.yml" data-href="https://github.com/konstantin9ezm/aether/actions/workflows/profile.yml" target="_blank" rel="noopener noreferrer">Messflug ›</a>
-        <button class="btn" id="toolLogo" type="button" disabled aria-disabled="true">Logo <span class="tool-note">geplant</span></button>
+        <a class="btn" id="toolLogo" href="logo.html">Logo ›</a>
         <a class="btn" id="toolWebgpu" href="webgpu-check.html" data-href="webgpu-check.html">WebGPU-Check ›</a>
       </div>
     </section>
@@ -1893,7 +1893,8 @@
     updateOfflineHint();
   }
   // Tools-Karte: Messflug und WebGPU-Check brauchen das Netz (GitHub bzw. die Seite liegt nicht in der
-  // App-Hülle); offline ausgegraut mit „nur online“. Der Screen-Editor liegt in der Hülle (sw.js).
+  // App-Hülle); offline ausgegraut mit „nur online“. Screen-Editor und Logo-Seite liegen in der Hülle (sw.js);
+  // die Logo-Seite zeigt offline ihre zuletzt geladene Fassung bzw. einen Hinweis.
   function updateTools() {
     var off = isOffline();
     ['toolProfile', 'toolWebgpu'].forEach(function (id) {

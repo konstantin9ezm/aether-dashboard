@@ -218,7 +218,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 **Ablauf beim Start**
 
 1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
-   und den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) und die Logo-Seite (`logo.html`) aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -233,7 +233,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
    wiederholt; gelingt sie, verschwindet der Hinweis.
 5. Die **Projektansicht** zeigt offline nur „Offline – Projektansicht nicht verfügbar“ statt vier Fehlerkarten.
    „Aktualisieren“ wiederholt die Online-Prüfung und lädt bei Erfolg die Ansicht. Die Karte **Tools** bleibt
-   sichtbar; der Screen-Editor startet offline, „Messflug“ und „WebGPU-Check“ sind ausgegraut („nur online“).
+   sichtbar; Screen-Editor und Logo-Seite starten offline, „Messflug“ und „WebGPU-Check“ sind ausgegraut („nur online“).
 
 **Speicherort und Umfang**
 
@@ -375,7 +375,7 @@ die Breite nicht, rutschen sie in die nächste Zeile (kein waagerechtes Scrollen
 1. **Screen-Editor ›** – öffnet `screen-editor.html` im selben Fenster, auch offline (siehe unten).
 2. **Messflug ›** – öffnet den Workflow `profile.yml` im Repo aether auf GitHub (neuer Tab,
    `rel="noopener noreferrer"`).
-3. **Logo** – Platzhalter, grau und nicht antippbar (`disabled`, `aria-disabled`), Zusatz „geplant“.
+3. **Logo ›** – öffnet `logo.html` im selben Fenster, auch offline (siehe „Logo-Werkzeug“).
 4. **WebGPU-Check ›** – öffnet `webgpu-check.html` im selben Fenster (das Symbol in der Kopfzeile bleibt).
 
 Offline sind „Messflug“ und „WebGPU-Check“ ausgegraut mit „nur online“ (GitHub ist nicht erreichbar, der
@@ -405,7 +405,11 @@ Projektansicht), weil die Home-Bildschirm-App keinen Zurück-Knopf hat.
 - **Unterer Bereich:** *Draufsicht* (Kamera unten, Blick nach oben; antippen wählt, ziehen verschiebt in die Tiefe)
   oder *Vergleich*: vier kleine Bilder, so wie jedes Gerät den Screen zeigt, nach jeder Änderung neu (gedrosselt).
 - **Vorschau ohne Hilfen** zeigt genau das unter „Vorschau als“ gewählte Format, mit Logo und Menübox, ohne
-  Rahmen und Beschriftungen.
+  Rahmen, Umrisse und Legende.
+- **Legende** unter der Bühne (statt Beschriftungen auf der Bühne): nur Einträge für Rahmen und Kästen, die gerade
+  sichtbar sind. „Rahmen der anderen Geräte“ steuert iPad, iPhone und 21:9 (16:9 ist immer da), „Umrisse“ die
+  gestrichelten Kästen „Logo/Menübox“ (diese fehlen auch, solange „Logo und Menübox verschieben“ an ist – dann sind
+  die Kästen orange – oder Logo und Menübox beide ausgeblendet sind).
 
 **Formate und Regel C**
 
@@ -413,10 +417,10 @@ Projektansicht), weil die Home-Bildschirm-App keinen Zurück-Knopf hat.
 |---|---|---|
 | 21:9 | 2560 × 1080 | 65,9° × 113,9° |
 | iPhone quer | 874 × 402 | 65,9° × 109,3° |
-| **16:9 · Switch 2** (auch TV/PC) | 1920 × 1080 | 65,9° × 98,1° |
+| **16:9 · PC & Switch 2** (auch TV) | 1920 × 1080 | 65,9° × 98,1° |
 | iPad quer | 1194 × 834 | 77,7° × 98,1° |
 
-Hauptformat ist fest **16:9 · Switch 2**. Regel C: *Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar.*
+Hauptformat ist fest **16:9 · PC & Switch 2**. Regel C: *Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar.*
 Breitere Geräte sehen bei gleicher Höhe seitlich mehr, schmalere (iPad) die volle 16:9-Breite und oben/unten mehr.
 Eine einzige Funktion `sicht(format)` rechnet das über die Kamera exakt um (Tangens des halben Sichtfelds:
 `tanV = tan(65,9°/2) · max(1, (16/9) / A)`, `tanH = tanV · A`, A = Breite/Höhe); Bühne, Vorschau, Vergleich und
@@ -441,7 +445,7 @@ Regel C ist ein eigener Auftrag im Repo aether.
   Form 1–8, Drehung YXZ in Grad, Farbe). Das Hauptformat je Screen aus Version 2 entfällt.
 - „Text einfügen“ liest Exporte der Versionen **1, 2 und 3** (Hinzufügen oder Alles ersetzen). Umrechnung: Kamera,
   Einheiten und Bezugspunkte sind in allen Versionen gleich, also bleiben Asteroiden und Lage unverändert; ein
-  altes Hauptformat (iPhone, iPad, 16:9) wird zu 16:9 · Switch 2. Was früher für ein breiteres Hauptformat am Rand
+  altes Hauptformat (iPhone, iPad, 16:9) wird zu 16:9 · PC & Switch 2. Was früher für ein breiteres Hauptformat am Rand
   lag, steht jetzt in der gedimmten Randfläche. Version 1 kannte keine Lage und kein Rollen: beides wird 0.
 - **Als Bild sichern (alle Formate):** vier PNG in den Größen der Tabelle, ohne Hilfen (wie „Vorschau ohne
   Hilfen“), Namen `aether-screen-<Name>-<Format>.png` (`21x9`, `iphone-quer`, `16x9-switch2`, `ipad-quer`). In der
@@ -456,6 +460,44 @@ Jost (reduziert auf „Aether“) steht unter der SIL Open Font License 1.1 (`ve
 
 **Testschnittstelle:** `window.AetherScreenEditor` (nur lesen: Formate, `sicht`, Kamera, Zustand, Rahmen,
 Eckpunkte) für die automatischen Tests.
+
+## Logo-Werkzeug
+
+Seite `logo.html` (Kopfzeile „‹ Zum Dashboard“ und Titel „Logo“, wie der Screen-Editor). Sie zeigt das Spiel-Logo
+und bietet es als Datei zum Sichern an, z. B. für Affinity.
+
+- **Quelle:** `art/logo/logo.svg` im Repo aether, Zweig `main`, gelesen über die GitHub-API mit dem Token des
+  Dashboards (nur gelesen, nie geschrieben, nie in einer Adresse). Je Öffnen zwei Anfragen, gleichzeitig:
+  `contents/art/logo/logo.svg?ref=main` (roh) und `commits?sha=main&path=art/logo/logo.svg&per_page=1` (letzter
+  Commit, der die Datei geändert hat). Zeitlimit 15 s wie in der Projektansicht; Fehlermeldungen wie dort. Unter dem
+  Logo steht „Quelle: art/logo/logo.svg · Commit <Kurz-Hash> · geladen <Uhrzeit>“ (deutsche Zeit; an einem anderen
+  Tag mit Datum).
+- **Offline:** Die zuletzt geladene Fassung (SVG-Text, Commit, Zeitpunkt – ohne Token) liegt auf dem Gerät
+  (`localStorage`, Schlüssel `aether.logo`). Ohne Netz (oder wenn GitHub nicht antwortet) zeigt die Seite sie mit
+  dem Hinweis „Offline – zuletzt geladene Fassung“; ohne gespeicherte Fassung „Noch kein Logo geladen – einmal online
+  öffnen.“ Ohne Token erscheint derselbe Hinweis wie in der Projektansicht („Kein Token gespeichert.“, Link zum
+  Dashboard). Die Seite selbst liegt in der App-Hülle (`sw.js`, Cache `aether-shell-v1`); API-Antworten und das
+  Token kommen nie in einen Cache.
+- **Sicherheit:** Das SVG wird mit `DOMParser` gelesen; vor der Anzeige werden `script`, `foreignObject` (und andere
+  Einbettungen wie `iframe`, `object`), alle `on*`-Attribute und jedes `href`/`src` entfernt, das nicht auf die Datei
+  selbst (`#…`) oder ein eingebettetes Rasterbild (`data:image/png|jpeg|gif|webp;base64`) zeigt. Angezeigt wird nur
+  als Bild (`img` aus einer Blob-URL), nie per `innerHTML`.
+- **Anzeige:** links das Logo groß, darunter der Hintergrund „Dunkel“ (Standard) · „Hell“ · „Kariert
+  (transparent)“ – nur zur Anzeige, nicht in den Dateien – und die Quellen-Zeile. Auf dem iPad quer (ab 900 px
+  Breite, quer) zwei Karten nebeneinander, sonst untereinander; kein waagerechtes Scrollen, Tippflächen ≥ 44 × 44 px.
+- **Ebenen:** Ring hinten, Schatten, Schrift, Ring vorne (Gruppen-IDs `ring-hinten`, `schatten`, `schrift`,
+  `ring-vorne`), Standard alle an. Fehlt eine Gruppe in der Datei, ist ihr Schalter ausgegraut („fehlt in der
+  Datei“). Ausblenden gilt für die Anzeige und das PNG.
+- **Als Datei sichern:** „SVG sichern“ (Hauptknopf) gibt die Originaldatei unverändert mit allen Ebenen weiter
+  (byte-gleich), Name `aether-logo-<hash>.svg`. „PNG sichern“: nur die sichtbaren Ebenen, transparenter Hintergrund,
+  Breite 1024 / 2048 (Standard) / 4096 px, Seitenverhältnis wie im SVG (`viewBox`, sonst `width`/`height`), Name
+  `aether-logo-<hash>-<breite>.png`. Weg wie „Als Bild sichern“ im Screen-Editor: Teilen-Dialog (`navigator.share`
+  mit Datei, „In Dateien sichern“, Affinity …), sonst Download, sonst ein Dialog mit dem Bild („Lange drücken und
+  sichern“); nur per Antippen (Nutzergeste), auch offline mit der gespeicherten Fassung. Damit der Teilen-Dialog
+  innerhalb der Geste aufgeht, liegt die PNG-Quelle in der gewählten Größe vorab geladen bereit und wird beim
+  Antippen synchron gezeichnet.
+
+**Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen).
 
 ## WebGPU-Check
 
@@ -558,13 +600,22 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.
 
 - `tests/screen-editor.test.js` – Tools-Karte und Screen-Editor (Headless Chromium): Lage der Karte zwischen
-  Stand-Zeile und Build-Ampel, Ziele der Knöpfe, Logo nicht antippbar, Umbruch ohne waagerechtes Scrollen bei
+  Stand-Zeile und Build-Ampel, Ziele der Knöpfe („Logo ›“ aktiv, auch offline), Umbruch ohne waagerechtes Scrollen bei
   320–1400 px; offline Karte sichtbar, Messflug/WebGPU-Check ausgegraut, Editor startet aus dem Service Worker; keine
   externen Anfragen, three.js-Prüfsumme; keine Überlappung von Bühne, Trennleisten, unterem Bereich und Bedienfeld
   (402×874, 874×402, 1194×834, 834×1194, 1280×800, 360×700, 600×800 je Untereinander/Nebeneinander und
   Draufsicht/Vergleich), Trennleisten ziehen/Neuladen/Doppeltipp, Rückfall auf Untereinander; Regel C rechnerisch
   für alle vier Formate; „Ränder füllen“ nur außerhalb von 16:9 (alle Eckpunkte); Import der Versionen 1 und 2;
-  Bild-Export (vier PNG, Teilen-Dialog nachgestellt, nur mit Nutzergeste, Download- und „Lange drücken“-Rückfall).
+  Bild-Export (vier PNG, Teilen-Dialog nachgestellt, nur mit Nutzergeste, Download- und „Lange drücken“-Rückfall);
+  Legende je Schalterkombination („Rahmen der anderen Geräte“, „Umrisse“).
+- `tests/logo.test.js` – Logo-Werkzeug mit Mock-API und Test-SVG (vier Gruppen, eingeschleustes `script`,
+  `onload`, `foreignObject`, externes Bild): Anzeige, Commit und Quellen-Zeile, genau zwei API-Anfragen; jeder
+  Ebenen-Schalter blendet genau seine Gruppe aus (Pixelprobe); nichts wird ausgeführt, nichts nach außen geladen;
+  SVG byte-gleich (SHA-256, auch per Download); PNG 1024/2048/4096 px mit transparenten Ecken, ausgeblendete Ebenen
+  fehlen; offline nach einmaligem Laden aus der App-Hülle, offline ohne Fassung, hängende API (Zeitlimit), ohne Token;
+  Token in keinem Speicher und keinem Cache; Layout 320–1400 px mit und ohne Logo. Gegenproben (müssen rot werden):
+  SVG per `innerHTML` ins Dokument (Script läuft), PNG mit allen Ebenen trotz ausgeschalteter Ebene, `logo.html` nicht
+  in der App-Hülle.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
@@ -574,7 +625,7 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 ## Deployment
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
-`manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`,
+`manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
 `vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.
