@@ -49,18 +49,58 @@ body{
   font-family:"Avenir Next", "Futura", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size:16px; line-height:1.4; -webkit-text-size-adjust:100%;
 }
+/* Anordnung: Bühne, Leiste und unterer Bereich (Draufsicht) überlappen sich nie. Quer: Ansichten links,
+   Kopf und Bedienfeld rechts. Hochkant: Kopf, Ansichten, Trennleiste, Bedienfeld untereinander. */
 .app{
-  height:100%; display:grid; grid-template-columns:minmax(0,1fr) minmax(290px,340px);
+  height:100%; display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(290px,340px);
+  grid-template-rows:auto minmax(0,1fr);
+  grid-template-areas:"ans kopf" "ans panel";
   padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px);
 }
+.kopf{ grid-area:kopf; display:flex; align-items:center; gap:10px; padding:8px 16px; background:var(--panel); border-left:1px solid var(--line); border-bottom:1px solid var(--line); min-width:0; }
+.kopf .titel{ font-size:15px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ansichten{ grid-area:ans; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+.ansichten.b{ flex-direction:row; }
+.spalte{ display:flex; flex-direction:column; min-width:0; min-height:0; flex:none; }
+.ansichten.b .spalte, .ansichten.ohne-unten .spalte{ flex:1 1 0; height:auto !important; }
+.panel{ grid-area:panel; }
+#trennerP{ display:none; grid-area:tp; }
 @media (orientation: portrait), (max-width: 700px){
-  .app{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(220px,50%) minmax(0,1fr); }
+  .app{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto var(--ans-h, 50%) 44px minmax(0,1fr);
+    grid-template-areas:"kopf" "ans" "tp" "panel";
+  }
+  .kopf{ border-left:none; }
+  #trennerP{ display:flex; }
 }
-body.vorschau .app{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
-body.vorschau .panel{ display:none; }
+/* Trennleisten: Tippfläche mindestens 44 px, sichtbarer Griff; Doppeltipp = Standard */
+.leiste{
+  flex:none; height:48px; display:flex; align-items:center; gap:8px; padding:2px 8px;
+  background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line); touch-action:none; user-select:none; -webkit-user-select:none;
+}
+.leiste.zieh{ cursor:row-resize; }
+.griff-feld{ flex:none; width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:10px; }
+.leiste:not(.zieh) .griff-feld{ visibility:hidden; }
+.griff{ display:block; width:36px; height:6px; border-radius:3px; background:var(--muted); opacity:.75; }
+.trenner{ flex:none; display:flex; align-items:center; justify-content:center; background:var(--panel); touch-action:none; user-select:none; -webkit-user-select:none; }
+.trenner[hidden]{ display:none !important; }
+.trenner.senk{ width:44px; cursor:col-resize; border-left:1px solid var(--line); border-right:1px solid var(--line); }
+.trenner.senk .griff{ width:6px; height:36px; }
+.trenner.waag{ height:44px; cursor:row-resize; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.griff-feld:focus-visible, .trenner:focus-visible{ outline:2px solid var(--sel); outline-offset:-3px; }
+.unten{ flex:1 1 0; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--stage); }
+.unten[hidden]{ display:none; }
+.ansichten.b .unten{ flex:none; }
+.unten-kopf{ flex:none; display:flex; align-items:center; gap:8px; min-height:44px; padding:4px 8px; color:#c9c4ee; font-size:14px; border-bottom:1px solid rgba(196,187,255,.18); }
+.unten-inhalt{ flex:1 1 0; position:relative; min-height:0; overflow:hidden; }
+body.vorschau .app{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); grid-template-areas:"ans"; }
+body.vorschau .panel, body.vorschau .kopf, body.vorschau .leiste, body.vorschau .unten, body.vorschau .trenner{ display:none !important; }
+body.vorschau .spalte{ flex:1 1 0; height:auto !important; }
 
 /* Bühne */
-.stage{ position:relative; background:var(--stage); overflow:hidden; min-height:0; }
+.stage{ position:relative; background:var(--stage); overflow:hidden; min-height:0; min-width:0; flex:1 1 0; }
 #frame{ position:absolute; outline:1px solid rgba(196,187,255,.28); }
 body.vorschau #frame{ outline:none; }
 #view{ display:block; width:100%; height:100%; touch-action:none; cursor:crosshair; }
@@ -70,8 +110,8 @@ body.vorschau #frame{ outline:none; }
   color:rgba(222,216,255,.9); font-size:12px; padding:2px 6px;
 }
 .overlay .box span{ background:rgba(8,10,24,.6); padding:0 4px; border-radius:3px; }
-body.vorschau .overlay, body.vorschau #mini, body.vorschau .hint{ display:none !important; }
-#mini{ position:absolute; left:8px; bottom:8px; width:128px; height:128px; border-radius:8px; border:1px solid rgba(196,187,255,.3); pointer-events:none; }
+body.vorschau .overlay, body.vorschau .hint{ display:none !important; }
+#mini{ position:absolute; left:0; top:0; width:100%; height:100%; display:block; touch-action:none; cursor:pointer; }
 .hint{
   position:absolute; top:8px; left:50%; transform:translateX(-50%);
   background:rgba(140,124,240,.9); color:#0b0920; font-size:14px; font-weight:500;
@@ -88,7 +128,7 @@ body.vorschau #fertig{ display:block; }
   background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; min-height:0;
   padding:14px 16px 28px; -webkit-overflow-scrolling:touch;
 }
-@media (orientation: portrait), (max-width: 700px){ .panel{ border-left:none; border-top:1px solid var(--line); } }
+@media (orientation: portrait), (max-width: 700px){ .panel{ border-left:none; } }
 .panel h1{ font-size:22px; font-weight:500; margin:0 0 2px; letter-spacing:.01em; }
 .panel h1 b{ font-weight:600; background:linear-gradient(60deg,#8c7cf0,#c4bbff); -webkit-background-clip:text; background-clip:text; color:transparent; }
 .lead{ color:var(--muted); font-size:14px; margin:0 0 14px; }
@@ -105,7 +145,7 @@ button.danger{ color:var(--danger); }
 button:disabled{ opacity:.45; cursor:default; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
 .zurueck{
-  display:flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 14px; margin:0 0 12px;
+  display:flex; flex:none; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:8px 14px;
   border-radius:10px; background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:16px; text-decoration:none;
 }
 .seg{ display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; width:100%; }
@@ -159,11 +199,9 @@ body.vorschau .overlay .el{ outline:none !important; }
 .menue{ display:flex; flex-direction:column; justify-content:space-between; height:100%; }
 .menue div{ display:flex; align-items:center; justify-content:center; border-radius:8px; color:#e6e3ff; background:rgba(22,26,46,.88); border:1px solid rgba(196,187,255,.25); font-family:system-ui, -apple-system, sans-serif; }
 .menue div.aktiv{ background:#e8871e; color:#1c1206; border:2px solid #ffffff; }
-#mini{ pointer-events:auto !important; width:168px !important; height:168px !important; touch-action:none; cursor:pointer; }
-.modus{ position:absolute; right:10px; bottom:10px; display:flex; border:1px solid rgba(196,187,255,.45); border-radius:10px; overflow:hidden; background:rgba(15,19,37,.85); }
-.modus button{ border:none; border-radius:0; background:transparent; color:#ebe9ff; min-height:40px; font-size:14px; padding:6px 12px; }
-.modus button[aria-pressed="true"]{ background:#ffa02e; color:#1c1206; font-weight:500; }
-body.vorschau .modus{ display:none; }
+.modus{ display:flex; margin-left:auto; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--chip); min-width:0; }
+.modus button{ border:none; border-radius:0; background:transparent; color:var(--text); min-height:44px; font-size:14px; padding:6px 12px; }
+.modus button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); font-weight:500; }
 .liste{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
 .zeile{ display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:10px; padding:2px 4px 2px 10px; background:var(--field); }
 .zeile.sel{ border-color:var(--sel); }
@@ -175,26 +213,43 @@ body.vorschau .modus{ display:none; }
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="stage" id="stage">
-    <div id="frame">
-      <canvas id="view" aria-label="Szene: Asteroiden vor dem Sternenhimmel"></canvas>
-      <div class="overlay" id="overlay"></div>
+<div class="app" id="app">
+  <header class="kopf" id="kopf">
+    <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Zum Dashboard</a>
+    <span class="titel">Screen-Editor</span>
+  </header>
+  <div class="ansichten" id="ansichten">
+    <div class="spalte" id="spalte">
+      <div class="stage" id="stage">
+        <div id="frame">
+          <canvas id="view" aria-label="Szene: Asteroiden vor dem Sternenhimmel"></canvas>
+          <div class="overlay" id="overlay"></div>
+        </div>
+        <div class="hint" id="hint" hidden>Antippen setzt einen Asteroiden</div>
+        <button id="fertig" type="button">Vorschau beenden</button>
+      </div>
+      <div class="leiste" id="leiste">
+        <span class="griff-feld" id="griffA" role="separator" aria-orientation="horizontal" aria-label="Trennleiste: ziehen ändert die Höhe der Bühne, Doppeltipp stellt den Standard her" tabindex="0"><span class="griff"></span></span>
+        <div class="modus" id="modus" role="group" aria-label="Ziehen bewegt">
+          <button type="button" data-m="schieben">Verschieben</button>
+          <button type="button" data-m="tiefe">Tiefe</button>
+          <button type="button" data-m="drehen">Drehen</button>
+        </div>
+      </div>
     </div>
-    <canvas id="mini" aria-label="Draufsicht: antippen wählt, ziehen verschiebt in die Tiefe"></canvas>
-    <div class="hint" id="hint" hidden>Antippen setzt einen Asteroiden</div>
-    <div class="modus" id="modus" role="group" aria-label="Ziehen bewegt">
-      <button type="button" data-m="schieben">Verschieben</button>
-      <button type="button" data-m="tiefe">Tiefe</button>
-      <button type="button" data-m="drehen">Drehen</button>
+    <div class="trenner senk" id="trennerB" role="separator" aria-orientation="vertical" aria-label="Trennleiste: ziehen ändert die Breite der Bühne, Doppeltipp stellt den Standard her" tabindex="0" hidden><span class="griff"></span></div>
+    <div class="unten" id="unten">
+      <div class="unten-kopf" id="untenKopf"><span>Draufsicht · Kamera unten, Blick nach oben</span></div>
+      <div class="unten-inhalt" id="untenInhalt">
+        <canvas id="mini" aria-label="Draufsicht: antippen wählt, ziehen verschiebt in die Tiefe"></canvas>
+      </div>
     </div>
-    <button id="fertig" type="button">Vorschau beenden</button>
   </div>
+  <div class="trenner waag" id="trennerP" role="separator" aria-orientation="horizontal" aria-label="Trennleiste zwischen Ansichten und Bedienfeld: ziehen ändert die Aufteilung, Doppeltipp stellt den Standard her" tabindex="0"><span class="griff"></span></div>
 
   <aside class="panel" id="panel">
-    <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Zum Dashboard</a>
     <h1>Screens fürs <b>Aether</b>-Menü</h1>
-    <p class="lead">Asteroiden antippen und ziehen. Unten rechts wählst du, ob Ziehen verschiebt, die Tiefe ändert oder dreht. Zwei Finger ändern Größe und drehen. In der Draufsicht unten links ziehst du Asteroiden nach vorne oder hinten.</p>
+    <p class="lead">Asteroiden antippen und ziehen. In der Leiste unter der Bühne wählst du, ob Ziehen verschiebt, die Tiefe ändert oder dreht. Zwei Finger ändern Größe und drehen. In der Draufsicht im unteren Bereich ziehst du Asteroiden nach vorne oder hinten. Die Trennleisten lassen sich ziehen; Doppeltipp stellt die Standard-Aufteilung her.</p>
 
     <section>
       <h2>Screen</h2>
@@ -284,6 +339,12 @@ body.vorschau .modus{ display:none; }
       <label class="check"><input type="checkbox" id="umrisse" checked> Umrisse und Beschriftungen</label>
       <label class="check"><input type="checkbox" id="rahmen" checked> Rahmen der anderen Geräte</label>
       <label class="check"><input type="checkbox" id="karte" checked> Draufsicht (Kamera unten, Blick nach oben)</label>
+      <p class="sub">Anordnung</p>
+      <div class="row"><div class="seg" id="anordnung" role="group" aria-label="Anordnung">
+        <button type="button" data-o="A">Untereinander</button>
+        <button type="button" data-o="B">Nebeneinander</button>
+      </div></div>
+      <p class="note" id="anordnungNote">Nebeneinander nur in breiten Fenstern (quer, ab 1000 px Breite); sonst automatisch untereinander.</p>
       <div class="row"><button type="button" id="btnVorschau" class="primary">Vorschau ohne Hilfen</button></div>
       <p class="note">Logo und Menübox sind angenähert (Logo-Schrift Jost Medium wie im Spiel, Ring vereinfacht, Menübox in Systemschrift), Größen nach den Regeln des Spiels (Maßstab = Bildhöhe / 400, höchstens 1,6). Kamera mit 65,9° Sichtfeld, senkrecht (wie im Spiel).</p>
     </section>
@@ -545,23 +606,129 @@ function ziehbar(el, key){
 }
 ziehbar(logoEl, 'logo'); ziehbar(menueEl, 'menue');
 
+/* ---------- Anordnung und Trennleisten ---------- */
+// Aufteilung als Anteile, auf dem Gerät gemerkt: a = Anteil der Bühne (Untereinander), b = Anteil der Bühne
+// (Nebeneinander), p = Anteil der Ansichten über dem Bedienfeld (hochkant).
+const LAY_KEY = 'aether.screenEditor.layout';
+const LAY_STD = { anordnung:'A', a:0.62, b:0.62, p:0.55 };
+const LEISTE = 48, TRENNER = 44;
+const MIN = { buehne:120, unten:100, buehneB:280, untenB:220, panel:140 };
+function ladeLayout(){
+  const l = Object.assign({}, LAY_STD);
+  try { const o = JSON.parse(localStorage.getItem(LAY_KEY) || 'null'); if (o && typeof o === 'object'){
+    if (o.anordnung === 'A' || o.anordnung === 'B') l.anordnung = o.anordnung;
+    for (const k of ['a', 'b', 'p']) if (Number.isFinite(o[k])) l[k] = clamp(o[k], 0.05, 0.95);
+  } } catch (e) {}
+  return l;
+}
+function speichereLayout(){ try { localStorage.setItem(LAY_KEY, JSON.stringify(lay)); } catch (e) {} }
+let lay = ladeLayout();
+const appEl = $('app'), ansEl = $('ansichten'), spalteEl = $('spalte'), untenEl = $('unten'), leisteEl = $('leiste');
+const hochkantMQ = window.matchMedia('(orientation: portrait), (max-width: 700px)');
+function hochkant(){ return hochkantMQ.matches; }
+function bWirksam(){ return lay.anordnung === 'B' && zeigeKarte && !hochkant() && window.innerWidth >= 1000; }
+function verfuegbar(art){
+  if (art === 'a') return ansEl.clientHeight - LEISTE;
+  if (art === 'b') return ansEl.clientWidth - TRENNER;
+  return appEl.clientHeight - $('kopf').offsetHeight - TRENNER;
+}
+function anordnen(){
+  if (vorschau){ ansEl.classList.remove('b'); return; }
+  if (hochkant()){
+    const avail = verfuegbar('p'), minAns = MIN.buehne + LEISTE + (zeigeKarte ? MIN.unten : 0);
+    const h = Math.round(clamp(lay.p * avail, Math.min(minAns, avail - MIN.panel), avail - MIN.panel));
+    appEl.style.setProperty('--ans-h', Math.max(LEISTE + 60, h) + 'px');
+  } else appEl.style.removeProperty('--ans-h');
+  const B = bWirksam();
+  ansEl.classList.toggle('b', B);
+  ansEl.classList.toggle('ohne-unten', !zeigeKarte);
+  untenEl.hidden = !zeigeKarte;
+  $('trennerB').hidden = !B;
+  leisteEl.classList.toggle('zieh', zeigeKarte && !B);
+  $('griffA').tabIndex = zeigeKarte && !B ? 0 : -1;
+  if (!zeigeKarte){ spalteEl.style.height = ''; untenEl.style.width = ''; }
+  else if (B){
+    const avail = verfuegbar('b');
+    untenEl.style.width = Math.round(clamp((1 - lay.b) * avail, MIN.untenB, Math.max(MIN.untenB, avail - MIN.buehneB))) + 'px';
+    spalteEl.style.height = '';
+  } else {
+    const avail = verfuegbar('a');
+    spalteEl.style.height = (Math.round(clamp(lay.a * avail, MIN.buehne, Math.max(MIN.buehne, avail - MIN.unten))) + LEISTE) + 'px';
+    untenEl.style.width = '';
+  }
+  const note = $('anordnungNote');
+  if (note) note.textContent = lay.anordnung === 'B' && !bWirksam()
+    ? (zeigeKarte ? 'Nebeneinander gewählt, hier aber zu schmal oder hochkant: deshalb untereinander. Nebeneinander gilt quer ab 1000 px Breite.' : 'Ohne Draufsicht nutzt die Bühne die ganze Fläche.')
+    : 'Nebeneinander nur in breiten Fenstern (quer, ab 1000 px Breite); sonst automatisch untereinander.';
+}
+// Tatsächlicher Anteil nach dem Begrenzen auf die Mindestgrößen (damit Ziehen nicht „ins Leere“ läuft).
+function istAnteil(art){
+  if (art === 'a') return (spalteEl.offsetHeight - LEISTE) / Math.max(1, verfuegbar('a'));
+  if (art === 'b') return 1 - untenEl.offsetWidth / Math.max(1, verfuegbar('b'));
+  return ansEl.offsetHeight / Math.max(1, verfuegbar('p'));
+}
+function trennleiste(el, art, griff){
+  let st = null, letzterTipp = 0;
+  const aktiv = () => art === 'a' ? leisteEl.classList.contains('zieh') : !el.hidden;
+  el.addEventListener('pointerdown', ev => {
+    if (ev.target.closest('button') || !aktiv()) return;
+    ev.preventDefault();
+    try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+    st = { id:ev.pointerId, x:ev.clientX, y:ev.clientY, start:istAnteil(art), bewegt:false };
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!st || ev.pointerId !== st.id) return;
+    const d = art === 'b' ? ev.clientX - st.x : ev.clientY - st.y;
+    if (!st.bewegt && Math.abs(d) < 4) return;
+    st.bewegt = true;
+    lay[art] = clamp(st.start + d / Math.max(1, verfuegbar(art)), 0.05, 0.95);
+    anordnen();
+  });
+  const ende = ev => {
+    if (!st || ev.pointerId !== st.id) return;
+    if (st.bewegt){ lay[art] = clamp(istAnteil(art), 0.05, 0.95); speichereLayout(); letzterTipp = 0; }
+    else {
+      const jetzt = performance.now();
+      if (jetzt - letzterTipp < 450){ lay[art] = LAY_STD[art]; anordnen(); speichereLayout(); letzterTipp = 0; }
+      else letzterTipp = jetzt;
+    }
+    st = null;
+  };
+  el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
+  // Tastatur am Griff: Pfeile verschieben in 5-%-Schritten, Pos1 stellt den Standard her
+  (griff || el).addEventListener('keydown', ev => {
+    if (!aktiv()) return;
+    const plus = art === 'b' ? 'ArrowRight' : 'ArrowDown', minus = art === 'b' ? 'ArrowLeft' : 'ArrowUp';
+    if (ev.key === plus || ev.key === minus){ ev.preventDefault(); lay[art] = clamp(istAnteil(art) + (ev.key === plus ? 0.05 : -0.05), 0.05, 0.95); anordnen(); lay[art] = clamp(istAnteil(art), 0.05, 0.95); speichereLayout(); }
+    else if (ev.key === 'Home'){ ev.preventDefault(); lay[art] = LAY_STD[art]; anordnen(); speichereLayout(); }
+  });
+}
+trennleiste(leisteEl, 'a', $('griffA'));
+trennleiste($('trennerB'), 'b');
+trennleiste($('trennerP'), 'p');
+window.addEventListener('resize', anordnen);
+if (hochkantMQ.addEventListener) hochkantMQ.addEventListener('change', anordnen);
+new ResizeObserver(() => karte()).observe($('untenInhalt'));
+
 /* ---------- Draufsicht ---------- */
-const mini = $('mini'), S_MINI = 168;
-let kartenMass = null, kartenZieh = null;
+const mini = $('mini');
+let kartenZieh = null;
 function kartenGeo(){
   if (kartenZieh) return kartenZieh.geo;
   const as = screen().asteroiden; let maxD = 150;
   for (const a of as) maxD = Math.max(maxD, (-a.z + a.r) * 1.1);
-  const L = S_MINI - 14;
-  return { maxD, L, k:L / maxD, cx:S_MINI / 2, cy:S_MINI - 7 };
+  const W = Math.max(40, mini.clientWidth), H = Math.max(40, mini.clientHeight);
+  const th = Math.tan(FOV * Math.PI / 360), hfMax = th * ASP_MAX;
+  // Maßstab so, dass Tiefe und die breiteste Sichtkeil-Hälfte hineinpassen
+  const k = Math.min((H - 14) / maxD, (W / 2 - 7) / (maxD * hfMax));
+  return { maxD, k, L:maxD * k, W, H, cx:W / 2, cy:H - 7 };
 }
 function karte(){
-  mini.style.display = zeigeKarte && !vorschau ? 'block' : 'none';
   if (!zeigeKarte || vorschau) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2), S = S_MINI, ctx = mini.getContext('2d');
-  mini.width = S * dpr; mini.height = S * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = 'rgba(8,10,24,.88)'; ctx.fillRect(0, 0, S, S);
-  const g = kartenGeo(), th = Math.tan(FOV * Math.PI / 360);
+  const g = kartenGeo(), dpr = Math.min(window.devicePixelRatio || 1, 2), ctx = mini.getContext('2d');
+  mini.width = Math.round(g.W * dpr); mini.height = Math.round(g.H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgba(8,10,24,.88)'; ctx.fillRect(0, 0, g.W, g.H);
+  const th = Math.tan(FOV * Math.PI / 360);
   for (const key of Object.keys(PRESETS)){
     const hf = th * ASP(key), haupt = key === screen().geraet;
     ctx.strokeStyle = haupt ? 'rgba(255,160,46,.8)' : 'rgba(196,187,255,.3)'; ctx.lineWidth = 1; ctx.beginPath();
@@ -578,7 +745,7 @@ function karte(){
   ctx.fillStyle = 'rgba(233,231,255,.75)'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText('bis ' + fmt(g.maxD) + ' m', 6, 14);
 }
-function kartenPunkt(ev){ const r = mini.getBoundingClientRect(); return { x:(ev.clientX - r.left) * S_MINI / r.width, y:(ev.clientY - r.top) * S_MINI / r.height }; }
+function kartenPunkt(ev){ const r = mini.getBoundingClientRect(); return { x:ev.clientX - r.left, y:ev.clientY - r.top }; }
 mini.addEventListener('pointerdown', ev => {
   ev.preventDefault();
   const g = kartenGeo(), p = kartenPunkt(ev);
@@ -755,6 +922,7 @@ function panel(){
   $('btnScreenWeg').disabled = state.screens.length < 2;
   document.querySelectorAll('#geraet button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === sc.geraet)));
   document.querySelectorAll('#ansicht button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === ansicht)));
+  document.querySelectorAll('#anordnung button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.o === lay.anordnung)));
   $('platzieren').checked = platzieren; $('hint').hidden = !platzieren || vorschau;
   $('layoutEdit').checked = layoutEdit;
   $('place').value = fromLog(placeDepth, D_MIN, D_MAX); $('outPlace').textContent = fmt(placeDepth) + ' m';
@@ -832,9 +1000,10 @@ document.querySelectorAll('#ansicht button').forEach(b => b.addEventListener('cl
 $('btnSterne').addEventListener('click', () => { screen().sterne = Math.floor(Math.random() * 1e6); syncSzene(); speichere(); });
 $('umrisse').addEventListener('change', e => { zeigeUmrisse = e.target.checked; positioniere(); });
 $('rahmen').addEventListener('change', e => { zeigeRahmen = e.target.checked; layout(); });
-$('karte').addEventListener('change', e => { zeigeKarte = e.target.checked; karte(); });
-$('btnVorschau').addEventListener('click', () => { vorschau = true; document.body.classList.add('vorschau'); syncSzene(); layout(); panel(); });
-$('fertig').addEventListener('click', () => { vorschau = false; document.body.classList.remove('vorschau'); syncSzene(); layout(); panel(); });
+$('karte').addEventListener('change', e => { zeigeKarte = e.target.checked; anordnen(); karte(); });
+$('btnVorschau').addEventListener('click', () => { vorschau = true; document.body.classList.add('vorschau'); anordnen(); syncSzene(); layout(); panel(); });
+$('fertig').addEventListener('click', () => { vorschau = false; document.body.classList.remove('vorschau'); anordnen(); syncSzene(); layout(); panel(); });
+document.querySelectorAll('#anordnung button').forEach(b => b.addEventListener('click', () => { lay.anordnung = b.dataset.o; speichereLayout(); anordnen(); panel(); }));
 
 document.addEventListener('keydown', e => {
   const t = e.target.tagName;
@@ -925,7 +1094,7 @@ function speichere(){
 }
 
 /* ---------- Start ---------- */
-modusAnzeige(); syncSzene(); layout(); panel();
+modusAnzeige(); anordnen(); syncSzene(); layout(); panel();
 })();
 </script>
 </body>
