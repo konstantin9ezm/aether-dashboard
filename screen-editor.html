@@ -325,6 +325,8 @@ body.vorschau .overlay .el{ outline:none !important; }
         <div class="stepper"><button type="button" id="minus" aria-label="weniger">−</button><output id="anzahl">12</output><button type="button" id="plus" aria-label="mehr">+</button></div>
         <button type="button" id="btnZufall" class="primary">Zufällig verteilen</button>
       </div>
+      <div class="row"><button type="button" id="btnRaender">Ränder füllen</button></div>
+      <p class="note">„Ränder füllen“ setzt die eingestellte Anzahl nur in die gedimmten Flächen außerhalb von 16:9, die nur manche Geräte zeigen (21:9 und iPhone seitlich, iPad oben und unten).</p>
       <label class="check"><input type="checkbox" id="frei" checked> Logo und Menübox frei halten</label>
       <div class="row grow">
         <button type="button" id="btnUndo">Rückgängig</button>
@@ -1079,6 +1081,17 @@ function verteile(n, frei, passt, versuche){
   syncSzene(); panel(); speichere();
   return gesetzt;
 }
+// Ränder füllen: nur in die gedimmten Zusatzflächen. Der Asteroid liegt ganz außerhalb des 16:9-Rahmens (seine
+// Hüllkugel auf einer Seite) und seine Mitte in mindestens einem anderen Format – sonst sähe ihn kein Gerät.
+function imRand(b, tx, ty){
+  const H = sicht(HAUPT);
+  const draussen = b.x1 < -H.tanH || b.x0 > H.tanH || b.y1 < -H.tanV || b.y0 > H.tanV;
+  return draussen && Object.keys(FORMATE).some(k => { if (k === HAUPT) return false; const v = sicht(k); return Math.abs(tx) <= v.tanH && Math.abs(ty) <= v.tanV; });
+}
+function raenderFuellen(n, frei){
+  const gesetzt = verteile(n, frei, imRand, 160);
+  if (gesetzt < n) meldung(gesetzt + ' von ' + n + ' gesetzt, der Rest passte nicht in die Ränder');
+}
 function zufaelligVerteilen(n, frei){
   const gesetzt = verteile(n, frei, () => true, 40);
   if (gesetzt < n) meldung(gesetzt + ' von ' + n + ' gesetzt, der Rest passte nicht neben Logo und Menübox');
@@ -1171,6 +1184,7 @@ $('platzieren').addEventListener('change', e => { platzieren = e.target.checked;
 $('minus').addEventListener('click', () => { anzahl = Math.max(1, anzahl - 1); $('anzahl').textContent = anzahl; });
 $('plus').addEventListener('click', () => { anzahl = Math.min(80, anzahl + 1); $('anzahl').textContent = anzahl; });
 $('btnZufall').addEventListener('click', () => zufaelligVerteilen(anzahl, $('frei').checked));
+$('btnRaender').addEventListener('click', () => raenderFuellen(anzahl, $('frei').checked));
 $('btnUndo').addEventListener('click', rueckgaengig);
 $('btnAlleWeg').addEventListener('click', () => frage('Alle Asteroiden entfernen?', 'Mit „Rückgängig“ holst du sie zurück, solange du diesen Screen nicht wechselst.', 'Alle entfernen', () => { merke(); screen().asteroiden = []; selectedId = null; syncSzene(); panel(); speichere(); }));
 $('formMinus').addEventListener('click', () => { const a = sel(); if (!a) return; merke(); a.form = a.form <= 1 ? FORMEN : a.form - 1; syncSzene(); werte(); speichere(); });
