@@ -217,8 +217,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 
 **Ablauf beim Start**
 
-1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons) und `engine-map.json`
-   aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
+   und den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -232,7 +232,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 4. Meldet das Gerät wieder eine Verbindung (`online`-Ereignis) oder tippt man auf „Aktualisieren“, wird die Prüfung
    wiederholt; gelingt sie, verschwindet der Hinweis.
 5. Die **Projektansicht** zeigt offline nur „Offline – Projektansicht nicht verfügbar“ statt vier Fehlerkarten.
-   „Aktualisieren“ wiederholt die Online-Prüfung und lädt bei Erfolg die Ansicht.
+   „Aktualisieren“ wiederholt die Online-Prüfung und lädt bei Erfolg die Ansicht. Die Karte **Tools** bleibt
+   sichtbar; der Screen-Editor startet offline, „Messflug“ und „WebGPU-Check“ sind ausgegraut („nur online“).
 
 **Speicherort und Umfang**
 
@@ -365,6 +366,97 @@ Rate-Limit (mit Uhrzeit), keine Verbindung, fehlende `ROADMAP.md`, fehlenden Wor
 - `detail` (z. B. Bibliothek) und `gruppe` (Unterzeile innerhalb einer Schicht) sind optional.
 - Felder wie `$hinweis` werden ignoriert. Nach dem Merge auf `main` ist die Änderung live.
 
+## Tools
+
+Karte in der Projektansicht, zwischen der Zeile „Stand … · API … · Aktualisieren“ und der Build-Ampel (außerhalb
+der übrigen Karten, deshalb auch offline sichtbar). Knöpfe im Stil von „Aktualisieren“, mindestens 44 × 44 px; reicht
+die Breite nicht, rutschen sie in die nächste Zeile (kein waagerechtes Scrollen, geprüft von 320 bis 1400 px):
+
+1. **Screen-Editor ›** – öffnet `screen-editor.html` im selben Fenster, auch offline (siehe unten).
+2. **Messflug ›** – öffnet den Workflow `profile.yml` im Repo aether auf GitHub (neuer Tab,
+   `rel="noopener noreferrer"`).
+3. **Logo** – Platzhalter, grau und nicht antippbar (`disabled`, `aria-disabled`), Zusatz „geplant“.
+4. **WebGPU-Check ›** – öffnet `webgpu-check.html` im selben Fenster (das Symbol in der Kopfzeile bleibt).
+
+Offline sind „Messflug“ und „WebGPU-Check“ ausgegraut mit „nur online“ (GitHub ist nicht erreichbar, der
+WebGPU-Check liegt nicht in der App-Hülle). Kommt das Netz zurück, sind sie wieder aktiv.
+
+## Screen-Editor
+
+Werkzeug für die Menü-Screens des Spiels (Asteroiden vor dem Sternenhimmel, davor Logo und Menübox):
+**https://konstantin9ezm.github.io/aether-dashboard/screen-editor.html**. Grundlage ist das frühere claude.ai-Artefakt
+„Aether – Screens fürs Menü“ (Version 2); alle Funktionen sind geblieben. Oben steht „‹ Zum Dashboard“ (zurück zur
+Projektansicht), weil die Home-Bildschirm-App keinen Zurück-Knopf hat.
+
+**Bedienung**
+
+- Asteroiden antippen und ziehen; die Leiste unter der Bühne wählt, ob Ziehen **verschiebt**, die **Tiefe** ändert
+  oder **dreht**. Zwei Finger ändern Größe und Drehung. „Antippen auf freiem Himmel setzt einen neuen“,
+  „Zufällig verteilen“, „Ränder füllen“, Regler für Größe, Entfernung, Drehen/Kippen/Rollen, Form, Farbe,
+  Duplizieren, Ebenen (ein-/ausblenden, nur als Arbeitshilfe), mehrere Screens, Rückgängig (auch Strg/⌘+Z).
+- **Anordnung:** Bühne, Draufsicht und Bedienelemente überlappen sich nie. *Untereinander* (Standard): Bühne,
+  darunter die Leiste mit Griff und Umschalter, darunter der untere Bereich in voller Breite. *Nebeneinander*:
+  Bühne links, senkrechte Trennleiste, unterer Bereich rechts – nur quer ab 1000 px Breite, sonst automatisch
+  untereinander. Hochkant gibt es zusätzlich eine Trennleiste zwischen den Ansichten und dem Bedienfeld.
+  Trennleisten ziehen ändert die Größen (Mindestgrößen: Bühne 120 px bzw. 280 px breit, unterer Bereich 100 bzw.
+  220 px, Bedienfeld 140 px), Doppeltipp stellt den Standard her (am Griff auch Pfeiltasten und Pos1). Die
+  Aufteilung wird auf dem Gerät gemerkt (`localStorage`, `aether.screenEditor.layout`). Der Schalter „Draufsicht“
+  blendet den unteren Bereich aus; dann nutzt die Bühne die ganze Fläche.
+- **Unterer Bereich:** *Draufsicht* (Kamera unten, Blick nach oben; antippen wählt, ziehen verschiebt in die Tiefe)
+  oder *Vergleich*: vier kleine Bilder, so wie jedes Gerät den Screen zeigt, nach jeder Änderung neu (gedrosselt).
+- **Vorschau ohne Hilfen** zeigt genau das unter „Vorschau als“ gewählte Format, mit Logo und Menübox, ohne
+  Rahmen und Beschriftungen.
+
+**Formate und Regel C**
+
+| Format | Größe | Sichtfeld senkrecht × waagerecht |
+|---|---|---|
+| 21:9 | 2560 × 1080 | 65,9° × 113,9° |
+| iPhone quer | 874 × 402 | 65,9° × 109,3° |
+| **16:9 · Switch 2** (auch TV/PC) | 1920 × 1080 | 65,9° × 98,1° |
+| iPad quer | 1194 × 834 | 77,7° × 98,1° |
+
+Hauptformat ist fest **16:9 · Switch 2**. Regel C: *Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar.*
+Breitere Geräte sehen bei gleicher Höhe seitlich mehr, schmalere (iPad) die volle 16:9-Breite und oben/unten mehr.
+Eine einzige Funktion `sicht(format)` rechnet das über die Kamera exakt um (Tangens des halben Sichtfelds:
+`tanV = tan(65,9°/2) · max(1, (16/9) / A)`, `tanH = tanV · A`, A = Breite/Höhe); Bühne, Vorschau, Vergleich und
+Bild-Export nutzen sie. Die Bühne zeigt die Fläche aller Formate zusammen (21:9-Breite × iPad-Höhe) mit den Rahmen
+aller vier Formate (16:9 kräftig orange, iPhone violett, iPad grün, 21:9 blau); alles außerhalb von 16:9 ist
+gedimmt, weil es nur manche Geräte zeigen. Logo und Menübox richten sich nach dem 16:9-Bereich: Maßstab = Höhe des
+16:9-Bereichs in Punkten / 400, höchstens 1,6, Lage mittig im 16:9-Bereich. Das Logo nutzt die reduzierte Schrift
+Jost Medium aus dem Spiel (eingebettet), die Menübox die Systemschrift.
+
+*Stand im Spiel (Repo aether, nur gelesen):* Das Spiel rechnet heute mit 65,9° senkrecht und **fester Höhe**
+(`GlesPreviewRenderer.cpp`: `xScale = yScale · Höhe / Breite`), ein iPad sieht dort also weniger als 16:9; der
+Menü-Maßstab ist `clamp(min(H/400, W/700), 1, 1,6)` über den ganzen Bildschirm (`PauseMenu.cpp`). Die Anpassung an
+Regel C ist ein eigener Auftrag im Repo aether.
+
+**Speichern, Export und Import**
+
+- Gespeichert wird **nur auf diesem Gerät** (`localStorage`, Schlüssel `aether.screenEditor`); kein Konto, kein
+  Token, keine Anfrage an api.github.com. Ist der Speicher gesperrt, läuft der Editor trotzdem (mit Hinweis).
+- „Als Text kopieren“ liefert JSON im Format `aether-menue-screens`, **Version 3**: dazu `regel`, `hauptformat`
+  („16:9“), `formate` (Größen und Sichtfelder), Kamera (Ursprung, Blick −Z, 65,9° senkrecht für 16:9) und je Screen
+  Name, Sternen-Seed, Lage von Logo und Menübox (Punkte bei Maßstab 1) und Asteroiden (Position und Radius in Metern,
+  Form 1–8, Drehung YXZ in Grad, Farbe). Das Hauptformat je Screen aus Version 2 entfällt.
+- „Text einfügen“ liest Exporte der Versionen **1, 2 und 3** (Hinzufügen oder Alles ersetzen). Umrechnung: Kamera,
+  Einheiten und Bezugspunkte sind in allen Versionen gleich, also bleiben Asteroiden und Lage unverändert; ein
+  altes Hauptformat (iPhone, iPad, 16:9) wird zu 16:9 · Switch 2. Was früher für ein breiteres Hauptformat am Rand
+  lag, steht jetzt in der gedimmten Randfläche. Version 1 kannte keine Lage und kein Rollen: beides wird 0.
+- **Als Bild sichern (alle Formate):** vier PNG in den Größen der Tabelle, ohne Hilfen (wie „Vorschau ohne
+  Hilfen“), Namen `aether-screen-<Name>-<Format>.png` (`21x9`, `iphone-quer`, `16x9-switch2`, `ipad-quer`). In der
+  Vorschau sichert „Als Bild sichern“ (oben rechts) genau das gezeigte Format. Weg: Teilen-Dialog
+  (`navigator.share` mit Dateien, auf iPad/iPhone „Bild sichern“ in Fotos oder „In Dateien sichern“), sonst
+  Download-Links, sonst ein Dialog mit den Bildern („Lange drücken und sichern“). Nur per Antippen/Klick (Nutzergeste),
+  auch offline. Ausgeblendete Ebenen fehlen auch im Bild (z. B. Hintergrund ohne Logo).
+
+**Lizenzen:** three.js r128 liegt unverändert als `vendor/three-r128.min.js` im Repo (npm `three@0.128.0`,
+`build/three.min.js`, SHA-256 `9274bbce…1ce2`), MIT-Lizenz in `vendor/three-r128.LICENSE.txt`. Die Logo-Schrift
+Jost (reduziert auf „Aether“) steht unter der SIL Open Font License 1.1 (`vendor/Jost-OFL.txt`).
+
+**Testschnittstelle:** `window.AetherScreenEditor` (nur lesen: Formate, `sicht`, Kamera, Zustand, Rahmen,
+Eckpunkte) für die automatischen Tests.
+
 ## WebGPU-Check
 
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
@@ -465,6 +557,15 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   neben dem Umschalter, gleiche Höhe, Tippfläche ≥ 44 × 44 px per Treffertest, kein Überlappen, einzeilig). Gegenproben (müssen rot
   werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.
 
+- `tests/screen-editor.test.js` – Tools-Karte und Screen-Editor (Headless Chromium): Lage der Karte zwischen
+  Stand-Zeile und Build-Ampel, Ziele der Knöpfe, Logo nicht antippbar, Umbruch ohne waagerechtes Scrollen bei
+  320–1400 px; offline Karte sichtbar, Messflug/WebGPU-Check ausgegraut, Editor startet aus dem Service Worker; keine
+  externen Anfragen, three.js-Prüfsumme; keine Überlappung von Bühne, Trennleisten, unterem Bereich und Bedienfeld
+  (402×874, 874×402, 1194×834, 834×1194, 1280×800, 360×700, 600×800 je Untereinander/Nebeneinander und
+  Draufsicht/Vergleich), Trennleisten ziehen/Neuladen/Doppeltipp, Rückfall auf Untereinander; Regel C rechnerisch
+  für alle vier Formate; „Ränder füllen“ nur außerhalb von 16:9 (alle Eckpunkte); Import der Versionen 1 und 2;
+  Bild-Export (vier PNG, Teilen-Dialog nachgestellt, nur mit Nutzergeste, Download- und „Lange drücken“-Rückfall).
+
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
 
@@ -473,6 +574,7 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 ## Deployment
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
-`manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `icons/`) auf GitHub Pages
+`manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`,
+`vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.
