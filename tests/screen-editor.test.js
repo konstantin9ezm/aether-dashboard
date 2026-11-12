@@ -51,6 +51,7 @@ after(async () => {
 // Kein Token: die Projektansicht macht dann keine API-Aufrufe (die Tools-Karte braucht keine).
 async function newPage(opts = {}) {
   const { viewport = { width: 1280, height: 800 }, device = {}, init } = opts;
+  net.offline = false; // falls ein vorheriger Test mitten im Offline-Teil abgebrochen ist
   const context = await browser.newContext({ viewport, ...device, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   const page = await context.newPage();
   const log = { urls: [], errors: [], console: [] };
