@@ -466,11 +466,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=fertig', 'Asset-System=geplant']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=vorschau', 'Debug-UI=fertig', 'Profiler=fertig', 'Asset-System=geplant']);
     assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig', 'Frame-Zeiten=fertig']);
     assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
-    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 10.*Vorschau: 2.*geplant: 8/);
+    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi, bisher HUD-Tempo · Vorschau.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 10.*Vorschau: 3.*geplant: 7/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
