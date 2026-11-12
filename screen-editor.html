@@ -688,7 +688,7 @@ function ladeLayout(){
   return l;
 }
 function speichereLayout(){ try { localStorage.setItem(LAY_KEY, JSON.stringify(lay)); } catch (e) {} }
-let lay = ladeLayout();
+let lay = ladeLayout(), layoutBereit = false;
 const appEl = $('app'), ansEl = $('ansichten'), spalteEl = $('spalte'), untenEl = $('unten'), leisteEl = $('leiste');
 const hochkantMQ = window.matchMedia('(orientation: portrait), (max-width: 700px)');
 function hochkant(){ return hochkantMQ.matches; }
@@ -726,6 +726,7 @@ function anordnen(){
   if (note) note.textContent = lay.anordnung === 'B' && !bWirksam()
     ? (zeigeKarte ? 'Nebeneinander gewählt, hier aber zu schmal oder hochkant: deshalb untereinander. Nebeneinander gilt quer ab 1000 px Breite.' : 'Ohne Draufsicht nutzt die Bühne die ganze Fläche.')
     : 'Nebeneinander nur in breiten Fenstern (quer, ab 1000 px Breite); sonst automatisch untereinander.';
+  if (layoutBereit) layout(); // Bild der Bühne sofort anpassen (der ResizeObserver käme erst ein Bild später)
 }
 // Tatsächlicher Anteil nach dem Begrenzen auf die Mindestgrößen (damit Ziehen nicht „ins Leere“ läuft).
 function istAnteil(art){
@@ -1386,6 +1387,7 @@ function speichere(){
 }
 
 /* ---------- Start ---------- */
+layoutBereit = true;
 modusAnzeige(); anordnen(); untenAnzeigen(); syncSzene(); layout(); panel();
 // Logo-Schrift laden, dann Vergleich neu (Canvas kennt die Schrift erst danach)
 try { document.fonts.load('500 100px "Jost Aether"').then(() => vergleichPlanen()).catch(() => {}); } catch (e) {}
