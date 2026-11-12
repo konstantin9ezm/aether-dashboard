@@ -250,7 +250,10 @@ test('index.html: Link „WebGPU-Check“ auf dem Token-Bildschirm; Kopfzeilen-L
   assert.equal(await page.isVisible('#tabs'), true, 'Kopfzeile mit Umschalter ist auf dem Token-Bildschirm sichtbar');
   assert.equal(await page.isVisible('header.top a[href="webgpu-check.html"]'), false, 'kein doppelter Link in der Kopfzeile');
   assert.equal(await page.locator('#buildsView a[href="webgpu-check.html"]').count(), 0, 'nicht mehr unten in der Build-Ansicht');
-  assert.equal(await page.locator('a[href="webgpu-check.html"]').count(), 2, 'sonst keine weiteren Links (Karte + Kopfzeile)');
+  // Tools-Karte der Projektansicht (Teil 1 Screen-Editor/Tools) hat einen eigenen Knopf; auf dem Token-Bildschirm unsichtbar.
+  assert.equal(await page.locator('a[href="webgpu-check.html"]:not(#toolWebgpu)').count(), 2, 'sonst keine weiteren Links (Karte + Kopfzeile)');
+  assert.equal(await page.locator('#toolsCard a[href="webgpu-check.html"]').count(), 1, 'Knopf in der Tools-Karte');
+  assert.equal(await page.isVisible('#toolWebgpu'), false, 'Tools-Karte auf dem Token-Bildschirm nicht sichtbar');
   assert.deepEqual(log.github, [], 'ohne Token keine API-Aufrufe');
   await context.close();
 });
@@ -266,7 +269,8 @@ for (const L of HEADER_LAYOUTS) {
         await page.waitForSelector('#projectView:not([hidden])');
       }
       assert.equal(await page.locator('header.top a[href="webgpu-check.html"]').count(), 1, `${view}: Link in der Kopfzeile`);
-      assert.equal(await page.locator('main a[href="webgpu-check.html"]:visible').count(), 1, `${view}: genau ein sichtbarer Link`);
+      assert.equal(await page.locator('main a[href="webgpu-check.html"]:visible:not(#toolWebgpu)').count(), 1, `${view}: genau ein sichtbarer Link (außer dem Tools-Knopf)`);
+      assert.equal(await page.locator('#toolWebgpu:visible').count(), view === 'Projekt' ? 1 : 0, `${view}: Tools-Knopf nur in der Projektansicht`);
       const m = await headerLinkLayout(page);
       const label = `${L.name}/${view}`;
       console.log(`# Kopfzeile ${label}: Link ${m.box.join(',')} Tippfläche ${m.hitW}×${m.hitH} Abstand ${m.gapToTabs} Umschalter ${m.tabsBox.join(',')} Kopfzeile ${m.headerH} Symbol ${m.iconOnly}`);

@@ -59,7 +59,10 @@ jobs:
       - name: Nur die statischen Dateien veröffentlichen
         run: |
           mkdir -p _site
-          cp index.html sw.js manifest.json engine-map.json webgpu-check.html _site/
+          cp index.html sw.js manifest.json engine-map.json webgpu-check.html screen-editor.html _site/
+          # three.js r128 (MIT) und Lizenzhinweise für den Screen-Editor (offline, kein CDN).
+          mkdir -p _site/vendor
+          cp vendor/three-r128.min.js vendor/three-r128.LICENSE.txt vendor/Jost-OFL.txt _site/vendor/
           # Commit des Dashboards für den WebGPU-Check (Seite zeigt sonst „nicht bekannt“).
           sed -i "s/__AETHER_COMMIT__/${GITHUB_SHA}/" _site/webgpu-check.html
           cp -r icons _site/
