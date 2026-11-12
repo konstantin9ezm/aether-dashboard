@@ -213,7 +213,7 @@ describe('Logo-Werkzeug: Laden und Anzeige', () => {
     const dom = await page.evaluate(() => ({ src: document.getElementById('logoBild').src, svgImDok: document.querySelectorAll('svg').length, scripts: document.scripts.length }));
     assert.match(dom.src, /^blob:/);
     assert.equal(dom.svgImDok, 0, 'kein SVG-Element im Dokument');
-    assert.equal(dom.scripts, 1, 'nur das eigene Skript');
+    assert.equal(dom.scripts, 2, 'nur das eigene Skript und gemeinsam.js');
     assert.ok(!log.urls.some((u) => u.includes('evil.example')), 'externes Bild nie angefragt');
     const html = fs.readFileSync(path.join(ROOT, 'logo.html'), 'utf8');
     assert.doesNotMatch(html, /\.innerHTML\s*=|insertAdjacentHTML|outerHTML\s*=|document\.write/, 'nie per innerHTML ins Dokument');
@@ -520,7 +520,7 @@ describe('Logo-Werkzeug: Dateien', () => {
     const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/pages.yml'), 'utf8');
     assert.match(wf, /cp [^\n]*logo\.html[^\n]*_site\//);
     const html = fs.readFileSync(path.join(ROOT, 'logo.html'), 'utf8');
-    assert.deepEqual([...html.matchAll(/<script[^>]*src=/g)], [], 'kein nachgeladenes Skript');
+    assert.deepEqual([...html.matchAll(/<script[^>]*src="([^"]*)"/g)].map((m) => m[1]), ['gemeinsam.js'], 'kein nachgeladenes Skript außer dem lokalen gemeinsam.js');
     assert.doesNotMatch(html, /<link[^>]+stylesheet/i);
     assert.deepEqual([...html.matchAll(/https?:\/\/[^\s'"<>)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/')), ['https://api.github.com'], 'nur die GitHub-API');
     assert.doesNotMatch(html, /localStorage\.setItem\(\s*TOKEN_KEY/, 'Token wird nie geschrieben');

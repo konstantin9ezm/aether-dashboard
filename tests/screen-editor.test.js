@@ -232,7 +232,7 @@ describe('Screen-Editor: Dateien und Netz', () => {
     assert.doesNotMatch(html, /window\.claude|\.use\('db'\)|downloads\.save/, 'keine Teile für das Claude-Konto');
     assert.doesNotMatch(html, /fetch\(|XMLHttpRequest|sendBeacon|WebSocket|<link[^>]+stylesheet/i, 'nichts nachladen');
     const scripts = [...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, [THREE_FILE]);
+    assert.deepEqual(scripts, [THREE_FILE, 'gemeinsam.js']);
     const three = fs.readFileSync(path.join(ROOT, THREE_FILE));
     assert.equal(crypto.createHash('sha256').update(three).digest('hex'), THREE_SHA256, 'three.js entspricht der veröffentlichten r128');
     assert.match(three.slice(0, 200).toString(), /@license[\s\S]*SPDX-License-Identifier: MIT/);
@@ -262,7 +262,7 @@ describe('Screen-Editor: Dateien und Netz', () => {
     const own = log.urls.filter((u) => !/^(data|blob):/.test(u));
     assert.ok(own.every((u) => u.startsWith(baseUrl)), `nur eigener Ursprung: ${own.filter((u) => !u.startsWith(baseUrl)).join(', ')}`);
     assert.ok(!log.urls.some((u) => u.includes('api.github.com')));
-    assert.deepEqual([...new Set(own.map((u) => new URL(u).pathname))].sort(), ['/screen-editor.html', '/' + THREE_FILE].sort());
+    assert.deepEqual([...new Set(own.map((u) => new URL(u).pathname))].sort(), ['/screen-editor.html', '/' + THREE_FILE, '/gemeinsam.js'].sort());
     assert.equal(await page.textContent('#speicher'), 'Wird auf diesem Gerät gespeichert.');
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('aether.screenEditor')));
     assert.equal(stored.screens[0].asteroiden.length, 12);

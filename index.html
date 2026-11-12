@@ -707,6 +707,7 @@
   </div>
 </div>
 
+<script src="gemeinsam.js"></script>
 <script>
 (function () {
   'use strict';
@@ -768,101 +769,39 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Fehler
+  // Fehler, Zeitlimit (gemeinsam.js, auch für screen-editor.html und logo.html)
   // ---------------------------------------------------------------------------
-  function AppError(kind, title, text) {
-    this.kind = kind;
-    this.title = title;
-    this.text = text || '';
-    this.message = title;
-  }
-  AppError.prototype = Object.create(Error.prototype);
-
-  function fmtTime(d) {
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  async function errorFromResponse(res, ctx) {
-    var status = res.status;
-    var remaining = res.headers.get('x-ratelimit-remaining');
-    var reset = res.headers.get('x-ratelimit-reset');
-    var retryAfter = res.headers.get('retry-after');
-    var bodyMsg = '';
-    try { var j = await res.clone().json(); bodyMsg = String((j && j.message) || ''); } catch (e) { /* kein JSON */ }
-
-    if (status === 401) {
-      return new AppError('auth', 'GitHub lehnt das Token ab.',
-        'Das Token ist falsch, abgelaufen oder wurde widerrufen. Erzeuge auf GitHub ein neues Token und gib es hier ein.');
-    }
-    if ((status === 403 || status === 429) && (remaining === '0' || retryAfter || /rate limit/i.test(bodyMsg))) {
-      var when = '';
-      if (reset && /^\d+$/.test(reset)) {
-        var d = new Date(Number(reset) * 1000);
-        var mins = Math.max(1, Math.ceil((d.getTime() - Date.now()) / 60000));
-        when = ' Wieder möglich ab ' + fmtTime(d) + ' Uhr (in ca. ' + mins + ' Min.).';
-      } else if (retryAfter && /^\d+$/.test(retryAfter)) {
-        when = ' Bitte ca. ' + Math.max(1, Math.ceil(Number(retryAfter) / 60)) + ' Min. warten.';
-      }
-      return new AppError('ratelimit', 'GitHub-Rate-Limit erreicht.',
-        'Es wurden zu viele Anfragen an die GitHub-API geschickt.' + when);
-    }
-    if (status === 403) {
-      return new AppError('forbidden', 'Das Token hat keinen Zugriff.',
-        'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „' + ((ctx && ctx.perm) || 'Contents: Read-only') + '“. ' +
-        'Falls das Repo einer Organisation gehört, muss diese Fine-grained Tokens erlauben.');
-    }
-    if (status === 404 && ctx && ctx.notFound) {
-      return typeof ctx.notFound === 'function' ? await ctx.notFound() : ctx.notFound;
-    }
-    if (status === 404) {
-      return new AppError('notfound', 'Nicht gefunden.', 'GitHub meldet 404 für eine benötigte Datei.');
-    }
-    if (status >= 500) {
-      return new AppError('server', 'GitHub hat gerade Probleme (HTTP ' + status + ').', 'Versuche es in ein paar Minuten noch einmal.');
-    }
-    return new AppError('http', 'Unerwartete Antwort von GitHub (HTTP ' + status + ').', bodyMsg);
-  }
+  var G = window.AetherGemeinsam;
+  var AppError = G.AppError;
+  var shortSha = G.shortSha;
+  // Zeitlimit je Anfrage der Projektansicht (15 s, in den Tests kürzer) und
+  // withProjTimeout(p): höchstens so lange auf p warten, sonst mit Zeitlimit-Fehler abbrechen.
+  var projTimeoutMs = G.projTimeoutMs;
+  var withProjTimeout = G.withProjTimeout;
 
   // ---------------------------------------------------------------------------
-  // GitHub-API
+  // GitHub-API (gemeinsam.js; hier nur die Einstellungen dieser Seite)
   // ---------------------------------------------------------------------------
   var lastRate = null;
-
-  async function api(path, opts) {
-    opts = opts || {};
-    var useToken = opts.token || token;
-    if (!useToken) throw new AppError('auth', 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
-    var res;
-    try {
-      res = await fetch(API + path, {
-        method: 'GET',
-        headers: {
-          'Accept': opts.accept || 'application/vnd.github+json',
-          'Authorization': 'Bearer ' + useToken
-        },
-        cache: 'no-store',
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
-        signal: opts.signal
-      });
-    } catch (e) {
-      if (e && e.name === 'AbortError') throw e;
-      throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
-    }
-    var rem = res.headers.get('x-ratelimit-remaining');
-    var lim = res.headers.get('x-ratelimit-limit');
-    if (rem !== null && lim !== null) lastRate = { remaining: rem, limit: lim };
-    var exp = res.headers.get('github-authentication-token-expiration');
-    if (exp) tokenExpiry = exp;
-    if (!res.ok) throw await errorFromResponse(res, opts);
-    return res;
-  }
   var tokenExpiry = null;
-
-  function contentsPath(p) {
-    var clean = String(p).replace(/^\/+|\/+$/g, '');
-    return REPO_PATH + '/contents/' + clean.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(REF);
-  }
+  var gh = G.githubApi({
+    apiBase: API,
+    repoFull: REPO_FULL,
+    repoPath: REPO_PATH,
+    ref: REF,
+    tokenOrt: 'hier',
+    ohneTokenArt: 'auth',
+    standardToken: function () { return token; },
+    beiAntwort: function (res) {
+      var rem = res.headers.get('x-ratelimit-remaining');
+      var lim = res.headers.get('x-ratelimit-limit');
+      if (rem !== null && lim !== null) lastRate = { remaining: rem, limit: lim };
+      var exp = res.headers.get('github-authentication-token-expiration');
+      if (exp) tokenExpiry = exp;
+    }
+  });
+  var api = gh.api;
+  var contentsPath = gh.contentsPath;
 
   async function explainIndexMissing(useToken, signal) {
     try {
@@ -2239,12 +2178,6 @@
   var GH_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
   var GH_DASHBOARD_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/aether-dashboard';
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
-  // Zeitlimit je Anfrage der Projektansicht (selbst gewählt: 15 s). Danach gilt GitHub als nicht erreichbar,
-  // statt dass eine Karte dauerhaft „Lade …“ zeigt (z. B. Flugmodus, ohne dass der Browser „offline“ meldet).
-  var PROJECT_TIMEOUT_MS = 15 * 1000;
-  // Nur für die E2E-Tests: kürzeres Zeitlimit, gesetzt bevor dieses Skript läuft.
-  var projTimeoutMs = (typeof window.AETHER_TEST_PROJECT_TIMEOUT_MS === 'number' && window.AETHER_TEST_PROJECT_TIMEOUT_MS > 0)
-    ? window.AETHER_TEST_PROJECT_TIMEOUT_MS : PROJECT_TIMEOUT_MS;
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
   var TIMELINE_SHOW = 15;
@@ -2253,17 +2186,6 @@
   var pollTimer = null;
 
   function clearProjectCache() { projCache = {}; }
-
-  function projTimeoutError() {
-    return new AppError('timeout', 'GitHub antwortet nicht.', 'Prüfe die Internetverbindung und versuche es erneut.');
-  }
-  // Höchstens projTimeoutMs auf p warten, sonst mit Zeitlimit-Fehler abbrechen.
-  function withProjTimeout(p) {
-    var timer;
-    return Promise.race([p, new Promise(function (resolve, reject) {
-      timer = setTimeout(function () { reject(projTimeoutError()); }, projTimeoutMs);
-    })]).finally(function () { clearTimeout(timer); });
-  }
 
   // Kurzzeit-Cache im Speicher. Laufende Anfragen werden geteilt, Fehler nicht gemerkt.
   // Jede Anfrage hat ein Zeitlimit; eine hängende Anfrage wird danach nicht mehr geteilt.
@@ -2283,7 +2205,7 @@
   }
 
   function needToken() {
-    if (!token) throw new AppError('notoken', 'Kein Token gespeichert.', 'Für die Projektübersicht braucht das Dashboard ein GitHub-Token mit Lesezugriff auf ' + REPO_FULL + '.');
+    if (!token) throw G.needTokenError(REPO_FULL);
   }
 
   function fmtBerlin(s) {
@@ -2294,7 +2216,6 @@
   function fmtBerlinTime(d) {
     return d.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' }) + ' Uhr';
   }
-  function shortSha(sha) { return /^[0-9a-f]{7,40}$/i.test(String(sha || '')) ? String(sha).slice(0, 7).toLowerCase() : ''; }
   function prUrl(n) { return GH_WEB + '/pull/' + Number(n); }
   function dashboardPrUrl(n) { return GH_DASHBOARD_WEB + '/pull/' + Number(n); }
   function commitUrl(sha) { return GH_WEB + '/commit/' + String(sha).toLowerCase(); }

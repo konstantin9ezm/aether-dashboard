@@ -2,8 +2,9 @@
 
 Statische Web-App, mit der sich die Web-Builds von [Aether](https://github.com/konstantin9ezm/aether)
 auf iPad und iPhone starten lassen. Eine zweite Ansicht **Projekt** zeigt den Stand des Projekts.
-Die App besteht aus einer einzigen `index.html` mit eingebettetem CSS und JavaScript, dem Service Worker
-`sw.js` (für den Offline-Start, siehe [Offline](#offline)) und der Datendatei `engine-map.json`.
+Die App besteht aus einer `index.html` mit eingebettetem CSS und JavaScript, dem Service Worker
+`sw.js` (für den Offline-Start, siehe [Offline](#offline)), der Datendatei `engine-map.json` und der lokalen
+Skriptdatei `gemeinsam.js` (siehe [Gemeinsame Hilfsfunktionen](#gemeinsame-hilfsfunktionen-gemeinsamjs)).
 Es gibt keine externen Skripte und keinen Build-Schritt.
 
 ## Benutzung
@@ -218,7 +219,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 **Ablauf beim Start**
 
 1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
-   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) und die Logo-Seite (`logo.html`) aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) die Logo-Seite (`logo.html`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -543,6 +544,23 @@ Ortszeit und dem Commit des Dashboards; den setzt der Pages-Workflow ein, lokal 
 **Datenschutz:** Nichts wird automatisch gesendet oder gespeichert (kein localStorage, keine Cookies). Was weitergeht,
 entscheidest du selbst über Kopieren oder Mail.
 
+## Gemeinsame Hilfsfunktionen (`gemeinsam.js`)
+
+`index.html`, `screen-editor.html` und `logo.html` binden `gemeinsam.js` per `<script src="gemeinsam.js">` ein
+(globales Objekt `window.AetherGemeinsam`). Dort steht jede Hilfsfunktion, die mehr als eine dieser Seiten braucht,
+genau **einmal**: `AppError`, `fmtTime`, `shortSha`, `needTokenError`, Zeitlimit 15 s (`projTimeoutMs`,
+`projTimeoutError`, `withProjTimeout`), `githubApi(cfg)` mit `errorFromResponse`, `api` und `contentsPath`,
+sowie fürs Sichern `mitGeste`, `meldung`, `kannTeilen`, `kannHerunterladen` und `herunterladen`.
+
+Was hineingehört: reine Hilfsfunktionen ohne seitenspezifische Konfiguration. Was je Seite verschieden ist
+(Repo, Zweig, Ende des 401-Textes, Fehlerart ohne Token, Rate-Limit-Anzeige der Projektansicht), übergibt die Seite
+als `cfg` an `githubApi`. Was **nicht** hineingehört: Token lesen oder speichern (bleibt in den Seiten, nur
+`localStorage`), sonstiger Speicher oder Cache, Seiten-Texte und Abläufe, die sich je Seite unterscheiden (z. B. der
+Teilen-Ablauf mit seinen Meldungen). Die Datei wird nicht ins Spiel-iframe geladen; `webgpu-check.html` bleibt
+bewusst eigenständig. Sie gehört zur App-Hülle in `sw.js` und wird von `pages.yml` veröffentlicht – ohne sie starten
+die drei Seiten offline nicht. `tests/gemeinsam.test.js` prüft, dass keine der Funktionen in den HTML-Dateien erneut
+definiert wird.
+
 ## Entwicklung & Tests
 
 ```sh
@@ -616,6 +634,12 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   Token in keinem Speicher und keinem Cache; Layout 320–1400 px mit und ohne Logo. Gegenproben (müssen rot werden):
   SVG per `innerHTML` ins Dokument (Script läuft), PNG mit allen Ebenen trotz ausgeschalteter Ebene, `logo.html` nicht
   in der App-Hülle.
+- `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
+  `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
+  speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,
+  Screen-Editor und Logo-Seite starten offline wie bisher; kein Token in einem Cache; nicht im Spiel-iframe.
+  Gegenproben (von Hand, müssen rot werden): `'gemeinsam.js'` aus `SHELL` in `sw.js` entfernen → Offline-Test rot;
+  eine Kopie einer Funktion (z. B. `mitGeste`) zurück in `logo.html` → Quelltextprüfung rot.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
@@ -626,6 +650,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
-`vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
+`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

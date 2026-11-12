@@ -958,7 +958,7 @@ describe('Offline', () => {
 test('Quelltext enthält kein Token und lädt keine externen Skripte', () => {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   assert.doesNotMatch(html, /github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9]{20,}/);
-  assert.doesNotMatch(html, /<script[^>]+src=/i, 'keine externen Skripte');
+  assert.deepEqual([...html.matchAll(/<script[^>]+src="([^"]*)"/gi)].map((m) => m[1]), ['gemeinsam.js'], 'keine externen Skripte, nur das lokale gemeinsam.js');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
   for (const icon of manifest.icons) assert.ok(fs.existsSync(path.join(ROOT, icon.src)), icon.src);
 });
