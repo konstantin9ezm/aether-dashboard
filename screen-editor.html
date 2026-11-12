@@ -110,8 +110,9 @@ body.vorschau #frame{ outline:none; }
   color:rgba(222,216,255,.9); font-size:12px; padding:2px 6px;
 }
 .overlay .box span{ background:rgba(8,10,24,.6); padding:0 4px; border-radius:3px; }
-body.vorschau .overlay, body.vorschau .hint{ display:none !important; }
+body.vorschau #rahmenBox, body.vorschau .hint{ display:none !important; }
 #mini{ position:absolute; left:0; top:0; width:100%; height:100%; display:block; touch-action:none; cursor:pointer; }
+#mini[hidden]{ display:none; }
 .hint{
   position:absolute; top:8px; left:50%; transform:translateX(-50%);
   background:rgba(140,124,240,.9); color:#0b0920; font-size:14px; font-weight:500;
@@ -185,10 +186,13 @@ input[type=range]{ width:100%; accent-color:var(--sel); height:28px; margin:2px 
 #toast.on{ opacity:1; }
 @media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
 
-/* v2 */
-.overlay .rahmen{ position:absolute; top:0; bottom:0; border-left:1.5px dashed; border-right:1.5px dashed; pointer-events:none; }
-.overlay .rahmen span{ position:absolute; bottom:4px; left:4px; font-size:11px; padding:0 4px; border-radius:3px; background:rgba(8,10,24,.7); white-space:nowrap; }
-.overlay .schatten{ position:absolute; top:0; bottom:0; background:rgba(0,0,0,.55); pointer-events:none; }
+/* v2 / Regel C: Rahmen aller Formate, außerhalb von 16:9 gedimmt */
+.overlay .rahmen{ position:absolute; border:1.5px dashed; pointer-events:none; }
+.overlay .rahmen.haupt{ border:3px solid; }
+.overlay .rahmen span{ position:absolute; left:4px; font-size:11px; line-height:15px; padding:0 4px; border-radius:3px; background:rgba(8,10,24,.75); white-space:nowrap; max-width:calc(100% - 8px); overflow:hidden; text-overflow:ellipsis; }
+.overlay .rahmen span.unten{ bottom:3px; }
+.overlay .rahmen span.oben{ top:3px; }
+.overlay .schatten{ position:absolute; background:rgba(0,0,0,.58); pointer-events:none; }
 .overlay .el{ position:absolute; border-radius:6px; }
 .overlay .el.umriss{ outline:1.5px dashed rgba(196,187,255,.75); outline-offset:0; }
 .overlay .el.zieh{ pointer-events:auto; cursor:move; touch-action:none; outline:2px dashed #ffa02e; }
@@ -210,6 +214,17 @@ body.vorschau .overlay .el{ outline:none !important; }
 .zeile .punkt{ width:12px; height:12px; border-radius:50%; flex:none; }
 .zeile .auge{ min-height:36px; width:44px; padding:0; font-size:13px; background:transparent; border:none; color:var(--text); }
 .sub{ font-size:13px; color:var(--muted); margin:6px 0 4px; }
+.seg.vier{ display:grid; grid-template-columns:1fr 1fr; }
+.seg.vier button + button{ border-left:none; }
+.unten-kopf .seg{ width:auto; flex:none; }
+.unten-kopf .seg button{ min-height:36px; padding:4px 12px; color:#e6e3ff; }
+.unten-kopf .seg button[aria-pressed="true"]{ color:#1c1206; }
+.unten-kopf .info{ font-size:12px; color:#a8a3d4; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#vergleich{ position:absolute; inset:0; overflow:auto; display:flex; flex-wrap:wrap; gap:8px; padding:8px; align-content:flex-start; justify-content:center; }
+#vergleich[hidden]{ display:none; }
+#vergleich figure{ margin:0; flex:none; min-width:0; }
+#vergleich canvas{ display:block; width:100%; height:auto; border-radius:4px; outline:1px solid rgba(196,187,255,.25); }
+#vergleich figcaption{ font-size:12px; line-height:16px; color:#c9c4ee; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
 </head>
 <body>
@@ -239,9 +254,16 @@ body.vorschau .overlay .el{ outline:none !important; }
     </div>
     <div class="trenner senk" id="trennerB" role="separator" aria-orientation="vertical" aria-label="Trennleiste: ziehen ändert die Breite der Bühne, Doppeltipp stellt den Standard her" tabindex="0" hidden><span class="griff"></span></div>
     <div class="unten" id="unten">
-      <div class="unten-kopf" id="untenKopf"><span>Draufsicht · Kamera unten, Blick nach oben</span></div>
+      <div class="unten-kopf" id="untenKopf">
+        <div class="seg" id="untenWahl" role="group" aria-label="Unterer Bereich zeigt">
+          <button type="button" data-u="karte">Draufsicht</button>
+          <button type="button" data-u="vergleich">Vergleich</button>
+        </div>
+        <span class="info" id="untenInfo"></span>
+      </div>
       <div class="unten-inhalt" id="untenInhalt">
         <canvas id="mini" aria-label="Draufsicht: antippen wählt, ziehen verschiebt in die Tiefe"></canvas>
+        <div id="vergleich" hidden aria-label="Vergleich: so zeigen die Geräte den Screen"></div>
       </div>
     </div>
   </div>
@@ -260,19 +282,16 @@ body.vorschau .overlay .el{ outline:none !important; }
         <button id="btnKopie" type="button">Kopie</button>
         <button id="btnScreenWeg" type="button" class="danger">Löschen</button>
       </div>
-      <p class="sub">Hauptformat (dafür gestaltest du)</p>
-      <div class="row"><div class="seg" id="geraet" role="group" aria-label="Hauptformat">
-        <button type="button" data-g="iphone">iPhone quer</button>
-        <button type="button" data-g="ipad">iPad quer</button>
-        <button type="button" data-g="desktop">16:9</button>
-      </div></div>
+      <p class="sub">Hauptformat</p>
+      <p class="note" id="hauptformat"><b>16:9 · Switch 2</b> (1920 × 1080, auch TV und PC) ist der sichere Bereich: Dieses Bild ist auf jedem Gerät vollständig sichtbar (Regel C).</p>
       <p class="sub">Vorschau als</p>
-      <div class="row"><div class="seg" id="ansicht" role="group" aria-label="Vorschau als Gerät">
+      <div class="row"><div class="seg vier" id="ansicht" role="group" aria-label="Vorschau als Gerät">
+        <button type="button" data-g="ultrawide">21:9</button>
         <button type="button" data-g="iphone">iPhone quer</button>
+        <button type="button" data-g="desktop">16:9 · Switch 2</button>
         <button type="button" data-g="ipad">iPad quer</button>
-        <button type="button" data-g="desktop">16:9</button>
       </div></div>
-      <p class="note">Die Höhe des Sichtfelds bleibt fest. Breitere Geräte sehen seitlich mehr, schmalere weniger.</p>
+      <p class="note">Regel C: Breitere Geräte (21:9, iPhone) sehen bei gleicher Höhe seitlich mehr, schmalere (iPad) die volle 16:9-Breite und oben und unten mehr. Gedimmt = nur auf manchen Geräten sichtbar.</p>
       <div class="row"><button id="btnSterne" type="button">Anderer Sternenhimmel</button></div>
     </section>
 
@@ -346,7 +365,7 @@ body.vorschau .overlay .el{ outline:none !important; }
       </div></div>
       <p class="note" id="anordnungNote">Nebeneinander nur in breiten Fenstern (quer, ab 1000 px Breite); sonst automatisch untereinander.</p>
       <div class="row"><button type="button" id="btnVorschau" class="primary">Vorschau ohne Hilfen</button></div>
-      <p class="note">Logo und Menübox sind angenähert (Logo-Schrift Jost Medium wie im Spiel, Ring vereinfacht, Menübox in Systemschrift), Größen nach den Regeln des Spiels (Maßstab = Bildhöhe / 400, höchstens 1,6). Kamera mit 65,9° Sichtfeld, senkrecht (wie im Spiel).</p>
+      <p class="note">Logo und Menübox sind angenähert (Logo-Schrift Jost Medium wie im Spiel, Ring vereinfacht, Menübox in Systemschrift). Ihre Größe richtet sich nach dem 16:9-Bereich: Maßstab = Höhe des 16:9-Bereichs in Punkten / 400, höchstens 1,6, damit sie auf allen Geräten gleich groß wirken; Lage mittig im 16:9-Bereich. Kamera: 65,9° Sichtfeld senkrecht für 16:9 (wie im Spiel), die anderen Formate nach Regel C. Das Spiel rechnet heute noch mit fester Bildhöhe und dem Maßstab aus dem ganzen Bild; das wird in einem eigenen Schritt angepasst.</p>
     </section>
 
     <section>
@@ -374,14 +393,17 @@ body.vorschau .overlay .el{ outline:none !important; }
 'use strict';
 
 /* ---------- Grundwerte ---------- */
-const PRESETS = {
-  iphone:  { w:874,  h:402, name:'iPhone quer' },
-  ipad:    { w:1180, h:820, name:'iPad quer' },
-  desktop: { w:1600, h:900, name:'16:9' }
+// Formate (Punkte bzw. Pixel des Bild-Exports). Reihenfolge = Anzeige-Reihenfolge.
+const FORMATE = {
+  ultrawide: { w:2560, h:1080, name:'21:9',            farbe:'#78C8FF', datei:'21x9' },
+  iphone:    { w:874,  h:402,  name:'iPhone quer',     farbe:'#C4BBFF', datei:'iphone-quer' },
+  desktop:   { w:1920, h:1080, name:'16:9 · Switch 2', farbe:'#FFA02E', datei:'16x9-switch2' },
+  ipad:      { w:1194, h:834,  name:'iPad quer',       farbe:'#78DC96', datei:'ipad-quer' }
 };
-const ASP = k => PRESETS[k].w / PRESETS[k].h;
-const ASP_MAX = Math.max(...Object.keys(PRESETS).map(ASP));
-const FOV = 65.9;
+const HAUPT = 'desktop';       // Hauptformat fest: 16:9 · Switch 2 = sicherer Bereich
+const ASP = k => FORMATE[k].w / FORMATE[k].h;
+const ASP_16 = 16 / 9;
+const FOV = 65.9;              // senkrechtes Sichtfeld des 16:9-Bilds (Spiel: verticalFovRadians = 1,15)
 const FARBEN = {
   grau:   { name:'Grau',    hex:0x6e6b62, css:'#6e6b62' },
   braun:  { name:'Braun',   hex:0x5e4a3a, css:'#5e4a3a' },
@@ -407,14 +429,34 @@ function rng(seed){ let a = seed >>> 0; return function(){ a = (a + 0x6D2B79F5) 
 const zufallsFarbe = () => ['grau','grau','braun','dunkel','rost'][Math.floor(Math.random() * 5)];
 const neueLage = () => ({ logo:{ x:0, y:0 }, menue:{ x:0, y:0 } });
 
+/* ---------- Regel C ---------- */
+// Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar. Breitere Geräte sehen bei gleicher Höhe seitlich mehr,
+// schmalere die volle 16:9-Breite und oben/unten mehr. Diese eine Funktion bestimmt, was ein Format zeigt, als
+// Tangens des halben Sichtfelds (waagerecht tanH, senkrecht tanV) – für Bühne, Vorschau, Vergleich und Bild-Export.
+const T16 = Math.tan(FOV * Math.PI / 360);
+function sicht(key){
+  const A = ASP(key), tanV = T16 * Math.max(1, ASP_16 / A), tanH = tanV * A;
+  return { tanH, tanV, fovV:2 * Math.atan(tanV) * 180 / Math.PI, fovH:2 * Math.atan(tanH) * 180 / Math.PI };
+}
+// Fläche, die alle Formate zusammen zeigen (21:9-Breite × iPad-Höhe) – das zeigt die Bühne.
+function sichtAlle(){
+  let tanH = 0, tanV = 0;
+  for (const k of Object.keys(FORMATE)){ const v = sicht(k); tanH = Math.max(tanH, v.tanH); tanV = Math.max(tanV, v.tanV); }
+  return { tanH, tanV, fovV:2 * Math.atan(tanV) * 180 / Math.PI, fovH:2 * Math.atan(tanH) * 180 / Math.PI };
+}
+function setzeKamera(cam, v){ cam.fov = v.fovV; cam.aspect = v.tanH / v.tanV; cam.updateProjectionMatrix(); }
+// Rechteck in Tangens-Koordinaten (x rechts, y oben) → Anteile einer Ansicht v (0..1, y nach unten)
+function inBlick(R, v){ return { x0:0.5 + R.x0 / (2 * v.tanH), x1:0.5 + R.x1 / (2 * v.tanH), y0:0.5 - R.y1 / (2 * v.tanV), y1:0.5 - R.y0 / (2 * v.tanV) }; }
+function sichtRechteck(k){ const v = sicht(k); return { x0:-v.tanH, x1:v.tanH, y0:-v.tanV, y1:v.tanV }; }
+
 /* ---------- Zustand ---------- */
-function neuerScreen(name){ return { id:uid(), name, geraet:'desktop', sterne:Math.floor(Math.random() * 1e6), asteroiden:[], lage:neueLage(), zeigeLogo:true, zeigeMenue:true }; }
-function startZustand(){ const s = neuerScreen('Screen 1'); return { version:2, aktiv:s.id, screens:[s], gespeichertUm:0 }; }
+function neuerScreen(name){ return { id:uid(), name, sterne:Math.floor(Math.random() * 1e6), asteroiden:[], lage:neueLage(), zeigeLogo:true, zeigeMenue:true }; }
+function startZustand(){ const s = neuerScreen('Screen 1'); return { version:3, aktiv:s.id, screens:[s], gespeichertUm:0 }; }
 function gueltig(s){ return s && Array.isArray(s.screens) && s.screens.length > 0; }
 function normalisiere(st){
-  st.version = 2;
+  st.version = 3;
   for (const s of st.screens){
-    if (!PRESETS[s.geraet]) s.geraet = 'desktop';
+    delete s.geraet; // Hauptformat ist fest 16:9 (Regel C)
     if (!s.lage || !s.lage.logo || !s.lage.menue) s.lage = neueLage();
     if (s.zeigeLogo === undefined) s.zeigeLogo = true;
     if (s.zeigeMenue === undefined) s.zeigeMenue = true;
@@ -426,7 +468,7 @@ let state = normalisiere(ladeLokal() || startZustand());
 let selectedId = null, undo = [], platzieren = false, placeDepth = 80, anzahl = 12;
 let zeigeUmrisse = true, zeigeRahmen = true, zeigeKarte = true, vorschau = false, layoutEdit = false, modus = 'schieben';
 const screen = () => state.screens.find(s => s.id === state.aktiv) || state.screens[0];
-let ansicht = screen().geraet;
+let ansicht = HAUPT;
 const sel = () => screen().asteroiden.find(a => a.id === selectedId) || null;
 
 /* ---------- Three.js ---------- */
@@ -435,7 +477,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x03040a);
-const camera = new THREE.PerspectiveCamera(FOV, 2, 0.1, 4000);
+const camera = new THREE.PerspectiveCamera(FOV, ASP_16, 0.1, 4000);
 scene.add(new THREE.HemisphereLight(0x8a90b0, 0x1a1410, 0.55));
 const sun = new THREE.DirectionalLight(0xfff1dc, 1.15); sun.position.set(4, 3, 2); scene.add(sun);
 const astGroup = new THREE.Group(); scene.add(astGroup);
@@ -460,7 +502,9 @@ function baueSterne(seed){
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    stars.add(new THREE.Points(g, new THREE.PointsMaterial({ size:L.size * pr, sizeAttenuation:false, vertexColors:true, depthWrite:false })));
+    const pm = new THREE.PointsMaterial({ size:L.size * pr, sizeAttenuation:false, vertexColors:true, depthWrite:false });
+    pm.userData.basis = L.size;
+    stars.add(new THREE.Points(g, pm));
   }
   scene.add(stars);
 }
@@ -510,20 +554,20 @@ function syncSzene(){
 }
 
 let wartet = false;
-function zeichne(){ if (wartet) return; wartet = true; requestAnimationFrame(() => { wartet = false; renderer.render(scene, camera); }); }
+function zeichne(){ vergleichPlanen(); if (wartet) return; wartet = true; requestAnimationFrame(() => { wartet = false; renderer.render(scene, camera); }); }
 
 /* ---------- Logo und Menübox ---------- */
+// Größe nach dem 16:9-Bereich des Formats: Maßstab = dessen Höhe in Punkten / 400, höchstens 1,6. Lage mittig im
+// 16:9-Bereich plus Verschiebung (Punkte bei Maßstab 1). Ergebnis in Tangens-Koordinaten, tpp = Tangens je Punkt.
 function elemente(key){
-  const p = PRESETS[key], s = Math.min(p.h / 400, 1.6), L = screen().lage;
+  const f = FORMATE[key], v = sicht(key), L = screen().lage;
+  const h16 = f.h * T16 / v.tanV, w16 = h16 * ASP_16, s = Math.min(h16 / 400, 1.6), tpp = 2 * T16 / h16;
   const S = 92 * s, lw = 3.75 * S, lh = 1.37 * S, mw = 316 * s, mh = 168 * s, gap = 14 * s;
-  const top = (p.h - (lh + gap + mh)) / 2;
-  const lx = p.w / 2 + L.logo.x * s, ly = top + L.logo.y * s;
-  const mx = p.w / 2 + L.menue.x * s, my = top + lh + gap + L.menue.y * s;
-  return {
-    p, s,
-    logo:  { x0:(lx - lw / 2) / p.w, x1:(lx + lw / 2) / p.w, y0:ly / p.h, y1:(ly + lh) / p.h },
-    menue: { x0:(mx - mw / 2) / p.w, x1:(mx + mw / 2) / p.w, y0:my / p.h, y1:(my + mh) / p.h }
-  };
+  const top = (h16 - (lh + gap + mh)) / 2;
+  const lx = w16 / 2 + L.logo.x * s, ly = top + L.logo.y * s;
+  const mx = w16 / 2 + L.menue.x * s, my = top + lh + gap + L.menue.y * s;
+  const R = (x0, x1, y0, y1) => ({ x0:(x0 - w16 / 2) * tpp, x1:(x1 - w16 / 2) * tpp, y0:(h16 / 2 - y1) * tpp, y1:(h16 / 2 - y0) * tpp });
+  return { s, tpp, logo:R(lx - lw / 2, lx + lw / 2, ly, ly + lh), menue:R(mx - mw / 2, mx + mw / 2, my, my + mh) };
 }
 const LOGO_SVG = '<svg viewBox="0 0 375 137" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'
   + '<defs><linearGradient id="lg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#8C7CF0"/><stop offset="1" stop-color="#C4BBFF"/></linearGradient></defs>'
@@ -539,16 +583,14 @@ overlay.innerHTML = '<div id="rahmenBox"></div>'
   + '<div class="el" id="logoEl"><span class="lbl">Logo</span>' + LOGO_SVG + '</div>'
   + '<div class="el" id="menueEl"><span class="lbl">Menübox</span><div class="menue"><div class="aktiv">Spiel starten</div><div>Einstellungen</div><div>Beenden</div></div></div>';
 const logoEl = $('logoEl'), menueEl = $('menueEl'), rahmenBox = $('rahmenBox');
-let canvasAsp = ASP_MAX, frameH = 1;
-
-function inCanvas(R){
-  const fw = ASP(ansicht) / canvasAsp, fx0 = 0.5 - fw / 2;
-  return { x0:fx0 + R.x0 * fw, x1:fx0 + R.x1 * fw, y0:R.y0, y1:R.y1 };
-}
-function setzeEl(el, R){ const C = inCanvas(R); Object.assign(el.style, { left:(C.x0 * 100) + '%', top:(C.y0 * 100) + '%', width:((C.x1 - C.x0) * 100) + '%', height:((C.y1 - C.y0) * 100) + '%' }); }
+let frameH = 1;
+const blick = () => vorschau ? sicht(ansicht) : sichtAlle();   // was der Rahmen der Bühne gerade zeigt
+const pxProPunkt = (E, v) => E.tpp * frameH / (2 * v.tanV);
+function pct(el, C){ Object.assign(el.style, { left:(C.x0 * 100) + '%', top:(C.y0 * 100) + '%', width:((C.x1 - C.x0) * 100) + '%', height:((C.y1 - C.y0) * 100) + '%' }); }
+function setzeEl(el, R, v){ pct(el, inBlick(R, v)); }
 function positioniere(){
-  const E = elemente(ansicht), sc = screen(), px = frameH / E.p.h;
-  setzeEl(logoEl, E.logo); setzeEl(menueEl, E.menue);
+  const v = blick(), E = elemente(ansicht), sc = screen(), px = pxProPunkt(E, v);
+  setzeEl(logoEl, E.logo, v); setzeEl(menueEl, E.menue, v);
   logoEl.style.display = sc.zeigeLogo ? '' : 'none';
   menueEl.style.display = sc.zeigeMenue ? '' : 'none';
   for (const el of [logoEl, menueEl]){
@@ -558,24 +600,33 @@ function positioniere(){
   }
   const kn = menueEl.querySelectorAll('.menue div');
   kn.forEach(d => { d.style.height = (48 * E.s * px) + 'px'; d.style.fontSize = Math.max(8, 18 * E.s * px) + 'px'; d.style.borderRadius = (8 * E.s * px) + 'px'; });
+  vergleichPlanen();
 }
 function layout(){
-  const pad = vorschau ? 0 : 12;
-  canvasAsp = vorschau ? ASP(ansicht) : ASP_MAX;
+  const pad = vorschau ? 0 : 12, v = blick(), canvasAsp = v.tanH / v.tanV;
   const sw = stage.clientWidth, sh = stage.clientHeight;
   let w = Math.min(sw - 2 * pad, (sh - 2 * pad) * canvasAsp), h = w / canvasAsp;
   w = Math.max(10, Math.floor(w)); h = Math.max(10, Math.floor(h)); frameH = h;
   Object.assign(frameEl.style, { width:w + 'px', height:h + 'px', left:Math.round((sw - w) / 2) + 'px', top:Math.round((sh - h) / 2) + 'px' });
   renderer.setSize(w, h, false);
-  camera.aspect = canvasAsp; camera.updateProjectionMatrix();
+  setzeKamera(camera, v);
   let r = '';
   if (!vorschau){
-    const fw = ASP(ansicht) / canvasAsp, x0 = 0.5 - fw / 2;
-    if (fw < 0.999){ r += '<div class="schatten" style="left:0;width:' + (x0 * 100) + '%"></div><div class="schatten" style="right:0;width:' + (x0 * 100) + '%"></div>'; }
-    if (zeigeRahmen) for (const k of Object.keys(PRESETS)){
-      const f = ASP(k) / canvasAsp, l = 0.5 - f / 2, haupt = k === screen().geraet;
-      const farbe = haupt ? '#ffa02e' : (k === ansicht ? '#c4bbff' : 'rgba(196,187,255,.45)');
-      r += '<div class="rahmen" style="left:' + (l * 100) + '%;width:' + (f * 100) + '%;border-color:' + farbe + '"><span style="color:' + farbe + ';' + (k === 'ipad' ? 'left:auto;right:4px;' : '') + (k === 'desktop' ? 'bottom:22px;' : '') + '">' + PRESETS[k].name + (haupt ? ' · Hauptformat' : '') + '</span></div>';
+    // Außerhalb des 16:9-Rahmens gedimmt (nur auf manchen Geräten sichtbar)
+    const H = inBlick(sichtRechteck(HAUPT), v), P = x => (x * 100) + '%';
+    r += '<div class="schatten" style="left:0;right:0;top:0;height:' + P(H.y0) + '"></div>'
+      + '<div class="schatten" style="left:0;right:0;bottom:0;height:' + P(1 - H.y1) + '"></div>'
+      + '<div class="schatten" style="left:0;width:' + P(H.x0) + ';top:' + P(H.y0) + ';height:' + P(H.y1 - H.y0) + '"></div>'
+      + '<div class="schatten" style="right:0;width:' + P(1 - H.x1) + ';top:' + P(H.y0) + ';height:' + P(H.y1 - H.y0) + '"></div>';
+    // Rahmen aller Formate; das Hauptformat zuletzt (oben) und kräftig
+    const LAGE = { ultrawide:'unten', iphone:'oben', ipad:'oben', desktop:'unten' };
+    for (const k of ['ultrawide', 'iphone', 'ipad', HAUPT]){
+      const haupt = k === HAUPT;
+      if (!haupt && !zeigeRahmen) continue;
+      const C = inBlick(sichtRechteck(k), v), f = FORMATE[k], aktiv = k === ansicht;
+      const text = haupt ? '16:9 · Switch 2 · Hauptformat = sicherer Bereich' : f.name;
+      r += '<div class="rahmen' + (haupt ? ' haupt' : '') + '" data-k="' + k + '" style="left:' + P(C.x0) + ';top:' + P(C.y0) + ';width:' + P(C.x1 - C.x0) + ';height:' + P(C.y1 - C.y0) + ';border-color:' + f.farbe + (haupt || aktiv ? '' : ';opacity:.8') + '">'
+        + '<span class="' + LAGE[k] + '" style="color:' + f.farbe + (aktiv ? ';font-weight:600' : '') + '">' + text + (aktiv && !haupt ? ' · Vorschau' : '') + '</span></div>';
     }
   }
   rahmenBox.innerHTML = r;
@@ -595,7 +646,7 @@ function ziehbar(el, key){
   });
   el.addEventListener('pointermove', ev => {
     if (!st || ev.pointerId !== st.id) return;
-    const E = elemente(ansicht), k = frameH / E.p.h * E.s;
+    const E = elemente(ansicht), k = pxProPunkt(E, blick()) * E.s;
     if (!st.gemerkt){ merke(); st.gemerkt = true; }
     const L = screen().lage[key];
     L.x = r1(st.lx + (ev.clientX - st.x) / k); L.y = r1(st.ly + (ev.clientY - st.y) / k);
@@ -618,6 +669,7 @@ function ladeLayout(){
   try { const o = JSON.parse(localStorage.getItem(LAY_KEY) || 'null'); if (o && typeof o === 'object'){
     if (o.anordnung === 'A' || o.anordnung === 'B') l.anordnung = o.anordnung;
     for (const k of ['a', 'b', 'p']) if (Number.isFinite(o[k])) l[k] = clamp(o[k], 0.05, 0.95);
+    if (o.unten === 'karte' || o.unten === 'vergleich') l.unten = o.unten;
   } } catch (e) {}
   return l;
 }
@@ -718,22 +770,23 @@ function kartenGeo(){
   const as = screen().asteroiden; let maxD = 150;
   for (const a of as) maxD = Math.max(maxD, (-a.z + a.r) * 1.1);
   const W = Math.max(40, mini.clientWidth), H = Math.max(40, mini.clientHeight);
-  const th = Math.tan(FOV * Math.PI / 360), hfMax = th * ASP_MAX;
+  const hfMax = sichtAlle().tanH;
   // Maßstab so, dass Tiefe und die breiteste Sichtkeil-Hälfte hineinpassen
   const k = Math.min((H - 14) / maxD, (W / 2 - 7) / (maxD * hfMax));
   return { maxD, k, L:maxD * k, W, H, cx:W / 2, cy:H - 7 };
 }
 function karte(){
-  if (!zeigeKarte || vorschau) return;
+  if (!zeigeKarte || vorschau || untenWahl !== 'karte') return;
   const g = kartenGeo(), dpr = Math.min(window.devicePixelRatio || 1, 2), ctx = mini.getContext('2d');
   mini.width = Math.round(g.W * dpr); mini.height = Math.round(g.H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = 'rgba(8,10,24,.88)'; ctx.fillRect(0, 0, g.W, g.H);
-  const th = Math.tan(FOV * Math.PI / 360);
-  for (const key of Object.keys(PRESETS)){
-    const hf = th * ASP(key), haupt = key === screen().geraet;
-    ctx.strokeStyle = haupt ? 'rgba(255,160,46,.8)' : 'rgba(196,187,255,.3)'; ctx.lineWidth = 1; ctx.beginPath();
+  for (const key of Object.keys(FORMATE)){
+    const hf = sicht(key).tanH, haupt = key === HAUPT;
+    if (!haupt && !zeigeRahmen) continue;
+    ctx.strokeStyle = FORMATE[key].farbe; ctx.globalAlpha = haupt ? 0.9 : 0.45; ctx.lineWidth = haupt ? 1.5 : 1; ctx.beginPath();
     ctx.moveTo(g.cx, g.cy); ctx.lineTo(g.cx - hf * g.L, g.cy - g.L); ctx.moveTo(g.cx, g.cy); ctx.lineTo(g.cx + hf * g.L, g.cy - g.L); ctx.stroke();
   }
+  ctx.globalAlpha = 1;
   const as = [...screen().asteroiden].sort((a, b) => a.z - b.z);
   for (const a of as){
     ctx.beginPath(); ctx.arc(g.cx + a.x * g.k, g.cy + a.z * g.k, Math.max(2, a.r * g.k), 0, Math.PI * 2);
@@ -771,6 +824,121 @@ mini.addEventListener('pointermove', ev => {
 });
 const kartenEnde = ev => { if (!kartenZieh || ev.pointerId !== kartenZieh.id) return; const b = kartenZieh.bewegt; kartenZieh = null; if (b){ speichere(); panel(); } karte(); };
 mini.addEventListener('pointerup', kartenEnde); mini.addEventListener('pointercancel', kartenEnde);
+
+/* ---------- Bilder: Vergleich (und Bild-Export) ---------- */
+// Eigener WebGL-Renderer für Bilder ohne Hilfen (Auswahl-Markierung aus, Pixelverhältnis 1), damit die Bühne
+// nicht flackert. Gleiche Szene, Kamera nach sicht(format).
+let bildR = null;
+const bildKamera = new THREE.PerspectiveCamera(FOV, ASP_16, 0.1, 4000);
+function bildRenderer(){
+  if (!bildR){ bildR = new THREE.WebGLRenderer({ canvas:document.createElement('canvas'), antialias:true, preserveDrawingBuffer:true }); bildR.setPixelRatio(1); }
+  return bildR;
+}
+function rundRechteck(ctx, x, y, w, h, r){
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// Logo wie LOGO_SVG (viewBox 375 × 137), in das Rechteck eingepasst
+function zeichneLogo(ctx, x, y, w, h){
+  const k = Math.min(w / 375, h / 137);
+  ctx.save(); ctx.translate(x + (w - 375 * k) / 2, y + (h - 137 * k) / 2); ctx.scale(k, k);
+  const ring = vorn => {
+    ctx.save(); ctx.translate(187.5, 72); ctx.rotate(-15.5 * Math.PI / 180); ctx.translate(-187.5, -72);
+    ctx.beginPath(); ctx.ellipse(187.5, 72, 178, 30, 0, Math.PI, vorn ? 0 : 2 * Math.PI, vorn);
+    ctx.lineCap = 'round'; ctx.lineWidth = vorn ? 10 : 9; ctx.strokeStyle = vorn ? '#b9b1e2' : '#5f5880';
+    ctx.setLineDash(vorn ? [9, 4, 5, 6, 12, 3, 3, 8] : [7, 5, 3, 6, 10, 4, 4, 7]); ctx.stroke(); ctx.setLineDash([]);
+    if (vorn) for (const [cx, cy, r, c] of [[40, 88, 9, '#cfc8f2'], [58, 94, 6, '#b9b1e2'], [26, 80, 5, '#a69ed1']]){ ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fillStyle = c; ctx.fill(); }
+    ctx.restore();
+  };
+  ring(false);
+  ctx.font = '500 100px "Jost Aether", Futura, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = 0.35; ctx.fillStyle = '#000'; ctx.fillText('Aether', 190, 106); ctx.globalAlpha = 1;
+  const m = ctx.measureText('Aether'), tw = m.width, asc = m.actualBoundingBoxAscent || 72;
+  const gr = ctx.createLinearGradient(187.5 - tw / 2, 103, 187.5 + tw / 2, 103 - asc);
+  gr.addColorStop(0, '#8C7CF0'); gr.addColorStop(1, '#C4BBFF');
+  ctx.fillStyle = gr; ctx.fillText('Aether', 187.5, 103);
+  ring(true);
+  ctx.restore();
+}
+// Menübox wie im DOM: drei Knöpfe (48 Punkte hoch), oberster ausgewählt. px = Bildpunkte je Punkt bei Maßstab s.
+function zeichneMenue(ctx, x, y, w, h, sp){
+  const bh = 48 * sp, ys = [y, y + (h - bh) / 2, y + h - bh], namen = ['Spiel starten', 'Einstellungen', 'Beenden'];
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = Math.max(8, 18 * sp) + 'px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ys.forEach((yy, i) => {
+    rundRechteck(ctx, x, yy, w, bh, 8 * sp);
+    ctx.fillStyle = i === 0 ? '#e8871e' : 'rgba(22,26,46,.88)'; ctx.fill();
+    ctx.lineWidth = i === 0 ? Math.max(1, 2 * sp / 1.6) : Math.max(0.5, sp / 1.6); ctx.strokeStyle = i === 0 ? '#ffffff' : 'rgba(196,187,255,.25)'; ctx.stroke();
+    ctx.fillStyle = i === 0 ? '#1c1206' : '#e6e3ff'; ctx.fillText(namen[i], x + w / 2, yy + bh / 2 + 0.5);
+  });
+  ctx.restore();
+}
+// Zeichnet den Screen so, wie das Gerät ihn zeigt (ohne Hilfen), in ctx (W × H Bildpunkte).
+function zeichneBild(key, W, H, ctx){
+  const v = sicht(key), r = bildRenderer(), sc = screen();
+  r.setSize(W, H, false); setzeKamera(bildKamera, v);
+  const m = selectedId && meshes.get(selectedId), punkte = stars ? stars.children : [];
+  const em = m ? m.material.emissive.getHex() : 0;
+  if (m){ m.material.emissive.setHex(0); if (m.userData.edges) m.userData.edges.visible = false; }
+  punkte.forEach(p => { p.material.size = p.material.userData.basis; });
+  try { r.render(scene, bildKamera); }
+  finally {
+    const pr = renderer.getPixelRatio();
+    punkte.forEach(p => { p.material.size = p.material.userData.basis * pr; });
+    if (m){ m.material.emissive.setHex(em); if (m.userData.edges) m.userData.edges.visible = true; }
+  }
+  ctx.drawImage(r.domElement, 0, 0, W, H);
+  const E = elemente(key), sp = E.tpp * H / (2 * v.tanV) * E.s;
+  const box = R => { const C = inBlick(R, v); return [C.x0 * W, C.y0 * H, (C.x1 - C.x0) * W, (C.y1 - C.y0) * H]; };
+  if (sc.zeigeLogo) zeichneLogo(ctx, ...box(E.logo));
+  if (sc.zeigeMenue) zeichneMenue(ctx, ...box(E.menue), sp);
+}
+
+let untenWahl = lay.unten === 'vergleich' ? 'vergleich' : 'karte', vglTimer = null;
+const vglEl = $('vergleich');
+vglEl.innerHTML = Object.keys(FORMATE).map(k => '<figure data-k="' + k + '"><canvas></canvas><figcaption>' + FORMATE[k].name + ' · ' + FORMATE[k].w + ' × ' + FORMATE[k].h + '</figcaption></figure>').join('');
+function vergleichSichtbar(){ return zeigeKarte && !vorschau && untenWahl === 'vergleich'; }
+// Bildgröße so wählen, dass alle vier ohne Scrollen hineinpassen (1, 2 oder 4 je Zeile); sonst scrollt der Bereich.
+function vergleichAnordnen(){
+  const W = vglEl.clientWidth - 16, H = vglEl.clientHeight - 16, G = 8, CAP = 20, keys = Object.keys(FORMATE);
+  let best = null;
+  for (const c of [1, 2, 4]){
+    const rows = Math.ceil(keys.length / c);
+    let w = (W - G * (c - 1)) / c;
+    for (let i = 0; i < rows; i++){
+      const row = keys.slice(i * c, i * c + c), hMax = Math.max(...row.map(k => 1 / ASP(k)));
+      w = Math.min(w, ((H - G * (rows - 1)) / rows - CAP) / hMax);
+    }
+    if (!best || w > best.w) best = { c, w };
+  }
+  const w = Math.floor(Math.max(120, Math.min(best.w, W)));
+  vglEl.querySelectorAll('figure').forEach(f => { f.style.width = w + 'px'; });
+}
+function vergleichZeichnen(){
+  if (!vergleichSichtbar()) return;
+  vergleichAnordnen();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vglEl.querySelectorAll('figure').forEach(f => {
+    const k = f.dataset.k, cv = f.querySelector('canvas'), w = f.clientWidth;
+    const W = Math.max(16, Math.round(w * dpr)), H = Math.max(9, Math.round(W / ASP(k)));
+    if (cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    zeichneBild(k, W, H, cv.getContext('2d'));
+  });
+}
+// Gedrosselt: höchstens alle 150 ms neu, ruckelfrei hinter dem Bild der Bühne
+function vergleichPlanen(){
+  if (!vergleichSichtbar() || vglTimer) return;
+  vglTimer = setTimeout(() => { vglTimer = null; requestAnimationFrame(vergleichZeichnen); }, 150);
+}
+function untenAnzeigen(){
+  document.querySelectorAll('#untenWahl button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.u === untenWahl)));
+  mini.hidden = untenWahl !== 'karte'; vglEl.hidden = untenWahl !== 'vergleich';
+  $('untenInfo').textContent = untenWahl === 'karte' ? 'Kamera unten, Blick nach oben' : 'So zeigt jedes Gerät den Screen';
+  if (untenWahl === 'karte') karte(); else vergleichPlanen();
+}
+document.querySelectorAll('#untenWahl button').forEach(b => b.addEventListener('click', () => { untenWahl = b.dataset.u; lay.unten = untenWahl; speichereLayout(); untenAnzeigen(); }));
+new ResizeObserver(() => vergleichPlanen()).observe(vglEl);
 
 /* ---------- Eingabe auf der Bühne ---------- */
 const ray = new THREE.Raycaster();
@@ -854,26 +1022,53 @@ function rueckgaengig(){
 }
 function waehle(id){ selectedId = id; syncSzene(); panel(); }
 
-function zufaelligVerteilen(n, frei){
+// Größter Abstand eines Eckpunkts vom Mittelpunkt je Form (Asteroid passt bei jeder Drehung in diese Kugel × r).
+const formRadius = {};
+function kugel(form){
+  if (formRadius[form]) return formRadius[form];
+  const p = astGeom(form).attributes.position; let m = 0;
+  for (let i = 0; i < p.count; i++) m = Math.max(m, Math.hypot(p.getX(i), p.getY(i), p.getZ(i)));
+  return (formRadius[form] = m);
+}
+// Exakte Ausdehnung einer Kugel (Mitte x, y, z; Radius R) im Bild, in Tangens-Koordinaten.
+function bildKasten(x, y, z, R){
+  const d = -z, q = d * d - R * R;
+  if (d <= 0 || q <= 0) return null;
+  const f = c => { const w = R * Math.sqrt(c * c + q); return [(c * d - w) / q, (c * d + w) / q]; };
+  const [x0, x1] = f(x), [y0, y1] = f(y);
+  return { x0, x1, y0, y1 };
+}
+const RAND_FREI = 0.02 * T16;   // Abstand zu Logo und Menübox (1 % der 16:9-Höhe)
+// Logo und Menübox aller Formate (jedes Format hat seinen eigenen Maßstab), nur wenn „frei halten“ an ist.
+function freiFlaechen(frei){
+  if (!frei) return [];
+  const out = [];
+  for (const k of Object.keys(FORMATE)){ const E = elemente(k); out.push(E.logo, E.menue); }
+  return out;
+}
+const trifftNicht = (b, rects) => rects.every(R => b.x1 < R.x0 - RAND_FREI || b.x0 > R.x1 + RAND_FREI || b.y1 < R.y0 - RAND_FREI || b.y0 > R.y1 + RAND_FREI);
+// Gleiche Formen, Farben und Größen für „Zufällig verteilen“ und „Ränder füllen“: Abstand 25–500 m (logarithmisch),
+// Radius 1,2–8,2 % des Abstands. passt(kasten, tx, ty) entscheidet, ob ein Vorschlag genommen wird.
+function verteile(n, frei, passt, versuche){
   merke();
-  const sc = screen(), th = Math.tan(FOV * Math.PI / 360), asp = ASP_MAX;
-  const fwH = ASP(sc.geraet) / asp, E = elemente(sc.geraet);
-  const rects = frei ? [E.logo, E.menue].map(R => ({ x0:0.5 + (R.x0 - 0.5) * fwH, x1:0.5 + (R.x1 - 0.5) * fwH, y0:R.y0, y1:R.y1 })) : [];
+  const sc = screen(), U = sichtAlle(), rects = freiFlaechen(frei);
   let gesetzt = 0;
   for (let i = 0; i < n; i++){
-    for (let t = 0; t < 40; t++){
+    for (let t = 0; t < versuche; t++){
       const d = Math.exp(Math.log(25) + Math.random() * (Math.log(500) - Math.log(25)));
-      const r = d * (0.012 + Math.random() * 0.07);
-      const nx = Math.random() * 2.3 - 1.15, ny = Math.random() * 2.3 - 1.15;
-      const fx = (nx + 1) / 2, fy = (1 - ny) / 2, ry = r / (d * th) / 2, rx = ry / asp;
-      const ok = rects.every(R => fx + rx < R.x0 - 0.01 || fx - rx > R.x1 + 0.01 || fy + ry < R.y0 - 0.01 || fy - ry > R.y1 + 0.01);
-      if (!ok) continue;
-      const hh = d * th;
-      sc.asteroiden.push({ id:uid(), x:r2(nx * hh * asp), y:r2(ny * hh), z:r2(-d), r:r2(r), form:1 + Math.floor(Math.random() * FORMEN), dreh:Math.round(Math.random() * 360), kipp:Math.round(Math.random() * 360), roll:0, aus:false, farbe:zufallsFarbe() });
-      gesetzt++; break;
+      const r = d * (0.012 + Math.random() * 0.07), form = 1 + Math.floor(Math.random() * FORMEN);
+      const tx = (Math.random() * 2.3 - 1.15) * U.tanH, ty = (Math.random() * 2.3 - 1.15) * U.tanV;
+      const a = { id:uid(), x:r2(tx * d), y:r2(ty * d), z:r2(-d), r:r2(r), form, dreh:Math.round(Math.random() * 360), kipp:Math.round(Math.random() * 360), roll:0, aus:false, farbe:zufallsFarbe() };
+      const b = bildKasten(a.x, a.y, a.z, a.r * kugel(form));
+      if (!b || !trifftNicht(b, rects) || !passt(b, a.x / d, a.y / d)) continue;
+      sc.asteroiden.push(a); gesetzt++; break;
     }
   }
   syncSzene(); panel(); speichere();
+  return gesetzt;
+}
+function zufaelligVerteilen(n, frei){
+  const gesetzt = verteile(n, frei, () => true, 40);
   if (gesetzt < n) meldung(gesetzt + ' von ' + n + ' gesetzt, der Rest passte nicht neben Logo und Menübox');
 }
 
@@ -920,7 +1115,6 @@ function panel(){
   for (const s of state.screens){ const o = document.createElement('option'); o.value = s.id; o.textContent = s.name || 'Ohne Namen'; o.selected = s.id === sc.id; selEl.appendChild(o); }
   if (document.activeElement !== $('screenName')) $('screenName').value = sc.name;
   $('btnScreenWeg').disabled = state.screens.length < 2;
-  document.querySelectorAll('#geraet button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === sc.geraet)));
   document.querySelectorAll('#ansicht button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === ansicht)));
   document.querySelectorAll('#anordnung button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.o === lay.anordnung)));
   $('platzieren').checked = platzieren; $('hint').hidden = !platzieren || vorschau;
@@ -980,10 +1174,10 @@ $('btnNurSel').addEventListener('click', () => { const a = sel(); if (!a) return
 $('layoutEdit').addEventListener('change', e => { layoutEdit = e.target.checked; positioniere(); });
 $('btnLayoutReset').addEventListener('click', () => { merke(); screen().lage = neueLage(); positioniere(); speichere(); });
 
-function wechsleScreen(id){ state.aktiv = id; selectedId = null; undo = []; ansicht = screen().geraet; syncSzene(); layout(); panel(); speichere(); }
+function wechsleScreen(id){ state.aktiv = id; selectedId = null; undo = []; syncSzene(); layout(); panel(); speichere(); }
 $('screenSel').addEventListener('change', e => wechsleScreen(e.target.value));
 $('screenName').addEventListener('input', e => { screen().name = e.target.value; const o = $('screenSel').selectedOptions[0]; if (o) o.textContent = e.target.value || 'Ohne Namen'; speichere(); });
-$('btnNeu').addEventListener('click', () => { const s = neuerScreen('Screen ' + (state.screens.length + 1)); s.geraet = screen().geraet; state.screens.push(s); wechsleScreen(s.id); });
+$('btnNeu').addEventListener('click', () => { const s = neuerScreen('Screen ' + (state.screens.length + 1)); state.screens.push(s); wechsleScreen(s.id); });
 $('btnKopie').addEventListener('click', () => {
   const alt = screen(), s = JSON.parse(JSON.stringify(alt));
   s.id = uid(); s.name = alt.name + ' (Kopie)'; s.asteroiden.forEach(a => a.id = uid());
@@ -995,12 +1189,11 @@ $('btnScreenWeg').addEventListener('click', () => {
     state.screens = state.screens.filter(s => s.id !== state.aktiv); wechsleScreen(state.screens[0].id);
   });
 });
-document.querySelectorAll('#geraet button').forEach(b => b.addEventListener('click', () => { screen().geraet = b.dataset.g; ansicht = b.dataset.g; layout(); panel(); speichere(); }));
 document.querySelectorAll('#ansicht button').forEach(b => b.addEventListener('click', () => { ansicht = b.dataset.g; layout(); panel(); }));
 $('btnSterne').addEventListener('click', () => { screen().sterne = Math.floor(Math.random() * 1e6); syncSzene(); speichere(); });
 $('umrisse').addEventListener('change', e => { zeigeUmrisse = e.target.checked; positioniere(); });
-$('rahmen').addEventListener('change', e => { zeigeRahmen = e.target.checked; layout(); });
-$('karte').addEventListener('change', e => { zeigeKarte = e.target.checked; anordnen(); karte(); });
+$('rahmen').addEventListener('change', e => { zeigeRahmen = e.target.checked; layout(); karte(); });
+$('karte').addEventListener('change', e => { zeigeKarte = e.target.checked; anordnen(); untenAnzeigen(); });
 $('btnVorschau').addEventListener('click', () => { vorschau = true; document.body.classList.add('vorschau'); anordnen(); syncSzene(); layout(); panel(); });
 $('fertig').addEventListener('click', () => { vorschau = false; document.body.classList.remove('vorschau'); anordnen(); syncSzene(); layout(); panel(); });
 document.querySelectorAll('#anordnung button').forEach(b => b.addEventListener('click', () => { lay.anordnung = b.dataset.o; speichereLayout(); anordnen(); panel(); }));
@@ -1029,33 +1222,39 @@ function dialog({ titel, text, area, nurLesen, knoepfe }){
 }
 function frage(titel, text, ok, aktion){ dialog({ titel, text, knoepfe:[ { label:'Abbrechen' }, { label:ok, art:'danger', aktion } ] }); }
 let toastT = null;
-function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2600); }
+function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), t.length > 60 ? 5000 : 2600); }
 
 /* ---------- Export und Import ---------- */
 function exportText(){
   return JSON.stringify({
-    format:'aether-menue-screens', version:2, einheiten:'Meter, Grad; Lage von Logo und Menübox in Punkten bei Maßstab 1 (Spiel: Maßstab = Bildhöhe / 400, höchstens 1,6), Verschiebung gegenüber der Standardlage',
-    kamera:{ position:[0,0,0], blickrichtung:[0,0,-1], oben:[0,1,0], sichtfeldGrad:FOV, sichtfeldAchse:'senkrecht (Spiel: verticalFovRadians = 1,15)' },
+    format:'aether-menue-screens', version:3, einheiten:'Meter, Grad; Lage von Logo und Menübox in Punkten bei Maßstab 1, Verschiebung gegenüber der Standardlage (mittig im 16:9-Bereich)',
+    regel:'C: Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar. Breitere Geräte sehen bei gleicher Höhe seitlich mehr, schmalere die volle 16:9-Breite und oben/unten mehr.',
+    hauptformat:'16:9',
+    kamera:{ position:[0,0,0], blickrichtung:[0,0,-1], oben:[0,1,0], sichtfeldGrad:FOV, sichtfeldAchse:'senkrecht, für das 16:9-Bild (Spiel: verticalFovRadians = 1,15)' },
+    formate: Object.keys(FORMATE).map(k => { const v = sicht(k); return { schluessel:k, name:FORMATE[k].name, breite:FORMATE[k].w, hoehe:FORMATE[k].h, sichtfeldSenkrechtGrad:r2(v.fovV), sichtfeldWaagerechtGrad:r2(v.fovH) }; }),
+    logoUndMenuebox:'Maßstab = Höhe des 16:9-Bereichs in Punkten / 400, höchstens 1,6; Lage = Mitte des 16:9-Bereichs + Verschiebung × Maßstab',
     hinweis:'radius ist ungefähr. form (1–8) und farbe sind Varianten dieses Editors; die Zuordnung zu den Spiel-Asteroiden passiert beim Einbau. Drehung als Euler-Winkel in der Reihenfolge YXZ (drehen um Y, kippen um X, rollen um Z). Ausblenden im Editor wird nicht exportiert.',
     screens: state.screens.map(s => ({
-      name:s.name, hauptformat:s.geraet, sternenSeed:s.sterne,
+      name:s.name, sternenSeed:s.sterne,
       lage:{ logo:[r1(s.lage.logo.x), r1(s.lage.logo.y)], menue:[r1(s.lage.menue.x), r1(s.lage.menue.y)] },
       asteroiden: s.asteroiden.map(a => ({ position:[r2(a.x), r2(a.y), r2(a.z)], radius:r2(a.r), form:a.form, drehungGrad:{ kippen:r1(a.kipp), drehen:r1(a.dreh), rollen:r1(a.roll || 0) }, farbe:a.farbe }))
     }))
   }, null, 1);
 }
-// Liest Exporte der Versionen 1 und 2 (Text aus dem bisherigen claude.ai-Artefakt). Version 1 kannte
-// noch keine Lage von Logo und Menübox und kein Rollen; beides fängt bei 0 an.
+// Liest Exporte der Versionen 1, 2 (Text aus dem bisherigen claude.ai-Artefakt) und 3. Umrechnung älterer
+// Versionen: Asteroiden (Welt-Koordinaten, Kamera im Ursprung, 65,9° senkrecht für 16:9) und Lage von Logo und
+// Menübox (Punkte bei Maßstab 1, Mitte) bedeuten in allen Versionen dasselbe und bleiben unverändert. Das frühere
+// Hauptformat je Screen entfällt: Hauptformat ist jetzt fest 16:9. Version 1 kannte noch keine Lage und kein
+// Rollen; beides fängt bei 0 an. Rückgabe: { screens, version } oder null.
 function importiere(text){
   let o; try { o = JSON.parse(text); } catch (e) { return null; }
   if (!o || o.format !== 'aether-menue-screens' || !Array.isArray(o.screens) || !o.screens.length) return null;
-  const v = o.version === undefined ? 1 : Number(o.version);
-  if (!(v === 1 || v === 2)) return null;
+  const ver = o.version === undefined ? 1 : Number(o.version);
+  if (!(ver === 1 || ver === 2 || ver === 3)) return null;
   const xy = v => (Array.isArray(v) && v.length === 2) ? { x:Number(v[0]) || 0, y:Number(v[1]) || 0 } : { x:0, y:0 };
-  return o.screens.map(s => {
-    const g = s.hauptformat || s.geraet;
+  const screens = o.screens.map(s => {
     return {
-      id:uid(), name:String(s.name || 'Screen'), geraet:PRESETS[g] ? g : 'desktop',
+      id:uid(), name:String(s.name || 'Screen'),
       sterne:Number.isFinite(s.sternenSeed) ? s.sternenSeed : Math.floor(Math.random() * 1e6),
       lage:{ logo:xy(s.lage && s.lage.logo), menue:xy(s.lage && s.lage.menue) }, zeigeLogo:true, zeigeMenue:true,
       asteroiden:(Array.isArray(s.asteroiden) ? s.asteroiden : []).filter(a => Array.isArray(a.position) && a.position.length === 3).map(a => ({
@@ -1066,6 +1265,10 @@ function importiere(text){
       }))
     };
   });
+  return { screens, version:ver };
+}
+function importHinweis(r){
+  return r.version < 3 ? ' (aus Version ' + r.version + ' übernommen: Hauptformat jetzt 16:9 · Switch 2, Asteroiden und Lage unverändert)' : '';
 }
 async function kopiere(text){
   try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
@@ -1080,8 +1283,8 @@ $('btnImport').addEventListener('click', () => {
   dialog({ titel:'Screens einfügen', text:'Füge hier einen Text ein, den du vorher mit „Als Text kopieren“ erzeugt hast.', area:'',
     knoepfe:[
       { label:'Abbrechen' },
-      { label:'Hinzufügen', aktion:v => { const s = importiere(v); if (!s){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens.push(...s); wechsleScreen(s[0].id); meldung(s.length + ' Screen(s) hinzugefügt'); } },
-      { label:'Alles ersetzen', art:'danger', aktion:v => { const s = importiere(v); if (!s){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens = s; wechsleScreen(s[0].id); meldung('Screens ersetzt'); } }
+      { label:'Hinzufügen', aktion:v => { const r = importiere(v); if (!r){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens.push(...r.screens); wechsleScreen(r.screens[0].id); meldung(r.screens.length + ' Screen(s) hinzugefügt' + importHinweis(r)); } },
+      { label:'Alles ersetzen', art:'danger', aktion:v => { const r = importiere(v); if (!r){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens = r.screens; wechsleScreen(r.screens[0].id); meldung('Screens ersetzt' + importHinweis(r)); } }
     ] });
 });
 
@@ -1094,7 +1297,21 @@ function speichere(){
 }
 
 /* ---------- Start ---------- */
-modusAnzeige(); anordnen(); syncSzene(); layout(); panel();
+modusAnzeige(); anordnen(); untenAnzeigen(); syncSzene(); layout(); panel();
+// Logo-Schrift laden, dann Vergleich neu (Canvas kennt die Schrift erst danach)
+try { document.fonts.load('500 100px "Jost Aether"').then(() => vergleichPlanen()).catch(() => {}); } catch (e) {}
+
+// Schnittstelle für die automatischen Tests (nur lesen)
+window.AetherScreenEditor = Object.freeze({
+  formate:() => JSON.parse(JSON.stringify(FORMATE)), sicht, sichtAlle,
+  kamera:() => ({ fov:camera.fov, aspect:camera.aspect }),
+  zustand:() => JSON.parse(JSON.stringify(state)),
+  elemente:k => JSON.parse(JSON.stringify(elemente(k))),
+  rahmen:() => [...document.querySelectorAll('#rahmenBox .rahmen')].map(e => { const r = e.getBoundingClientRect(); return { k:e.dataset.k, x0:r.left, x1:r.right, y0:r.top, y1:r.bottom }; }),
+  // Eckpunkte aller Asteroiden in Welt-Koordinaten (für die Prüfung, wo sie im Bild liegen)
+  eckpunkte:() => screen().asteroiden.map(a => { const m = meshes.get(a.id); m.updateMatrixWorld(true); const p = m.geometry.attributes.position, v = new THREE.Vector3(), out = [];
+    for (let i = 0; i < p.count; i++){ v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); out.push([v.x, v.y, v.z]); } return { id:a.id, punkte:out }; })
+});
 })();
 </script>
 </body>
