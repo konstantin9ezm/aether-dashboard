@@ -466,11 +466,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=geplant', 'Asset-System=geplant']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=geplant', 'Debug-UI=fertig', 'Profiler=fertig', 'Asset-System=geplant']);
     assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig', 'Frame-Zeiten=fertig']);
     assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
     assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 9.*Vorschau: 2.*geplant: 9/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 10.*Vorschau: 2.*geplant: 8/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
@@ -1556,7 +1556,7 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
 
   // Gerätebefund 11.11.2026 (iPad): „(43“ am Ende von Zeile 1, „%)“ allein in Zeile 2. Messwert und Prozent
   // „10,7 / 25 min (43 %)“ bilden einen untrennbaren Block: passt er nicht mehr, rutscht er ganz in die nächste Zeile.
-  test('CI-Zeile: „Dauer / Limit (Prozent)“ bricht nie innerhalb um (alle Breiten 320–1400 px, kein Überlauf)', async () => {
+  test('CI-Zeile: „Dauer / Limit (Prozent)“ bricht nie innerhalb um (alle Breiten 320–1400 px, kein Überlauf in Build-, Projektansicht und Token-Bildschirm)', async () => {
     realMock();
     const D = (hms) => `2026-11-11T${hms}Z`;
     const RUN104 = () => realRun(19235550104, 104, 'e'.repeat(40), { attempt: 2, created: D('05:00:01'), started: D('05:30:00'), updated: D('05:33:50') });
@@ -1583,6 +1583,8 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     ];
     mock.ciJobsByRun = { 19232000099: jobs99() };
     const BLOCK = '10,7 / 25 min (43 %)';
+    const SIZES = [[1194, 834], [834, 1194], [874, 402], [402, 874], [390, 844], [360, 780], [320, 568]];
+    const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const { context, page, log } = await newPage(null);
     // Elemente, die links oder rechts über den sichtbaren Bereich hinausragen (für die Prüfung „kein waagerechtes Scrollen“).
     await context.addInitScript(() => {
@@ -1590,8 +1592,60 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
         const r = e.getBoundingClientRect();
         return r.width > 0 && (r.right > window.innerWidth + 0.5 || r.left < -0.5);
       }).map((e) => ({ el: e.tagName + (e.id ? '#' + e.id : ''), inHeader: !!e.closest('header.top') }));
+      // Kopfzeile: Umschalter vollständig sichtbar, Link „WebGPU-Check“ (Text oder Symbol) mit Tippfläche ≥ 44 × 44 px.
+      window.headerState = () => {
+        window.scrollTo(0, 0); // Element-Screenshots scrollen die Seite; die Kopfzeile wird ganz oben geprüft.
+        const vw = window.innerWidth;
+        const tabs = document.getElementById('tabs');
+        const t = tabs.getBoundingClientRect();
+        const btns = [...tabs.querySelectorAll('button')].map((b) => {
+          const r = b.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { w: r.width, h: r.height, inView: r.left >= -0.5 && r.right <= vw + 0.5, hit: !!hit && b.contains(hit), clipped: b.scrollWidth > b.clientWidth };
+        });
+        const tabsOk = t.width > 0 && t.left >= -0.5 && t.right <= vw + 0.5 && btns.length === 2 && btns.every((b) => b.w >= 44 && b.h >= 44 && b.inView && b.hit && !b.clipped);
+        const a = document.querySelector('header.top #hdrWebgpu');
+        const r = a.getBoundingClientRect();
+        const link = { visible: r.width > 0, iconOnly: getComputedStyle(a.querySelector('.lbl')).display === 'none', text: a.textContent.trim(), aria: a.getAttribute('aria-label') };
+        if (link.visible) {
+          const on = (x, y) => { const e = document.elementFromPoint(x, y); return !!e && a.contains(e); };
+          const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          let l = cx, rr = cx, tp = cy, bt = cy;
+          while (l > 0 && on(l - 0.5, cy)) l -= 0.5;
+          while (rr < vw && on(rr + 0.5, cy)) rr += 0.5;
+          while (tp > 0 && on(cx, tp - 0.5)) tp -= 0.5;
+          while (bt < window.innerHeight && on(cx, bt + 0.5)) bt += 0.5;
+          Object.assign(link, { hitW: rr - l, hitH: bt - tp, inView: r.left >= -0.5 && r.right <= vw + 0.5 });
+        }
+        const card = document.querySelector('#tokenView:not([hidden]) a[href="webgpu-check.html"]');
+        const cr = card && card.getBoundingClientRect();
+        return { tabsOk, btns, link, cardLink: !!cr && cr.width > 0 && cr.left >= -0.5 && cr.right <= vw + 0.5 };
+      };
     });
-    const headerOverflow = [];
+    const assertHeader = async (w, where, linkInHeader) => {
+      const h = await page.evaluate(() => window.headerState());
+      assert.ok(h.tabsOk, `${w}px (${where}): Umschalter „Spielen | Projekt“ vollständig sichtbar ${JSON.stringify(h.btns)}`);
+      if (linkInHeader) {
+        assert.ok(h.link.visible && h.link.inView, `${w}px (${where}): Link „WebGPU-Check“ sichtbar ${JSON.stringify(h.link)}`);
+        assert.equal(h.link.aria, 'WebGPU-Check');
+        if (!h.link.iconOnly) assert.equal(h.link.text, 'WebGPU-Check');
+        assert.ok(h.link.hitW >= 44 && h.link.hitH >= 44, `${w}px (${where}): Tippfläche ${h.link.hitW}×${h.link.hitH}`);
+      } else {
+        assert.ok(!h.link.visible, `${w}px (${where}): Kopfzeilen-Link ausgeblendet`);
+        assert.ok(h.cardLink, `${w}px (${where}): Link „WebGPU-Check“ in der Token-Karte erreichbar`);
+      }
+    };
+    // Build-Ansicht und Token-Bildschirm: kein waagerechter Überlauf, Kopfzeile vollständig.
+    const checkView = async (where, linkInHeader) => {
+      for (const [w, h] of [...SIZES, ...Array.from({ length: 109 }, (_, i) => [320 + i * 10, 900])]) {
+        await page.setViewportSize({ width: w, height: h });
+        await frame();
+        const m = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth - window.innerWidth, beyond: window.beyondViewport() }));
+        assert.deepEqual(m.beyond, [], `${w}×${h} (${where}): nichts ragt über den Rand`);
+        assert.ok(m.overflow <= 0, `${w}×${h} (${where}): waagerechtes Scrollen ${m.overflow}px`);
+        await assertHeader(w, where, linkInHeader);
+      }
+    };
     await page.setViewportSize({ width: 1194, height: 834 });
     await openProject(page);
     await waitCiTime(page);
@@ -1635,7 +1689,6 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
         lineOverflow: root.scrollWidth - root.clientWidth
       };
     }, [rootSel, want]);
-    const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const log2 = [];
     const check = async (w, h, where) => {
       await page.setViewportSize({ width: w, height: h });
@@ -1644,15 +1697,10 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
       assert.ok(!m.missing, `${w}px: Block fehlt in „${m.missing}“`);
       assert.equal(m.lines.length, 1, `${w}×${h} (${where}): „${BLOCK}“ liegt in einer Zeile, gemessen in Zeilen ${m.lines}`);
       assert.ok(m.inCard, `${w}px: Block ragt aus der Karte (${m.left}–${m.right})`);
-      // Kein waagerechtes Scrollen durch die CI-Karte. Bekannte, schon vor dieser Änderung vorhandene Ausnahme: die
-      // Kopfzeile (Logo, Titel, „WebGPU-Check“, Umschalter) ist in manchen Breiten ein paar px zu breit (lokal 461–474 px,
-      // mit den Schriften des CI-Runners auch bei 320 px). Dann darf NUR sie überstehen – nie die CI-Karte oder etwas anderes.
-      const outside = m.beyond.filter((b) => !b.inHeader);
-      assert.deepEqual(outside, [], `${w}px: außerhalb der Kopfzeile ragt nichts über den Rand`);
-      if (m.pageOverflow > 0) {
-        assert.ok(m.beyond.length > 0 && m.beyond.every((b) => b.inHeader), `${w}px: waagerechtes Scrollen ${m.pageOverflow}px nur durch die Kopfzeile, überstehend: ${JSON.stringify(m.beyond)}`);
-        headerOverflow.push(`${w}×${h}: ${m.pageOverflow}px (${m.beyond.map((b) => b.el).join(', ')})`);
-      }
+      // Kein waagerechtes Scrollen – weder durch die CI-Karte noch durch die Kopfzeile oder sonst etwas.
+      assert.deepEqual(m.beyond, [], `${w}px: nichts ragt über den Rand`);
+      assert.ok(m.pageOverflow <= 0, `${w}px: waagerechtes Scrollen ${m.pageOverflow}px`);
+      await assertHeader(w, where, true);
       assert.ok(m.cardOverflow <= 0, `${w}px: Karte läuft über ${m.cardOverflow}px`);
       assert.ok(m.lineOverflow <= 0, `${w}px: Zeile läuft über ${m.lineOverflow}px`);
       // Dasselbe am Element des Blocks: alle seine Rechtecke (Chromium liefert je Kind eines) auf derselben Höhe.
@@ -1660,7 +1708,6 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
       assert.ok(tops.length >= 1 && tops.every((t) => Math.abs(t[0] - tops[0][0]) <= 1 && Math.abs(t[1] - tops[0][1]) <= 1), `${w}px: .ci-meas in einer Zeile ${JSON.stringify(tops)}`);
       log2.push({ w, h, where, line: m.lines[0], of: m.totalLines, left: Math.round(m.left), right: Math.round(m.right) });
     };
-    const SIZES = [[1194, 834], [834, 1194], [874, 402], [402, 874], [390, 844], [360, 780], [320, 568]];
     for (const [w, h] of SIZES) {
       await check(w, h, 'fest');
       await (await page.$('#ciCard')).screenshot({ path: path.join(OUT, `ci-zeile-block-${w}x${h}.png`) });
@@ -1683,13 +1730,23 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
       assert.equal(m.val.rects, 1, `${w}px: „10,7 von 25 min“ einzeilig`);
       assert.equal(m.pct.rects, 1, `${w}px: „43 %“ einzeilig`);
       assert.ok(Math.abs(m.val.t - m.pct.t) < 1 && Math.abs(m.val.b - m.pct.b) < 1, `${w}px: Wert und Prozent in derselben Zeile`);
-      assert.deepEqual(m.beyond.filter((b) => !b.inHeader), [], `${w}px (Details offen): außerhalb der Kopfzeile ragt nichts über den Rand`);
-      if (m.overflow > 0) assert.ok(m.beyond.every((b) => b.inHeader), `${w}px (Details offen): Überlauf ${m.overflow}px nur durch die Kopfzeile`);
+      assert.deepEqual(m.beyond, [], `${w}px (Details offen): nichts ragt über den Rand`);
+      assert.ok(m.overflow <= 0, `${w}px (Details offen): waagerechtes Scrollen ${m.overflow}px`);
       det.push(w);
     }
     assert.equal(await page.$eval('#ciTightBlock .ci-tightrow', (r) => r.textContent.replace(/\s+/g, ' ')), '10,7 von 25 min43 %');
-    fs.writeFileSync(path.join(OUT, 'ci-zeile-block-lage.json'), JSON.stringify({ lage: log2, kopfzeileZuBreit: headerOverflow }, null, 1));
-    if (headerOverflow.length) console.log('# Kopfzeile zu breit (nicht Teil der CI-Karte, vorher schon so): ' + headerOverflow.join('; '));
+    fs.writeFileSync(path.join(OUT, 'ci-zeile-block-lage.json'), JSON.stringify({ lage: log2 }, null, 1));
+
+    // Build-Ansicht
+    await page.setViewportSize({ width: 1194, height: 834 });
+    await page.click('#tabPlay');
+    await page.waitForSelector('#buildsView:not([hidden]) #buildList .build');
+    await checkView('Build-Ansicht', true);
+    // Token-Bildschirm (über „Token löschen“; der Dialog wird bestätigt)
+    await page.setViewportSize({ width: 1194, height: 834 });
+    await page.click('#deleteTokenBtn');
+    await page.waitForSelector('#tokenView:not([hidden])');
+    await checkView('Token-Bildschirm', false);
     await assertNoLeak(log, page);
     await context.close();
   });

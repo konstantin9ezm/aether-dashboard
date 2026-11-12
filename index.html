@@ -359,6 +359,7 @@
   }
   .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
   @media (max-width: 460px) { header.top .sub { display: none; } }
+  header.top.hdr-compact .sub { display: none; }
 
   /* Link „WebGPU-Check“ in der Kopfzeile, links neben dem Umschalter. Schlichter Textlink; die
      Tippfläche ist unsichtbar auf mindestens 44 × 44 px vergrößert (::before, ohne Platz zu belegen,
@@ -392,6 +393,18 @@
   /* Noch schmaler (iPhone 13/14 mit 390 px, iPhone SE/mini): Logo weglassen, damit Titel, Symbol und
      Umschalter ohne Umbruch und ohne waagerechtes Scrollen nebeneinander passen. */
   @media (max-width: 400px) { header.top img { display: none; } }
+  /* Dieselben Schmal-Regeln, sobald die Kopfzeile sonst nicht ins Fenster passt (fitHeader() misst die
+     tatsächliche Breite, damit es auch mit breiterer Schrift passt): hdr-compact = wie ≤ 460 px,
+     hdr-nologo = wie ≤ 400 px, hdr-tight = zusätzlich schmalere Innenabstände im Umschalter. */
+  header.top.hdr-compact { gap: 8px; }
+  header.top.hdr-compact .spacer { display: none; }
+  header.top.hdr-compact .hdr-link { margin-left: auto; margin-right: 0; }
+  header.top.hdr-compact .hdr-link::before { left: auto; right: -2px; transform: translateY(-50%); }
+  header.top.hdr-compact .hdr-link[hidden] + .tabs { margin-left: auto; }
+  header.top.hdr-compact .hdr-link .lbl { display: none; }
+  header.top.hdr-compact .hdr-link .ic { display: block; }
+  header.top.hdr-nologo img { display: none; }
+  header.top.hdr-tight .tabs button { padding-left: 8px; padding-right: 8px; }
 
   /* Projektansicht */
   .app.wide { max-width: 1180px; }
@@ -1801,7 +1814,28 @@
     $('app').classList.toggle('wide', name === 'project');
     if (name !== 'project') stopProjectPolling();
     if (name !== 'game' && name !== 'loading' && game) stopGame(true);
+    fitHeader();
     syncStartFrame();
+  }
+
+  // Kopfzeile ohne waagerechtes Scrollen: Die vorhandenen Schmal-Regeln (Symbol statt „WebGPU-Check“,
+  // ohne Untertitel, ohne Logo) greifen auch dann, wenn die Kopfzeile mit der tatsächlichen Schrift sonst
+  // über den Rand ragen würde – Stufe für Stufe, nur so weit wie nötig. Passt alles, bleibt sie unverändert.
+  var HDR_STAGES = ['hdr-compact', 'hdr-nologo', 'hdr-tight'];
+  function headerFits(hd) {
+    var box = $('app').getBoundingClientRect();
+    for (var i = 0; i < hd.children.length; i++) {
+      var r = hd.children[i].getBoundingClientRect();
+      if (r.width > 0 && (r.right > box.right + 0.5 || r.left < box.left - 0.5)) return false;
+    }
+    return true;
+  }
+  function fitHeader() {
+    var hd = document.querySelector('header.top');
+    for (var n = 0; n <= HDR_STAGES.length; n++) {
+      for (var i = 0; i < HDR_STAGES.length; i++) hd.classList.toggle(HDR_STAGES[i], i < n);
+      if (headerFits(hd)) return;
+    }
   }
 
   function showError(err) {
@@ -3289,6 +3323,8 @@
   $('reloadBtn').addEventListener('click', refreshBuilds);
   // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
   $('buildList').addEventListener('change', syncStartFrame);
+  window.addEventListener('resize', fitHeader);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeader, function () { /* egal */ });
   // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).
   if (window.ResizeObserver) {
     var slotObserver = new ResizeObserver(placeSlot);
