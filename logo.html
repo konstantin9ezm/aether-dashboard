@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>Aether – Logo</title>
+<!--
+  Logo-Werkzeug: zeigt art/logo/logo.svg aus dem Repo aether (Zweig main), gelesen über die GitHub-API mit dem
+  Token des Dashboards (nur gelesen, nie gespeichert, nie geloggt), und bietet es als SVG oder PNG zum Sichern an.
+  Die zuletzt geladene Fassung (SVG-Text, Commit, Ladezeitpunkt, ohne Token) liegt auf dem Gerät (localStorage,
+  Schlüssel „aether.logo“) für den Offline-Fall. Das SVG wird nie ins Dokument eingefügt: Es wird bereinigt
+  (script, foreignObject, on*-Attribute, externe href/src entfernt) und nur als Bild (img aus Blob-URL) gezeigt.
+-->
+<style>
+:root{
+  color-scheme: light;
+  --bg:#e9e6f6; --panel:#f6f5fc; --line:#cdc7e8; --text:#1b1838; --muted:#5b5680;
+  --accent:#6a59df; --accent-ink:#ffffff; --sel:#f0951a; --sel-ink:#1c1206;
+  --field:#ffffff; --danger:#b8402b; --chip:#e4e0f6; --warn-bg:#fff3dc; --warn-line:#e7b45c;
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+    --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+    --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040; --warn-bg:#2a2210; --warn-line:#7a5b22;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+  --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+  --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040; --warn-bg:#2a2210; --warn-line:#7a5b22;
+}
+*,*::before,*::after{ box-sizing:inherit; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0; min-height:100%; background:var(--bg); color:var(--text);
+  font-family:"Avenir Next", "Futura", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size:16px; line-height:1.4; overflow-x:hidden;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+}
+.kopf{ display:flex; align-items:center; gap:10px; padding:8px 16px; background:var(--panel); border-bottom:1px solid var(--line); min-width:0; }
+.kopf .titel{ font-size:15px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.zurueck{
+  display:flex; flex:none; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:8px 14px;
+  border-radius:10px; background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:16px; text-decoration:none;
+}
+/* Zwei Karten: ab 900 px Breite quer nebeneinander (iPad quer), sonst untereinander */
+.karten{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; padding:16px; max-width:1400px; margin:0 auto; }
+@media (min-width: 900px) and (orientation: landscape){
+  .karten{ grid-template-columns:minmax(0,3fr) minmax(300px,2fr); align-items:start; }
+}
+.karte{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px 16px; min-width:0; }
+.karte h2{ font-size:16px; font-weight:600; margin:0 0 10px; }
+.karte h2.weiter{ margin-top:18px; padding-top:12px; border-top:1px solid var(--line); }
+.buehne{ border-radius:10px; border:1px solid var(--line); min-height:180px; display:flex; align-items:center; justify-content:center; padding:16px; overflow:hidden; }
+.buehne[data-bg="dunkel"]{ background:#03040a; }
+.buehne[data-bg="hell"]{ background:#f4f2fb; }
+.buehne[data-bg="kariert"]{ background-color:#ffffff; background-image:conic-gradient(#cfcfd6 25%, transparent 0 50%, #cfcfd6 0 75%, transparent 0); background-size:24px 24px; }
+#logoBild{ display:block; max-width:100%; width:100%; height:auto; max-height:60vh; object-fit:contain; }
+#logoBild[hidden]{ display:none; }
+.leer{ color:#9b98c4; font-size:15px; text-align:center; }
+.leer[hidden]{ display:none; }
+.seg{ display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; width:100%; margin:12px 0 8px; }
+.seg button{ flex:1 1 0; min-width:44px; border:none; border-radius:0; background:transparent; min-height:44px; font-size:14px; padding:6px 8px; }
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); font-weight:500; }
+button{
+  font:inherit; font-size:15px; min-height:44px; min-width:44px; padding:6px 14px; border-radius:10px;
+  border:1px solid var(--line); background:var(--chip); color:var(--text); cursor:pointer;
+}
+button.primary{ background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:500; }
+button:disabled{ opacity:.45; cursor:default; }
+button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
+.quelle{ font-size:13px; color:var(--muted); margin:4px 0 0; overflow-wrap:anywhere; }
+.quelle code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--accent); }
+.hinweis{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
+.hinweis[hidden]{ display:none; }
+.hinweis b{ display:block; }
+.hinweis a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; font-weight:600; }
+.ebenen{ display:flex; flex-direction:column; gap:2px; }
+.check{ display:flex; gap:10px; align-items:center; font-size:15px; min-height:44px; cursor:pointer; flex-wrap:wrap; }
+.check input{ width:22px; height:22px; margin:0; accent-color:var(--sel); flex:none; }
+.check.fehlt{ opacity:.5; cursor:default; }
+.check .fehlt-text{ font-size:12px; color:var(--muted); }
+.row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+.row.grow > *{ flex:1 1 0; }
+.sub{ font-size:13px; color:var(--muted); margin:10px 0 0; }
+.note{ font-size:13px; color:var(--muted); margin:6px 0 0; }
+#modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
+#modal[hidden]{ display:none; }
+.dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
+.dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; }
+.dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
+.dlg img{ display:block; width:100%; height:auto; border-radius:6px; border:1px solid var(--line); background:#ffffff; -webkit-touch-callout:default; margin-bottom:12px; }
+#toast{
+  position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%);
+  background:var(--text); color:var(--panel); padding:8px 14px; border-radius:999px; font-size:14px; max-width:calc(100% - 32px);
+  opacity:0; transition:opacity .2s; pointer-events:none; z-index:30;
+}
+#toast.on{ opacity:1; }
+@media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
+</style>
+</head>
+<body>
+<header class="kopf">
+  <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Zum Dashboard</a>
+  <span class="titel">Logo</span>
+</header>
+<main class="karten" id="karten">
+  <section class="karte" id="logoKarte" aria-labelledby="logoTitel">
+    <h2 id="logoTitel">Spiel-Logo</h2>
+    <div class="hinweis" id="hinweis" role="status" hidden></div>
+    <div class="buehne" id="buehne" data-bg="dunkel">
+      <img id="logoBild" alt="Aether-Logo" hidden>
+      <p class="leer" id="leer">Lade Logo …</p>
+    </div>
+    <div class="seg" id="hintergrund" role="group" aria-label="Hintergrund (nur zur Anzeige)">
+      <button type="button" data-bg="dunkel" aria-pressed="true">Dunkel</button>
+      <button type="button" data-bg="hell" aria-pressed="false">Hell</button>
+      <button type="button" data-bg="kariert" aria-pressed="false">Kariert (transparent)</button>
+    </div>
+    <p class="quelle" id="quelle"></p>
+  </section>
+
+  <section class="karte" id="ebenenKarte" aria-labelledby="ebenenTitel">
+    <h2 id="ebenenTitel">Ebenen</h2>
+    <div class="ebenen" id="ebenen"></div>
+    <p class="note">Ausblenden gilt für die Anzeige und das PNG. Das SVG wird immer unverändert mit allen Ebenen gesichert.</p>
+
+    <h2 class="weiter" id="sichernTitel">Als Datei sichern</h2>
+    <div class="row grow"><button type="button" id="btnSvg" class="primary" disabled>SVG sichern</button></div>
+    <p class="sub" id="breiteTitel">PNG-Breite</p>
+    <div class="seg" id="breite" role="group" aria-labelledby="breiteTitel">
+      <button type="button" data-w="1024" aria-pressed="false">1024 px</button>
+      <button type="button" data-w="2048" aria-pressed="true">2048 px</button>
+      <button type="button" data-w="4096" aria-pressed="false">4096 px</button>
+    </div>
+    <div class="row grow"><button type="button" id="btnPng" disabled>PNG sichern</button></div>
+    <p class="note" id="sichernHinweis">Sichern öffnet den Teilen-Dialog („In Dateien sichern“, Affinity …)</p>
+    <p class="note">SVG: Originaldatei mit allen Ebenen. PNG: nur die sichtbaren Ebenen, transparenter Hintergrund, Seitenverhältnis wie im SVG.</p>
+  </section>
+</main>
+
+<div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitel">
+  <h2 id="mTitel"></h2><p id="mText"></p>
+  <div id="mInhalt"></div>
+  <div class="row grow"><button type="button" id="mZu" class="primary">Schließen</button></div>
+</div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- Konfiguration ---------- */
+const REPO_OWNER = 'konstantin9ezm', REPO_NAME = 'aether', REF = 'main';
+const DATEI = 'art/logo/logo.svg';
+const API = 'https://api.github.com';
+const REPO_FULL = REPO_OWNER + '/' + REPO_NAME;
+const REPO_PATH = '/repos/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
+const TOKEN_KEY = 'aether.githubToken'; // gehört dem Dashboard; hier nur gelesen, nie geschrieben
+// Zuletzt geladene Fassung (selbst gewählter Schlüssel): { svg, commit, geladen } – ohne Token.
+const STORE_KEY = 'aether.logo';
+// Ebenen in Anzeige-Reihenfolge (Gruppen-IDs in der Datei)
+const EBENEN = [
+  { id:'ring-hinten', name:'Ring hinten' },
+  { id:'schatten',    name:'Schatten' },
+  { id:'schrift',     name:'Schrift' },
+  { id:'ring-vorne',  name:'Ring vorne' }
+];
+const BREITEN = [1024, 2048, 4096];
+// Zeitlimit je Anfrage wie in der Projektansicht (15 s); die Tests setzen dieselbe Variable wie dort.
+const PROJECT_TIMEOUT_MS = 15 * 1000;
+const projTimeoutMs = (typeof window.AETHER_TEST_PROJECT_TIMEOUT_MS === 'number' && window.AETHER_TEST_PROJECT_TIMEOUT_MS > 0)
+  ? window.AETHER_TEST_PROJECT_TIMEOUT_MS : PROJECT_TIMEOUT_MS;
+
+const $ = id => document.getElementById(id);
+
+/* ---------- Fehler und GitHub-API (inhaltsgleich mit der Projektansicht in index.html) ---------- */
+function AppError(kind, title, text){ this.kind = kind; this.title = title; this.text = text || ''; this.message = title; }
+AppError.prototype = Object.create(Error.prototype);
+function fmtTime(d){ return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }); }
+async function errorFromResponse(res, ctx){
+  const status = res.status;
+  const remaining = res.headers.get('x-ratelimit-remaining'), reset = res.headers.get('x-ratelimit-reset'), retryAfter = res.headers.get('retry-after');
+  let bodyMsg = '';
+  try { const j = await res.clone().json(); bodyMsg = String((j && j.message) || ''); } catch (e) { /* kein JSON */ }
+  if (status === 401) return new AppError('auth', 'GitHub lehnt das Token ab.', 'Das Token ist falsch, abgelaufen oder wurde widerrufen. Erzeuge auf GitHub ein neues Token und gib es im Dashboard ein.');
+  if ((status === 403 || status === 429) && (remaining === '0' || retryAfter || /rate limit/i.test(bodyMsg))){
+    let when = '';
+    if (reset && /^\d+$/.test(reset)){
+      const d = new Date(Number(reset) * 1000), mins = Math.max(1, Math.ceil((d.getTime() - Date.now()) / 60000));
+      when = ' Wieder möglich ab ' + fmtTime(d) + ' Uhr (in ca. ' + mins + ' Min.).';
+    } else if (retryAfter && /^\d+$/.test(retryAfter)) when = ' Bitte ca. ' + Math.max(1, Math.ceil(Number(retryAfter) / 60)) + ' Min. warten.';
+    return new AppError('ratelimit', 'GitHub-Rate-Limit erreicht.', 'Es wurden zu viele Anfragen an die GitHub-API geschickt.' + when);
+  }
+  if (status === 403) return new AppError('forbidden', 'Das Token hat keinen Zugriff.', 'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „' + ((ctx && ctx.perm) || 'Contents: Read-only') + '“. Falls das Repo einer Organisation gehört, muss diese Fine-grained Tokens erlauben.');
+  if (status === 404 && ctx && ctx.notFound) return ctx.notFound;
+  if (status === 404) return new AppError('notfound', 'Nicht gefunden.', 'GitHub meldet 404 für eine benötigte Datei.');
+  if (status >= 500) return new AppError('server', 'GitHub hat gerade Probleme (HTTP ' + status + ').', 'Versuche es in ein paar Minuten noch einmal.');
+  return new AppError('http', 'Unerwartete Antwort von GitHub (HTTP ' + status + ').', bodyMsg);
+}
+async function api(path, opts){
+  opts = opts || {};
+  if (!opts.token) throw new AppError('notoken', 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method:'GET',
+      headers:{ 'Accept':opts.accept || 'application/vnd.github+json', 'Authorization':'Bearer ' + opts.token },
+      cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', signal:opts.signal
+    });
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
+    throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
+  }
+  if (!res.ok) throw await errorFromResponse(res, opts);
+  return res;
+}
+function projTimeoutError(){ return new AppError('timeout', 'GitHub antwortet nicht.', 'Prüfe die Internetverbindung und versuche es erneut.'); }
+function withProjTimeout(p){
+  let timer;
+  return Promise.race([p, new Promise((resolve, reject) => { timer = setTimeout(() => reject(projTimeoutError()), projTimeoutMs); })]).finally(() => clearTimeout(timer));
+}
+function needTokenError(){ return new AppError('notoken', 'Kein Token gespeichert.', 'Für die Projektübersicht braucht das Dashboard ein GitHub-Token mit Lesezugriff auf ' + REPO_FULL + '.'); }
+function shortSha(sha){ return /^[0-9a-f]{7,40}$/i.test(String(sha || '')) ? String(sha).slice(0, 7).toLowerCase() : ''; }
+function contentsPath(p){ return REPO_PATH + '/contents/' + p.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(REF); }
+function fmtGeladen(iso){
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '?';
+  const tag = x => x.toLocaleDateString('de-DE', { timeZone:'Europe/Berlin', day:'2-digit', month:'2-digit', year:'numeric' });
+  const zeit = d.toLocaleTimeString('de-DE', { timeZone:'Europe/Berlin', hour:'2-digit', minute:'2-digit' }) + ' Uhr';
+  return tag(d) === tag(new Date()) ? zeit : tag(d) + ', ' + zeit;
+}
+
+/* ---------- Laden ---------- */
+function liesToken(){ try { return localStorage.getItem(TOKEN_KEY) || null; } catch (e) { return null; } }
+function liesGespeichert(){
+  try {
+    const o = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (o && typeof o.svg === 'string' && o.svg && typeof o.commit === 'string' && typeof o.geladen === 'string') return o;
+  } catch (e) {}
+  return null;
+}
+function speichere(f){
+  // Nur SVG-Text, Commit und Zeitpunkt – nie das Token, nie API-Antworten im Ganzen.
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ svg:f.svg, commit:f.commit, geladen:f.geladen })); return true; } catch (e) { return false; }
+}
+// Bytes → Text ohne Verlust (BOM bleibt erhalten), damit „SVG sichern“ byte-gleich mit der Originaldatei ist.
+function alsText(buf){
+  try { return new TextDecoder('utf-8', { fatal:true, ignoreBOM:true }).decode(buf); }
+  catch (e) { throw new AppError('badsvg', 'Logo-Datei ist kein gültiges SVG.', DATEI + ' ist nicht als UTF-8 lesbar.'); }
+}
+async function ladeOnline(token){
+  const notFound = new AppError('nologo', 'Logo-Datei nicht gefunden.', 'In ' + REPO_FULL + ' (Zweig „' + REF + '“) liegt keine ' + DATEI + '.');
+  const [svgRes, commits] = await withProjTimeout(Promise.all([
+    api(contentsPath(DATEI), { token, accept:'application/vnd.github.raw+json', notFound }),
+    api(REPO_PATH + '/commits?sha=' + encodeURIComponent(REF) + '&path=' + encodeURIComponent(DATEI) + '&per_page=1', { token }).then(r => r.json())
+  ]).then(async ([res, c]) => [alsText(await res.arrayBuffer()), c]));
+  const commit = shortSha(Array.isArray(commits) && commits[0] && commits[0].sha);
+  if (!commit) throw new AppError('nocommit', 'Commit der Logo-Datei unbekannt.', 'GitHub liefert keinen Commit für ' + DATEI + ' im Zweig „' + REF + '“.');
+  return { svg:svgRes, commit, geladen:new Date().toISOString() };
+}
+
+/* ---------- SVG prüfen und bereinigen ---------- */
+// Parsen mit DOMParser; entfernt werden script, foreignObject (und andere Einbettungen), alle on*-Attribute und
+// href/src, die nicht auf etwas in der Datei selbst (#…) oder ein eingebettetes Rasterbild zeigen. Angezeigt wird
+// nur als Bild (img aus Blob-URL) – nie per innerHTML im Dokument.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const WEG = ['script', 'foreignObject', 'iframe', 'embed', 'object', 'audio', 'video', 'handler', 'listener'];
+const SICHER_HREF = /^\s*(#|data:image\/(png|jpe?g|gif|webp);base64,)/i;
+function parse(text){
+  const doc = new DOMParser().parseFromString(text.replace(/^﻿/, ''), 'image/svg+xml');
+  const root = doc.documentElement;
+  if (!root || root.namespaceURI !== SVG_NS || root.localName !== 'svg' || doc.getElementsByTagName('parsererror').length)
+    throw new AppError('badsvg', 'Logo-Datei ist kein gültiges SVG.', DATEI + ' lässt sich nicht als SVG lesen.');
+  return doc;
+}
+function bereinige(doc){
+  for (const name of WEG) for (const e of [...doc.getElementsByTagNameNS('*', name)]) e.remove();
+  for (const e of [doc.documentElement, ...doc.documentElement.querySelectorAll('*')]){
+    for (const a of [...e.attributes]){
+      const n = a.localName.toLowerCase();
+      if (n.startsWith('on')) e.removeAttributeNode(a);
+      else if ((n === 'href' || n === 'src') && !SICHER_HREF.test(a.value)) e.removeAttributeNode(a);
+    }
+  }
+  return doc;
+}
+function gruppe(doc, id){ return [...doc.querySelectorAll('[id]')].find(e => e.getAttribute('id') === id) || null; }
+// Seitenverhältnis aus viewBox, sonst aus width/height
+function masse(doc){
+  const r = doc.documentElement, vb = (r.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  if (vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) return { w:vb[2], h:vb[3] };
+  const w = parseFloat(r.getAttribute('width')), h = parseFloat(r.getAttribute('height'));
+  if (w > 0 && h > 0) return { w, h };
+  return { w:1, h:1 };
+}
+
+/* ---------- Zustand und Anzeige ---------- */
+let fassung = null;      // { svg, commit, geladen }
+let basis = null;        // bereinigtes Dokument (alle Ebenen)
+let seiten = { w:1, h:1 };
+const sichtbar = Object.fromEntries(EBENEN.map(e => [e.id, true]));
+const vorhanden = Object.fromEntries(EBENEN.map(e => [e.id, false]));
+let breite = 2048;
+let anzeigeUrl = null, angezeigt = '';
+let png = { url:null, img:null, bereit:false, schluessel:'' };
+
+// Bereinigtes SVG mit den sichtbaren Ebenen (optional in fester Pixelgröße für das PNG)
+function sichtbaresSvg(px){
+  const d = basis.cloneNode(true);
+  for (const e of EBENEN){
+    const g = gruppe(d, e.id);
+    if (g && !sichtbar[e.id]) g.setAttribute('style', (g.getAttribute('style') || '').replace(/;?\s*$/, '') + ';display:none !important');
+  }
+  if (px){ d.documentElement.setAttribute('width', String(px.w)); d.documentElement.setAttribute('height', String(px.h)); }
+  return new XMLSerializer().serializeToString(d);
+}
+function pngMasse(){ return { w:breite, h:Math.max(1, Math.round(breite * seiten.h / seiten.w)) }; }
+function zeigeBild(){
+  if (!basis) return;
+  angezeigt = sichtbaresSvg(null);
+  const alt = anzeigeUrl;
+  anzeigeUrl = URL.createObjectURL(new Blob([angezeigt], { type:'image/svg+xml' }));
+  const img = $('logoBild');
+  img.onload = () => { if (alt) URL.revokeObjectURL(alt); };
+  img.src = anzeigeUrl; img.hidden = false; $('leer').hidden = true;
+  vorbereitenPng();
+}
+// Das PNG wird beim Antippen synchron gezeichnet (Teilen-Dialog innerhalb der Nutzergeste). Dafür liegt die
+// Bildquelle in der gewählten Größe und mit den sichtbaren Ebenen schon geladen bereit.
+function vorbereitenPng(){
+  const m = pngMasse(), schluessel = m.w + 'x' + m.h + '|' + EBENEN.map(e => sichtbar[e.id] ? 1 : 0).join('');
+  if (png.schluessel === schluessel && png.img) return;
+  if (png.url) URL.revokeObjectURL(png.url);
+  const url = URL.createObjectURL(new Blob([sichtbaresSvg(m)], { type:'image/svg+xml' }));
+  const img = new Image(); img.decoding = 'sync';
+  png = { url, img, bereit:false, schluessel, w:m.w, h:m.h };
+  const p = png;
+  img.onload = () => { if (png === p){ p.bereit = true; knoepfe(); } };
+  img.onerror = () => { if (png === p){ p.bereit = false; knoepfe(); } };
+  img.width = m.w; img.height = m.h; img.src = url;
+  knoepfe();
+}
+function knoepfe(){
+  $('btnSvg').disabled = !fassung;
+  $('btnPng').disabled = !fassung || !png.bereit;
+}
+function ebenenZeigen(){
+  const box = $('ebenen'); box.textContent = '';
+  for (const e of EBENEN){
+    const lab = document.createElement('label'), cb = document.createElement('input'), t = document.createElement('span');
+    lab.className = 'check'; lab.dataset.ebene = e.id;
+    cb.type = 'checkbox'; cb.id = 'ebene-' + e.id;
+    const fehlt = !!basis && !vorhanden[e.id];
+    cb.checked = sichtbar[e.id] && !fehlt;
+    cb.disabled = !basis || fehlt;
+    t.textContent = e.name;
+    lab.append(cb, t);
+    if (fehlt){
+      lab.classList.add('fehlt');
+      const h = document.createElement('span'); h.className = 'fehlt-text'; h.textContent = 'fehlt in der Datei (Gruppe „' + e.id + '“)';
+      lab.appendChild(h);
+    }
+    cb.addEventListener('change', () => { sichtbar[e.id] = cb.checked; zeigeBild(); });
+    box.appendChild(lab);
+  }
+}
+function quelleZeigen(){
+  const q = $('quelle'); q.textContent = '';
+  if (!fassung) return;
+  q.append('Quelle: ' + DATEI + ' · Commit ');
+  const c = document.createElement('code'); c.textContent = fassung.commit; q.appendChild(c);
+  q.append(' · geladen ' + fmtGeladen(fassung.geladen));
+}
+function hinweis(titel, text, mitTokenLink){
+  const h = $('hinweis'); h.textContent = '';
+  if (!titel){ h.hidden = true; delete h.dataset.art; return; }
+  const b = document.createElement('b'); b.textContent = titel; h.appendChild(b);
+  if (text){ const d = document.createElement('div'); d.textContent = text; h.appendChild(d); }
+  if (mitTokenLink){ const a = document.createElement('a'); a.href = './'; a.textContent = 'Token eingeben ›'; h.appendChild(a); }
+  h.hidden = false;
+}
+function uebernehme(f){
+  const doc = bereinige(parse(f.svg));
+  fassung = f; basis = doc; seiten = masse(doc);
+  for (const e of EBENEN) vorhanden[e.id] = !!gruppe(doc, e.id);
+  ebenenZeigen(); quelleZeigen(); zeigeBild(); knoepfe();
+}
+function ohneLogo(text){
+  fassung = null; basis = null; $('logoBild').hidden = true;
+  $('leer').hidden = false; $('leer').textContent = text;
+  ebenenZeigen(); quelleZeigen(); knoepfe();
+}
+// Gespeicherte Fassung zeigen (offline oder nach einem Fehler); false, wenn keine (brauchbare) da ist.
+function zeigeGespeichert(){
+  const g = liesGespeichert();
+  if (!g) return false;
+  try { uebernehme(g); return true; } catch (e) { return false; }
+}
+let stand = 'laden';
+async function start(){
+  const token = liesToken();
+  ebenenZeigen();
+  if (!token){
+    stand = 'notoken';
+    const e = needTokenError();
+    hinweis(e.title, e.text, true);
+    if (!zeigeGespeichert()) ohneLogo('Noch kein Logo geladen – einmal online öffnen.');
+    return;
+  }
+  let fehler = null;
+  if (navigator.onLine === false) fehler = new AppError('network', 'Keine Verbindung zu GitHub.', '');
+  else {
+    try {
+      const f = await ladeOnline(token);
+      uebernehme(f);          // prüft das SVG, bevor es gespeichert wird
+      speichere(f);
+      stand = 'online'; hinweis(null);
+      return;
+    } catch (e) { fehler = e instanceof AppError ? e : new AppError('unknown', 'Unerwarteter Fehler.', String((e && e.message) || e)); }
+  }
+  const offline = fehler.kind === 'network' || fehler.kind === 'timeout';
+  const da = zeigeGespeichert();
+  if (offline){
+    stand = da ? 'offline' : 'offline-leer';
+    if (da) hinweis('Offline – zuletzt geladene Fassung', '');
+    else { hinweis(null); ohneLogo('Noch kein Logo geladen – einmal online öffnen.'); }
+  } else {
+    stand = 'fehler';
+    hinweis(fehler.title, (fehler.text ? fehler.text + ' ' : '') + (da ? 'Angezeigt wird die zuletzt geladene Fassung.' : ''), fehler.kind === 'auth' || fehler.kind === 'forbidden');
+    if (!da) ohneLogo('Kein Logo verfügbar.');
+  }
+}
+
+/* ---------- Sichern (gleicher Weg wie „Als Bild sichern“ im Screen-Editor) ---------- */
+// Teilen-Dialog mit Dateien (navigator.share), sonst Download über einen Link, sonst ein Dialog mit dem Bild
+// („Lange drücken und sichern“). Nur per Antippen/Klick (Nutzergeste); die Datei entsteht synchron.
+function mitGeste(ev){
+  if (!ev || ev.isTrusted !== true) return false;
+  return !(navigator.userActivation && navigator.userActivation.isActive === false);
+}
+let toastT = null;
+function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), t.length > 60 ? 5000 : 2600); }
+function dialogZeigen(datei, url, mitLink){
+  $('mTitel').textContent = datei.name;
+  $('mText').textContent = mitLink ? 'Falls die Datei nicht heruntergeladen wurde, hier sichern.' : 'Lange drücken und sichern.';
+  const box = $('mInhalt'); box.textContent = '';
+  const img = document.createElement('img'); img.src = url; img.alt = datei.name; box.appendChild(img);
+  if (mitLink){ const a = document.createElement('a'); a.href = url; a.download = datei.name; a.textContent = 'Herunterladen'; box.appendChild(a); }
+  $('modal').hidden = false; $('mZu').focus();
+}
+$('mZu').addEventListener('click', () => { $('modal').hidden = true; });
+function dateiSichern(ev, macheDatei){
+  if (!mitGeste(ev)){ meldung('Bitte den Knopf antippen'); return; }
+  let d;
+  try { d = macheDatei(); } catch (e) { meldung('Die Datei ließ sich nicht erzeugen'); return; }
+  const files = [d.datei];
+  let teilen = false;
+  try { teilen = typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }); } catch (e) { teilen = false; }
+  if (teilen){
+    navigator.share({ files, title:'Aether – Logo' })
+      .then(() => meldung('Datei weitergegeben'))
+      .catch(e => { if (e && e.name === 'AbortError') return; dialogZeigen(d.datei, d.url || URL.createObjectURL(d.datei), false); });
+    return;
+  }
+  if ('download' in HTMLAnchorElement.prototype){
+    const url = URL.createObjectURL(d.datei);
+    const a = document.createElement('a'); a.href = url; a.download = d.datei.name; a.hidden = true;
+    document.body.appendChild(a); a.click(); a.remove();
+    meldung('Datei wird heruntergeladen');
+    return;
+  }
+  dialogZeigen(d.datei, d.url || URL.createObjectURL(d.datei), false);
+}
+function svgDatei(){
+  // Originaldatei unverändert (alle Ebenen, nicht bereinigt), byte-gleich mit art/logo/logo.svg
+  const bytes = new TextEncoder().encode(fassung.svg);
+  return { datei:new File([bytes], 'aether-logo-' + fassung.commit + '.svg', { type:'image/svg+xml' }) };
+}
+function pngDatei(){
+  if (!png.bereit) throw new Error('nicht bereit');
+  const cv = document.createElement('canvas');
+  cv.width = png.w; cv.height = png.h;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height); // transparenter Hintergrund
+  ctx.drawImage(png.img, 0, 0, cv.width, cv.height);
+  const url = cv.toDataURL('image/png'), bin = atob(url.slice(url.indexOf(',') + 1)), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  cv.width = cv.height = 0; // Speicher frei (iOS)
+  return { url, datei:new File([u8], 'aether-logo-' + fassung.commit + '-' + png.w + '.png', { type:'image/png' }) };
+}
+$('btnSvg').addEventListener('click', ev => { if (fassung) dateiSichern(ev, svgDatei); });
+$('btnPng').addEventListener('click', ev => {
+  if (!fassung) return;
+  if (!png.bereit){ meldung('Einen Moment – das PNG wird vorbereitet'); return; }
+  dateiSichern(ev, pngDatei);
+});
+
+/* ---------- Bedienung ---------- */
+document.querySelectorAll('#hintergrund button').forEach(b => b.addEventListener('click', () => {
+  $('buehne').dataset.bg = b.dataset.bg;
+  document.querySelectorAll('#hintergrund button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+document.querySelectorAll('#breite button').forEach(b => b.addEventListener('click', () => {
+  breite = Number(b.dataset.w);
+  document.querySelectorAll('#breite button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  if (basis) vorbereitenPng();
+}));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true; });
+
+// Schnittstelle für die automatischen Tests (nur lesen)
+window.AetherLogo = Object.freeze({
+  stand:() => stand,
+  fassung:() => fassung ? { commit:fassung.commit, geladen:fassung.geladen } : null,
+  angezeigtesSvg:() => angezeigt,
+  ebenen:() => EBENEN.map(e => ({ id:e.id, vorhanden:vorhanden[e.id], sichtbar:sichtbar[e.id] })),
+  pngBereit:() => png.bereit,
+  breiten:BREITEN.slice()
+});
+start();
+})();
+</script>
+</body>
+</html>

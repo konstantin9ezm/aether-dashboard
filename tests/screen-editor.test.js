@@ -76,7 +76,7 @@ const inside = (a, b, tol = 0.5) => a.x0 >= b.x0 - tol && a.x1 <= b.x1 + tol && 
 // Tools-Karte
 // ---------------------------------------------------------------------------
 describe('Tools-Karte', () => {
-  test('liegt zwischen Stand-Zeile und Build-Ampel; Ziele der Knöpfe; Logo nicht antippbar', async () => {
+  test('liegt zwischen Stand-Zeile und Build-Ampel; Ziele der Knöpfe; Logo aktiv', async () => {
     const { context, page, log } = await newPage();
     await page.goto(baseUrl + '#projekt');
     await page.waitForSelector('#projectView:not([hidden])');
@@ -97,7 +97,7 @@ describe('Tools-Karte', () => {
 
     const btns = await page.$$eval('#tools > *', (es) => es.map((e) => ({ id: e.id, tag: e.tagName, text: e.textContent.replace(/\s+/g, ' ').trim(),
       href: e.getAttribute('href'), target: e.getAttribute('target'), rel: e.getAttribute('rel'), disabled: e.disabled === true, aria: e.getAttribute('aria-disabled'), cls: e.className })));
-    assert.deepEqual(btns.map((b) => b.text), ['Screen-Editor ›', 'Messflug ›', 'Logo geplant', 'WebGPU-Check ›']);
+    assert.deepEqual(btns.map((b) => b.text), ['Screen-Editor ›', 'Messflug ›', 'Logo ›', 'WebGPU-Check ›']);
     assert.deepEqual(btns.map((b) => b.cls), ['btn', 'btn', 'btn', 'btn'], 'Knopfstil wie „Aktualisieren“');
     assert.equal(await page.getAttribute('#projReload', 'class'), 'btn');
     const [ed, prof, logo, gpu] = btns;
@@ -105,13 +105,16 @@ describe('Tools-Karte', () => {
     assert.deepEqual([prof.tag, prof.href, prof.target], ['A', PROFILE_URL, '_blank'], 'Messflug in neuem Tab');
     assert.deepEqual(prof.rel.split(/\s+/).sort(), ['noopener', 'noreferrer']);
     assert.deepEqual([gpu.tag, gpu.href, gpu.target], ['A', 'webgpu-check.html', null], 'WebGPU-Check im selben Fenster');
-    assert.deepEqual([logo.tag, logo.disabled, logo.aria, logo.href], ['BUTTON', true, 'true', null], 'Logo: ausgegraut, nicht antippbar');
-    assert.ok(Number(await page.$eval('#toolLogo', (e) => getComputedStyle(e).opacity)) < 0.6, 'Logo sichtbar grau');
-    // Antippen des Platzhalters ändert nichts
-    const urlBefore = page.url();
-    await page.click('#toolLogo', { force: true });
-    await page.waitForTimeout(200);
-    assert.equal(page.url(), urlBefore);
+    assert.deepEqual([logo.tag, logo.href, logo.target, logo.disabled, logo.aria], ['A', 'logo.html', null, false, null], 'Logo: aktiv wie Screen-Editor, selbes Fenster');
+    assert.equal(Number(await page.$eval('#toolLogo', (e) => getComputedStyle(e).opacity)), 1, 'Logo nicht ausgegraut');
+    assert.ok(!(await page.$('#toolLogo .tool-note')), 'kein Zusatz „geplant“');
+    // „Logo ›“ öffnet die Logo-Seite im selben Fenster, „Zum Dashboard“ führt zurück
+    await page.click('#toolLogo');
+    await page.waitForURL(/logo\.html$/);
+    await page.waitForFunction(() => !!window.AetherLogo);
+    assert.equal(context.pages().length, 1, 'kein neuer Tab');
+    await page.click('#zumDashboard');
+    await page.waitForSelector('#projectView:not([hidden])');
     // Kopfzeilen-Symbol „WebGPU-Check“ unverändert vorhanden
     assert.equal(await page.getAttribute('#hdrWebgpu', 'href'), 'webgpu-check.html');
 
@@ -191,6 +194,7 @@ describe('Tools-Karte', () => {
       assert.ok(s.op < 0.6 && s.pe === 'none', `${id}: ausgegraut`);
     }
     assert.equal(await page.getAttribute('#toolEditor', 'href'), 'screen-editor.html', 'Screen-Editor bleibt offline aktiv');
+    assert.deepEqual(await page.$eval('#toolLogo', (a) => [a.getAttribute('href'), a.getAttribute('aria-disabled'), a.textContent.trim()]), ['logo.html', null, 'Logo ›'], 'Logo bleibt offline aktiv');
     await page.screenshot({ path: path.join(OUT, 'tools-offline.png') });
 
     // Screen-Editor startet ohne Netz aus dem Service Worker (Seite und three.js)
