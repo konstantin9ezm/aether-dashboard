@@ -2238,6 +2238,12 @@
   var GH_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
   var GH_DASHBOARD_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/aether-dashboard';
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
+  // Zeitlimit je Anfrage der Projektansicht (selbst gewählt: 15 s). Danach gilt GitHub als nicht erreichbar,
+  // statt dass eine Karte dauerhaft „Lade …“ zeigt (z. B. Flugmodus, ohne dass der Browser „offline“ meldet).
+  var PROJECT_TIMEOUT_MS = 15 * 1000;
+  // Nur für die E2E-Tests: kürzeres Zeitlimit, gesetzt bevor dieses Skript läuft.
+  var projTimeoutMs = (typeof window.AETHER_TEST_PROJECT_TIMEOUT_MS === 'number' && window.AETHER_TEST_PROJECT_TIMEOUT_MS > 0)
+    ? window.AETHER_TEST_PROJECT_TIMEOUT_MS : PROJECT_TIMEOUT_MS;
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
   var TIMELINE_SHOW = 15;
@@ -2247,12 +2253,24 @@
 
   function clearProjectCache() { projCache = {}; }
 
+  function projTimeoutError() {
+    return new AppError('timeout', 'GitHub antwortet nicht.', 'Prüfe die Internetverbindung und versuche es erneut.');
+  }
+  // Höchstens projTimeoutMs auf p warten, sonst mit Zeitlimit-Fehler abbrechen.
+  function withProjTimeout(p) {
+    var timer;
+    return Promise.race([p, new Promise(function (resolve, reject) {
+      timer = setTimeout(function () { reject(projTimeoutError()); }, projTimeoutMs);
+    })]).finally(function () { clearTimeout(timer); });
+  }
+
   // Kurzzeit-Cache im Speicher. Laufende Anfragen werden geteilt, Fehler nicht gemerkt.
+  // Jede Anfrage hat ein Zeitlimit; eine hängende Anfrage wird danach nicht mehr geteilt.
   function cached(key, ttl, force, fn) {
     var c = projCache[key];
     if (!force && c && (c.pending || Date.now() - c.t < ttl)) return c.pending || Promise.resolve(c.data);
     var entry = { t: 0, data: null, pending: null };
-    entry.pending = Promise.resolve().then(fn).then(function (data) {
+    entry.pending = withProjTimeout(Promise.resolve().then(fn)).then(function (data) {
       entry.t = Date.now(); entry.data = data; entry.pending = null;
       return data;
     }, function (e) {
@@ -3117,13 +3135,32 @@
   // --- 4. Engine-Karte -----------------------------------------------------------
   var STATUS = { fertig: 'fertig', vorschau: 'Vorschau', geplant: 'geplant' };
 
+  // engine-map.json direkt aus der App-Hülle des Service Workers (sw.js), null wenn sie dort nicht liegt.
+  async function engineMapFromShell() {
+    try {
+      if (!window.caches) return null;
+      var cache = await caches.open(SHELL_CACHE_NAME);
+      var u = new URL('engine-map.json', location.href);
+      var hit = await cache.match(u.origin + u.pathname);
+      return hit && hit.ok ? hit : null;
+    } catch (e) { return null; }
+  }
+
   async function fetchEngineMap(force) {
     return cached('engine', PROJECT_TTL, force, async function () {
-      var res;
-      try {
-        res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
-      } catch (e) {
-        throw new AppError('network', 'engine-map.json nicht erreichbar.', 'Keine Verbindung. Prüfe die Internetverbindung.');
+      var res = isOffline() ? await engineMapFromShell() : null;
+      if (!res) {
+        var ctrl = new AbortController();
+        var timer = setTimeout(function () { ctrl.abort(); }, Math.max(1, projTimeoutMs - 500));
+        try {
+          res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin', signal: ctrl.signal });
+        } catch (e) {
+          // Kein Netz oder keine Antwort: Stand aus der App-Hülle nehmen, falls vorhanden.
+          res = await engineMapFromShell();
+          if (!res) throw new AppError('network', 'engine-map.json nicht erreichbar.', 'Keine Verbindung. Prüfe die Internetverbindung.');
+        } finally {
+          clearTimeout(timer);
+        }
       }
       if (!res.ok) throw new AppError('noenginemap', 'engine-map.json fehlt.', 'Die Datei engine-map.json wurde nicht gefunden (HTTP ' + res.status + ').');
       var data;
@@ -3200,6 +3237,15 @@
   // --- Steuerung -------------------------------------------------------------------
   function stopProjectPolling() { clearTimeout(pollTimer); pollTimer = null; }
 
+  // Ohne Netz statt Fehlerkarte: Zeitlimit abgelaufen, oder keine Verbindung und das Gerät meldet „offline“.
+  function projectNoNet(e) {
+    return e instanceof AppError && (e.kind === 'timeout' || (e.kind === 'network' && navigator.onLine === false));
+  }
+  function projectGoOffline(e) {
+    if (!offlineReason) setOffline(e);
+    if (!$('projectView').hidden) renderProjectOffline();
+  }
+
   function loadPart(box, text, fetcher, render, force) {
     var gen = projGen;
     if (!box.firstChild || force) loadingLine(box, text);
@@ -3208,6 +3254,7 @@
       return render(box, data);
     }, function (e) {
       if (gen !== projGen) return;
+      if (box !== $('engineBody') && projectNoNet(e)) { projectGoOffline(e); return; }
       cardError(box, e, function () { loadPart(box, text, fetcher, render, true); });
     });
   }
@@ -3247,13 +3294,40 @@
     }, force);
   }
 
+  // Offline: der Hinweis, dazu nur die Engine-Karte aus der App-Hülle (wenn sie dort liegt).
+  function showProjectCards(all) {
+    ['ciCard', 'timelineCard', 'roadmapCard'].forEach(function (id) { $(id).hidden = !all; });
+  }
   function renderProjectOffline() {
+    // Start direkt in der Projektansicht ohne Netz: denselben Hinweis oben zeigen wie in der Spielansicht
+    // (und beim Ereignis „online“ wieder neu laden; das geht nur mit Token).
+    if (!offlineReason && navigator.onLine === false && token) {
+      // Für „letzte Version …“ die zuletzt online geladene Build-Liste nehmen (die Spielansicht lädt sie selbst neu).
+      var local = !indexLoaded && !builds.length ? readLastIndex() : null;
+      if (local) builds = local.builds;
+      setOffline(new AppError('network', 'Keine Verbindung.', ''));
+      if (local) refreshSaved().then(updateOfflineHint, function () { /* Hinweis bleibt wie er ist */ });
+    }
     updateTools();
     projGen++;
+    var gen = projGen;
     stopProjectPolling();
     $('projOffline').hidden = false;
-    $('projGrid').hidden = true;
     $('projStamp').textContent = '';
+    showProjectCards(false);
+    var box = $('engineBody');
+    var shown = !!box.querySelector('.chip');
+    $('projGrid').hidden = !shown;
+    if (!shown) box.textContent = '';
+    return fetchEngineMap(false).then(function (layers) {
+      if (gen !== projGen) return;
+      renderEngineMap(box, layers);
+      $('projGrid').hidden = false;
+    }, function () {
+      if (gen !== projGen) return;
+      box.textContent = '';
+      $('projGrid').hidden = true;
+    });
   }
 
   async function loadProject(force) {
@@ -3270,7 +3344,9 @@
     }
     $('projOffline').hidden = true;
     $('projGrid').hidden = false;
+    showProjectCards(true);
     projGen++;
+    var gen = projGen;
     btn.disabled = true;
     try {
       await Promise.all([
@@ -3282,6 +3358,7 @@
     } finally {
       btn.disabled = false;
     }
+    if (gen !== projGen) return; // inzwischen offline (oder neu geladen)
     var parts = ['Stand: ' + fmtBerlinTime(new Date())];
     if (lastRate && token) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
     $('projStamp').textContent = parts.join(' · ');
@@ -3517,6 +3594,7 @@
     if (offlineReason) return;
     setOffline(new AppError('network', 'Keine Verbindung.', ''));
     if (!$('buildsView').hidden) renderBuilds();
+    else if (!$('projectView').hidden) renderProjectOffline();
   });
   window.addEventListener('online', function () {
     updateTools();

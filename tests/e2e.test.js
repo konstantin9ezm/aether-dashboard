@@ -119,9 +119,17 @@ const mock = {
   mode: 'ok', // ok | ratelimit | revoked | offline | noindex | nobranch | hang
   newBuild: false,     // Build D in index.json aufnehmen
   serverOffline: false, // statischer Server kappt Verbindungen (echtes „kein Netz“ für den Service Worker)
+  serverHang: false,    // statischer Server antwortet nie (Netz weg, ohne dass Anfragen scheitern)
+  hanging: [],          // offene Anfragen aus serverHang; werden beim Zurücksetzen beendet
   requests: [],
   blobRequests: 0,
-  reset() { this.mode = 'ok'; this.newBuild = false; this.serverOffline = false; this.requests = []; this.blobRequests = 0; }
+  reset() { this.mode = 'ok'; this.newBuild = false; this.serverOffline = false; this.releaseHang(); this.requests = []; this.blobRequests = 0; },
+  releaseHang() {
+    this.serverHang = false;
+    const open = this.hanging;
+    this.hanging = [];
+    for (const req of open) req.socket.end();
+  }
 };
 
 const blobs = new Map();
@@ -203,6 +211,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
 before(async () => {
   server = http.createServer((req, res) => {
     if (mock.serverOffline) { req.socket.destroy(); return; }
+    if (mock.serverHang) { mock.hanging.push(req); return; }
     const u = new URL(req.url, 'http://x');
     let p = path.normalize(decodeURIComponent(u.pathname)).replace(/^([/\\])+/, '');
     if (!p || p.endsWith('/')) p += 'index.html';
@@ -217,6 +226,7 @@ before(async () => {
   browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 });
 after(async () => {
+  mock.releaseHang();
   await browser?.close();
   await new Promise((r) => server.close(r));
 });
@@ -283,6 +293,24 @@ async function enterToken(page, t) {
 
 const seedToken = (page) => page.addInitScript((t) => localStorage.setItem('aether.githubToken', t), TOKEN);
 const shasOf = (build) => Object.values(build.files).map(gitSha);
+// Die vier Teile der Projektansicht sind fertig (kein „Lade …“ mehr).
+async function waitProjectParts(page) {
+  await page.waitForFunction(() => ['ciBody', 'timelineBody', 'roadmapBody', 'engineBody']
+    .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); }));
+}
+// Offline-Zustand der Projektansicht: derselbe Hinweis wie beim Start ohne Netz, kein „Lade …“,
+// nur die Engine-Karte aus der App-Hülle (20 Bausteine).
+async function assertProjectOfflineView(page) {
+  await page.waitForSelector('#projOffline:not([hidden])');
+  assert.equal((await page.textContent('#projOffline')).trim(), 'Offline – Projektansicht nicht verfügbar.');
+  assert.ok(await page.isVisible('#offlineHint'), 'Offline-Hinweis oben');
+  await page.waitForSelector('#engineCard #engineBody .chip', { timeout: 5000 });
+  assert.equal((await page.$$('#engineBody .chip')).length, 20, 'Engine-Karte aus der App-Hülle');
+  for (const id of ['ciCard', 'timelineCard', 'roadmapCard']) assert.ok(await page.isHidden(`#${id}`), `${id} offline ausgeblendet`);
+  const loading = await page.evaluate(() => [...document.querySelectorAll('#projectView .loadline')].filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim()));
+  assert.deepEqual(loading, [], 'kein sichtbares „Lade …“');
+  assert.equal(await page.evaluate(() => /Lade /.test(document.getElementById('projectView').innerText)), false, 'kein „Lade …“ im sichtbaren Text');
+}
 // Welche Blob-SHAs im Build-Cache liegen und welche Builds der Index als gespeichert führt.
 async function localState(page) {
   return page.evaluate(async () => {
@@ -683,13 +711,15 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 10 · Vorschau 3 · geplant 7).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
-      return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
+      const all = j.schichten.flatMap((s) => s.bausteine);
+      const count = (st) => all.filter((b) => b.status === st).length;
+      return [all.length, count('fertig'), count('vorschau'), count('geplant')].join('/');
     });
-    assert.equal(offlineMap, 20, 'engine-map.json offline aus der App-Hülle');
+    assert.equal(offlineMap, '20/10/3/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 10, Vorschau 3, geplant 7)');
     assert.ok(await page.isHidden('#message'), 'keine Fehlermeldung, nur der Hinweis');
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable, r.disabled, r.checked]), [
@@ -726,11 +756,11 @@ describe('Offline', () => {
     assert.ok(await page.isDisabled('#playOff'));
     assert.ok((await buildRows(page)).every((x) => x.unavailable && x.disabled && !x.checked), 'alles ausgegraut');
 
-    // Projektansicht: ein klarer Hinweis statt Fehlerkarten.
+    // Projektansicht: ein klarer Hinweis statt Fehlerkarten; nur die Engine-Karte (aus der App-Hülle) bleibt.
     await page.click('#tabProject');
     await page.waitForSelector('#projOffline:not([hidden])');
     assert.match(await page.textContent('#projOffline'), /Offline – Projektansicht nicht verfügbar/);
-    assert.ok(await page.isHidden('#projGrid'));
+    await assertProjectOfflineView(page);
     assert.equal((await page.$$('#projectView .msg.error')).length, 0);
     await page.screenshot({ path: path.join(OUT, 'offline-project.png') });
 
@@ -773,13 +803,15 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 10 · Vorschau 3 · geplant 7).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
-      return j.schichten.reduce((n, s) => n + s.bausteine.length, 0);
+      const all = j.schichten.flatMap((s) => s.bausteine);
+      const count = (st) => all.filter((b) => b.status === st).length;
+      return [all.length, count('fertig'), count('vorschau'), count('geplant')].join('/');
     });
-    assert.equal(offlineMap, 20, 'engine-map.json offline aus der App-Hülle');
+    assert.equal(offlineMap, '20/10/3/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 10, Vorschau 3, geplant 7)');
     assert.match(hint, /antwortet nicht/);
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);
@@ -794,6 +826,123 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint', { state: 'hidden' });
     await page.waitForSelector('#buildsView:not([hidden])');
     assert.ok((await buildRows(page)).every((x) => !x.unavailable));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  // Seite online laden (Service Worker aktiv), dann die Projektansicht öffnen und fertig laden lassen.
+  async function onlineProject(page) {
+    await page.goto(baseUrl);
+    await page.waitForSelector('#buildsView:not([hidden])');
+    const swReady = await page.evaluate(() => Promise.race([
+      navigator.serviceWorker.ready.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 10000))
+    ]));
+    assert.ok(swReady, 'Service Worker ist aktiv');
+    await page.click('#tabProject');
+    await waitProjectParts(page);
+    assert.ok(await page.isHidden('#projOffline'));
+  }
+  // Nach dem Wiederverbinden: alle vier Karten sichtbar, fertig geladen, ohne Verbindungsfehler.
+  async function assertProjectOnline(page) {
+    await page.waitForSelector('#projOffline', { state: 'hidden' });
+    await page.waitForSelector('#projStamp:has-text("Stand:")');
+    await waitProjectParts(page);
+    for (const id of ['ciCard', 'timelineCard', 'roadmapCard', 'engineCard']) assert.ok(await page.isVisible(`#${id}`), `${id} wieder sichtbar`);
+    assert.equal((await page.$$('#projectView .msg[data-kind="network"], #projectView .msg[data-kind="timeout"]')).length, 0, 'keine Verbindungsfehler');
+    assert.equal((await page.$$('#engineBody .chip')).length, 20);
+  }
+
+  test('Projektansicht: online → offline bei offener Seite, Aktualisieren, Ansichtswechsel, wieder online', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage('iPad Pro 11 landscape');
+    await seedToken(page);
+    await onlineProject(page);
+
+    // Flugmodus bei offener Projektansicht: Hinweis sofort, ohne Antippen.
+    mock.mode = 'offline';
+    mock.serverOffline = true;
+    await context.setOffline(true);
+    await page.waitForSelector('#projOffline:not([hidden])', { timeout: 5000 });
+    await assertProjectOfflineView(page);
+    // „Aktualisieren“ und Wechsel der Ansicht bleiben beim Hinweis.
+    await page.click('#projReload');
+    await assertProjectOfflineView(page);
+    await page.click('#tabPlay');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await page.click('#tabProject');
+    await page.waitForSelector('#projOffline:not([hidden])', { timeout: 5000 });
+    await assertProjectOfflineView(page);
+    await page.screenshot({ path: path.join(OUT, 'offline-project-open.png') });
+
+    // Netz wieder da, dann „Aktualisieren“: lädt normal.
+    mock.mode = 'ok';
+    mock.serverOffline = false;
+    await context.setOffline(false);
+    await assertProjectOnline(page);
+    await page.click('#projReload');
+    await assertProjectOnline(page);
+    await assertTokenNotStored(page);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Projektansicht: Netz weg, ohne dass das Gerät es meldet (Anfragen hängen) – Hinweis nach Zeitlimit', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage('iPhone 13 landscape');
+    await seedToken(page);
+    await page.addInitScript(() => { window.AETHER_TEST_PROJECT_TIMEOUT_MS = 1500; window.AETHER_TEST_CHECK_TIMEOUT_MS = 1500; });
+    await onlineProject(page);
+
+    // Weder GitHub noch die Seite antworten; navigator.onLine bleibt true, kein offline-Ereignis.
+    mock.mode = 'hang';
+    mock.serverHang = true;
+    const t0 = Date.now();
+    await page.click('#projReload');
+    await page.waitForSelector('#projOffline:not([hidden])', { timeout: 10000 });
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed >= 1000 && elapsed < 10000, `Zeitlimit greift (${elapsed} ms)`);
+    assert.equal(await page.evaluate(() => navigator.onLine), true, 'Gerät meldet weiter Verbindung');
+    await assertProjectOfflineView(page);
+    const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
+    assert.match(hint, /^Offline – letzte Version aaa1111.*antwortet nicht/);
+    // Ansichtswechsel: kein „Lade …“ aus einer hängenden Anfrage.
+    await page.click('#tabPlay');
+    await page.click('#tabProject');
+    await page.waitForTimeout(2500);
+    await assertProjectOfflineView(page);
+
+    // Netz wieder da, „Aktualisieren“ lädt normal.
+    mock.mode = 'ok';
+    mock.releaseHang();
+    await page.click('#projReload');
+    await assertProjectOnline(page);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Projektansicht: Start ganz ohne Netz zeigt Hinweis und Engine-Karte aus der App-Hülle', async () => {
+    mock.reset();
+    const { context, page, log } = await newPage('iPad Pro 11 landscape');
+    await seedToken(page);
+    await onlineProject(page);
+    assert.match(page.url(), /#projekt$/);
+
+    mock.mode = 'offline';
+    mock.serverOffline = true;
+    await context.setOffline(true);
+    await page.reload();
+    await page.waitForSelector('#projectView:not([hidden])');
+    await page.waitForSelector('#projOffline:not([hidden])', { timeout: 5000 });
+    await assertProjectOfflineView(page);
+    await page.waitForFunction(() => /letzte Version aaa1111/.test(document.getElementById('offlineHint').textContent));
+    await page.screenshot({ path: path.join(OUT, 'offline-project-start.png') });
+
+    mock.mode = 'ok';
+    mock.serverOffline = false;
+    await context.setOffline(false);
+    await page.click('#projReload');
+    await assertProjectOnline(page);
     await assertNoLeak(log, page);
     await context.close();
   });

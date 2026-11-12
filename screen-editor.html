@@ -193,16 +193,18 @@ input[type=range]{ width:100%; accent-color:var(--sel); height:28px; margin:2px 
 /* v2 / Regel C: Rahmen aller Formate, außerhalb von 16:9 gedimmt */
 .overlay .rahmen{ position:absolute; border:1.5px dashed; pointer-events:none; }
 .overlay .rahmen.haupt{ border:3px solid; }
-.overlay .rahmen span{ position:absolute; left:4px; font-size:11px; line-height:15px; padding:0 4px; border-radius:3px; background:rgba(8,10,24,.75); white-space:nowrap; max-width:calc(100% - 8px); overflow:hidden; text-overflow:ellipsis; }
-.overlay .rahmen span.unten{ bottom:3px; }
-.overlay .rahmen span.oben{ top:3px; }
 .overlay .schatten{ position:absolute; background:rgba(0,0,0,.58); pointer-events:none; }
 .overlay .el{ position:absolute; border-radius:6px; }
 .overlay .el.umriss{ outline:1.5px dashed rgba(196,187,255,.75); outline-offset:0; }
 .overlay .el.zieh{ pointer-events:auto; cursor:move; touch-action:none; outline:2px dashed #ffa02e; }
-.overlay .el .lbl{ position:absolute; left:0; top:-18px; font-size:11px; color:rgba(222,216,255,.95); background:rgba(8,10,24,.7); padding:0 5px; border-radius:3px; white-space:nowrap; }
-body.vorschau .overlay .lbl{ display:none; }
 body.vorschau .overlay .el{ outline:none !important; }
+/* Legende unter dem Bühnenbild (statt Beschriftungen auf der Bühne): Linienmuster wie die Rahmen, feste Schriftgröße */
+.legende{ position:absolute; left:0; right:0; bottom:0; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px 14px; padding:2px 8px 6px; font-size:12px; line-height:16px; color:#c9c4ee; pointer-events:none; }
+.legende .eintrag{ display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.legende .muster{ flex:none; width:22px; height:0; border-top:1.5px dashed; }
+.legende .eintrag.haupt .muster{ border-top:3px solid; }
+.legende .eintrag.el .muster{ border-top-color:rgba(196,187,255,.75); }
+body.vorschau .legende{ display:none; }
 .overlay svg{ width:100%; height:100%; display:block; overflow:visible; }
 .menue{ display:flex; flex-direction:column; justify-content:space-between; height:100%; }
 .menue div{ display:flex; align-items:center; justify-content:center; border-radius:8px; color:#e6e3ff; background:rgba(22,26,46,.88); border:1px solid rgba(196,187,255,.25); font-family:system-ui, -apple-system, sans-serif; }
@@ -245,6 +247,13 @@ body.vorschau .overlay .el{ outline:none !important; }
           <div class="overlay" id="overlay"></div>
         </div>
         <div class="hint" id="hint" hidden>Antippen setzt einen Asteroiden</div>
+        <div class="legende" id="legende" role="list" aria-label="Legende der Rahmen">
+          <span class="eintrag haupt" role="listitem" data-k="desktop"><span class="muster"></span>16:9 · PC &amp; Switch 2</span>
+          <span class="eintrag" role="listitem" data-k="ipad"><span class="muster"></span>iPad</span>
+          <span class="eintrag" role="listitem" data-k="iphone"><span class="muster"></span>iPhone</span>
+          <span class="eintrag" role="listitem" data-k="ultrawide"><span class="muster"></span>21:9</span>
+          <span class="eintrag el" role="listitem" data-k="logo-menue"><span class="muster"></span>Logo/Menübox</span>
+        </div>
         <div class="vorschau-knoepfe" id="vorschauKnoepfe">
           <button id="btnBildVorschau" type="button">Als Bild sichern</button>
           <button id="fertig" type="button">Vorschau beenden</button>
@@ -290,12 +299,12 @@ body.vorschau .overlay .el{ outline:none !important; }
         <button id="btnScreenWeg" type="button" class="danger">Löschen</button>
       </div>
       <p class="sub">Hauptformat</p>
-      <p class="note" id="hauptformat"><b>16:9 · Switch 2</b> (1920 × 1080, auch TV und PC) ist der sichere Bereich: Dieses Bild ist auf jedem Gerät vollständig sichtbar (Regel C).</p>
+      <p class="note" id="hauptformat"><b>16:9 · PC &amp; Switch 2</b> (1920 × 1080, auch TV) ist der sichere Bereich: Dieses Bild ist auf jedem Gerät vollständig sichtbar (Regel C).</p>
       <p class="sub">Vorschau als</p>
       <div class="row"><div class="seg vier" id="ansicht" role="group" aria-label="Vorschau als Gerät">
         <button type="button" data-g="ultrawide">21:9</button>
         <button type="button" data-g="iphone">iPhone quer</button>
-        <button type="button" data-g="desktop">16:9 · Switch 2</button>
+        <button type="button" data-g="desktop">16:9 · PC &amp; Switch 2</button>
         <button type="button" data-g="ipad">iPad quer</button>
       </div></div>
       <p class="note">Regel C: Breitere Geräte (21:9, iPhone) sehen bei gleicher Höhe seitlich mehr, schmalere (iPad) die volle 16:9-Breite und oben und unten mehr. Gedimmt = nur auf manchen Geräten sichtbar.</p>
@@ -383,7 +392,7 @@ body.vorschau .overlay .el{ outline:none !important; }
       <div class="row grow">
         <button type="button" id="btnBild" class="primary">Als Bild sichern (alle Formate)</button>
       </div>
-      <p class="note">Vier PNG-Bilder ohne Hilfen, wie „Vorschau ohne Hilfen“: 21:9 (2560 × 1080), iPhone quer (874 × 402), 16:9 · Switch 2 (1920 × 1080), iPad quer (1194 × 834). Auf iPad und iPhone öffnet sich der Teilen-Dialog („Bild sichern“ oder „In Dateien sichern“). Ausgeblendete Ebenen fehlen auch im Bild.</p>
+      <p class="note">Vier PNG-Bilder ohne Hilfen, wie „Vorschau ohne Hilfen“: 21:9 (2560 × 1080), iPhone quer (874 × 402), 16:9 · PC &amp; Switch 2 (1920 × 1080), iPad quer (1194 × 834). Auf iPad und iPhone öffnet sich der Teilen-Dialog („Bild sichern“ oder „In Dateien sichern“). Ausgeblendete Ebenen fehlen auch im Bild.</p>
       <div class="row grow">
         <button type="button" id="btnText">Als Text kopieren</button>
       </div>
@@ -411,10 +420,12 @@ body.vorschau .overlay .el{ outline:none !important; }
 const FORMATE = {
   ultrawide: { w:2560, h:1080, name:'21:9',            farbe:'#78C8FF', datei:'21x9' },
   iphone:    { w:874,  h:402,  name:'iPhone quer',     farbe:'#C4BBFF', datei:'iphone-quer' },
-  desktop:   { w:1920, h:1080, name:'16:9 · Switch 2', farbe:'#FFA02E', datei:'16x9-switch2' },
+  desktop:   { w:1920, h:1080, name:'16:9 · Switch 2', anzeige:'16:9 · PC & Switch 2', farbe:'#FFA02E', datei:'16x9-switch2' },
   ipad:      { w:1194, h:834,  name:'iPad quer',       farbe:'#78DC96', datei:'ipad-quer' }
 };
 const HAUPT = 'desktop';       // Hauptformat fest: 16:9 · Switch 2 = sicherer Bereich
+// Name in der Oberfläche; „name“ bleibt unverändert im Export (Version 3).
+const anzeigeName = k => FORMATE[k].anzeige || FORMATE[k].name;
 const ASP = k => FORMATE[k].w / FORMATE[k].h;
 const ASP_16 = 16 / 9;
 const FOV = 65.9;              // senkrechtes Sichtfeld des 16:9-Bilds (Spiel: verticalFovRadians = 1,15)
@@ -592,10 +603,14 @@ const LOGO_SVG = '<svg viewBox="0 0 375 137" preserveAspectRatio="xMidYMid meet"
   + '<circle cx="40" cy="88" r="9" fill="#cfc8f2"/><circle cx="58" cy="94" r="6" fill="#b9b1e2"/><circle cx="26" cy="80" r="5" fill="#a69ed1"/></g></svg>';
 
 /* ---------- Layout ---------- */
-const stage = $('stage'), frameEl = $('frame'), overlay = $('overlay');
+const stage = $('stage'), frameEl = $('frame'), overlay = $('overlay'), legendeEl = $('legende');
+// Farben der Legende aus den Formaten (dieselben Werte wie die Rahmen)
+legendeEl.querySelectorAll('.eintrag[data-k]').forEach(e => { const f = FORMATE[e.dataset.k]; if (f) e.querySelector('.muster').style.borderTopColor = f.farbe; });
+// Höhe der Legende unter dem Bühnenbild (0 in „Vorschau ohne Hilfen“)
+const legendeH = () => vorschau ? 0 : legendeEl.offsetHeight;
 overlay.innerHTML = '<div id="rahmenBox"></div>'
-  + '<div class="el" id="logoEl"><span class="lbl">Logo</span>' + LOGO_SVG + '</div>'
-  + '<div class="el" id="menueEl"><span class="lbl">Menübox</span><div class="menue"><div class="aktiv">Spiel starten</div><div>Einstellungen</div><div>Beenden</div></div></div>';
+  + '<div class="el" id="logoEl">' + LOGO_SVG + '</div>'
+  + '<div class="el" id="menueEl"><div class="menue"><div class="aktiv">Spiel starten</div><div>Einstellungen</div><div>Beenden</div></div></div>';
 const logoEl = $('logoEl'), menueEl = $('menueEl'), rahmenBox = $('rahmenBox');
 let frameH = 1;
 const blick = () => vorschau ? sicht(ansicht) : sichtAlle();   // was der Rahmen der Bühne gerade zeigt
@@ -610,7 +625,6 @@ function positioniere(){
   for (const el of [logoEl, menueEl]){
     el.classList.toggle('umriss', zeigeUmrisse && !layoutEdit);
     el.classList.toggle('zieh', layoutEdit && !vorschau);
-    el.querySelector('.lbl').style.display = (zeigeUmrisse || layoutEdit) ? '' : 'none';
   }
   const kn = menueEl.querySelectorAll('.menue div');
   kn.forEach(d => { d.style.height = (48 * E.s * px) + 'px'; d.style.fontSize = Math.max(8, 18 * E.s * px) + 'px'; d.style.borderRadius = (8 * E.s * px) + 'px'; });
@@ -618,7 +632,7 @@ function positioniere(){
 }
 function layout(){
   const pad = vorschau ? 0 : 12, v = blick(), canvasAsp = v.tanH / v.tanV;
-  const sw = stage.clientWidth, sh = stage.clientHeight;
+  const sw = stage.clientWidth, sh = Math.max(20, stage.clientHeight - legendeH());
   let w = Math.min(sw - 2 * pad, (sh - 2 * pad) * canvasAsp), h = w / canvasAsp;
   w = Math.max(10, Math.floor(w)); h = Math.max(10, Math.floor(h)); frameH = h;
   Object.assign(frameEl.style, { width:w + 'px', height:h + 'px', left:Math.round((sw - w) / 2) + 'px', top:Math.round((sh - h) / 2) + 'px' });
@@ -633,14 +647,11 @@ function layout(){
       + '<div class="schatten" style="left:0;width:' + P(H.x0) + ';top:' + P(H.y0) + ';height:' + P(H.y1 - H.y0) + '"></div>'
       + '<div class="schatten" style="right:0;width:' + P(1 - H.x1) + ';top:' + P(H.y0) + ';height:' + P(H.y1 - H.y0) + '"></div>';
     // Rahmen aller Formate; das Hauptformat zuletzt (oben) und kräftig
-    const LAGE = { ultrawide:'unten', iphone:'oben', ipad:'oben', desktop:'unten' };
     for (const k of ['ultrawide', 'iphone', 'ipad', HAUPT]){
       const haupt = k === HAUPT;
       if (!haupt && !zeigeRahmen) continue;
       const C = inBlick(sichtRechteck(k), v), f = FORMATE[k], aktiv = k === ansicht;
-      const text = haupt ? '16:9 · Switch 2 · Hauptformat = sicherer Bereich' : f.name;
-      r += '<div class="rahmen' + (haupt ? ' haupt' : '') + '" data-k="' + k + '" style="left:' + P(C.x0) + ';top:' + P(C.y0) + ';width:' + P(C.x1 - C.x0) + ';height:' + P(C.y1 - C.y0) + ';border-color:' + f.farbe + (haupt || aktiv ? '' : ';opacity:.8') + '">'
-        + '<span class="' + LAGE[k] + '" style="color:' + f.farbe + (aktiv ? ';font-weight:600' : '') + '">' + text + (aktiv && !haupt ? ' · Vorschau' : '') + '</span></div>';
+      r += '<div class="rahmen' + (haupt ? ' haupt' : '') + '" data-k="' + k + '" style="left:' + P(C.x0) + ';top:' + P(C.y0) + ';width:' + P(C.x1 - C.x0) + ';height:' + P(C.y1 - C.y0) + ';border-color:' + f.farbe + (haupt || aktiv ? '' : ';opacity:.8') + '"></div>';
     }
   }
   rahmenBox.innerHTML = r;
@@ -701,7 +712,7 @@ function verfuegbar(art){
 function anordnen(){
   if (vorschau){ ansEl.classList.remove('b'); return; }
   if (hochkant()){
-    const avail = verfuegbar('p'), minAns = MIN.buehne + LEISTE + (zeigeKarte ? MIN.unten : 0);
+    const avail = verfuegbar('p'), minAns = MIN.buehne + legendeH() + LEISTE + (zeigeKarte ? MIN.unten : 0);
     const h = Math.round(clamp(lay.p * avail, Math.min(minAns, avail - MIN.panel), avail - MIN.panel));
     appEl.style.setProperty('--ans-h', Math.max(LEISTE + 60, h) + 'px');
   } else appEl.style.removeProperty('--ans-h');
@@ -719,7 +730,8 @@ function anordnen(){
     spalteEl.style.height = '';
   } else {
     const avail = verfuegbar('a');
-    spalteEl.style.height = (Math.round(clamp(lay.a * avail, MIN.buehne, Math.max(MIN.buehne, avail - MIN.unten))) + LEISTE) + 'px';
+    const minB = MIN.buehne + legendeH(); // Bühne einschließlich Legende
+    spalteEl.style.height = (Math.round(clamp(lay.a * avail, minB, Math.max(minB, avail - MIN.unten))) + LEISTE) + 'px';
     untenEl.style.width = '';
   }
   const note = $('anordnungNote');
@@ -912,7 +924,7 @@ function zeichneBild(key, W, H, ctx){
 
 let untenWahl = lay.unten === 'vergleich' ? 'vergleich' : 'karte', vglTimer = null;
 const vglEl = $('vergleich');
-vglEl.innerHTML = Object.keys(FORMATE).map(k => '<figure data-k="' + k + '"><canvas></canvas><figcaption>' + FORMATE[k].name + ' · ' + FORMATE[k].w + ' × ' + FORMATE[k].h + '</figcaption></figure>').join('');
+vglEl.innerHTML = Object.keys(FORMATE).map(k => '<figure data-k="' + k + '"><canvas></canvas><figcaption>' + anzeigeName(k) + ' · ' + FORMATE[k].w + ' × ' + FORMATE[k].h + '</figcaption></figure>').join('');
 function vergleichSichtbar(){ return zeigeKarte && !vorschau && untenWahl === 'vergleich'; }
 // Bildgröße so wählen, dass alle vier ohne Scrollen hineinpassen (1, 2 oder 4 je Zeile); sonst scrollt der Bereich.
 function vergleichAnordnen(){
@@ -1240,7 +1252,7 @@ function dialog({ titel, text, area, nurLesen, knoepfe, bilder }){
   for (const b of bilder || []){
     const f = document.createElement('figure'), img = document.createElement('img'), cap = document.createElement('figcaption');
     img.src = b.url; img.alt = b.name; img.width = b.w; img.height = b.h;
-    const t = document.createElement('span'); t.textContent = FORMATE[b.key].name + ' · ' + b.w + ' × ' + b.h; cap.appendChild(t);
+    const t = document.createElement('span'); t.textContent = anzeigeName(b.key) + ' · ' + b.w + ' × ' + b.h; cap.appendChild(t);
     if (b.link){ const a = document.createElement('a'); a.href = b.link; a.download = b.name; a.textContent = 'Herunterladen'; cap.appendChild(a); }
     f.append(img, cap); bb.appendChild(f);
   }
@@ -1358,7 +1370,7 @@ function importiere(text){
   return { screens, version:ver };
 }
 function importHinweis(r){
-  return r.version < 3 ? ' (aus Version ' + r.version + ' übernommen: Hauptformat jetzt 16:9 · Switch 2, Asteroiden und Lage unverändert)' : '';
+  return r.version < 3 ? ' (aus Version ' + r.version + ' übernommen: Hauptformat jetzt 16:9 · PC & Switch 2, Asteroiden und Lage unverändert)' : '';
 }
 async function kopiere(text){
   try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
