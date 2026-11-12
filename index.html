@@ -421,6 +421,14 @@
   .note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
   code.hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
 
+  /* Tools (über der Build-Ampel, auch offline sichtbar) */
+  #toolsCard h2 { margin-bottom: 12px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
+  .tools .btn { min-width: 44px; min-height: 44px; color: var(--text); text-decoration: none; font-size: 15px; }
+  .tools .btn .tool-note { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .tools .btn[aria-disabled="true"] { opacity: .5; cursor: default; pointer-events: none; }
+  .tools .btn:disabled { opacity: .5; }
+
   /* Build-Ampel */
   .ci {
     display: flex; gap: 16px; align-items: center;
@@ -631,6 +639,15 @@
       <span class="muted small" id="projStamp"></span>
       <button class="btn" id="projReload" type="button">Aktualisieren</button>
     </div>
+    <section class="card" id="toolsCard" aria-labelledby="toolsTitle">
+      <h2 id="toolsTitle">Tools</h2>
+      <div class="tools" id="tools">
+        <a class="btn" id="toolEditor" href="screen-editor.html">Screen-Editor ›</a>
+        <a class="btn" id="toolProfile" href="https://github.com/konstantin9ezm/aether/actions/workflows/profile.yml" data-href="https://github.com/konstantin9ezm/aether/actions/workflows/profile.yml" target="_blank" rel="noopener noreferrer">Messflug ›</a>
+        <button class="btn" id="toolLogo" type="button" disabled aria-disabled="true">Logo <span class="tool-note">geplant</span></button>
+        <a class="btn" id="toolWebgpu" href="webgpu-check.html" data-href="webgpu-check.html">WebGPU-Check ›</a>
+      </div>
+    </section>
     <div id="projOffline" class="msg warn" role="status" hidden>Offline – Projektansicht nicht verfügbar.</div>
     <div class="proj-grid" id="projGrid">
       <section class="card" id="ciCard" aria-labelledby="ciTitle">
@@ -1875,8 +1892,28 @@
     offlineReason = reason || null;
     updateOfflineHint();
   }
+  // Tools-Karte: Messflug und WebGPU-Check brauchen das Netz (GitHub bzw. die Seite liegt nicht in der
+  // App-Hülle); offline ausgegraut mit „nur online“. Der Screen-Editor liegt in der Hülle (sw.js).
+  function updateTools() {
+    var off = isOffline();
+    ['toolProfile', 'toolWebgpu'].forEach(function (id) {
+      var a = $(id);
+      if (!a) return;
+      var note = a.querySelector('.tool-note');
+      if (off) {
+        a.removeAttribute('href');
+        a.setAttribute('aria-disabled', 'true');
+        if (!note) { note = el('span', 'tool-note', 'nur online'); a.appendChild(document.createTextNode(' ')); a.appendChild(note); }
+      } else {
+        a.setAttribute('href', a.getAttribute('data-href'));
+        a.removeAttribute('aria-disabled');
+        if (note) { if (note.previousSibling && note.previousSibling.nodeType === 3) note.previousSibling.remove(); note.remove(); }
+      }
+    });
+  }
   function updateOfflineHint() {
     var box = $('offlineHint');
+    updateTools();
     if (!offlineReason) { box.hidden = true; return; }
     var newest = builds.filter(function (b) { return savedBuilds[b.short]; })[0];
     $('offlineText').textContent = newest ? 'Offline – letzte Version ' + newest.short : 'Offline – kein Build gespeichert';
@@ -3211,6 +3248,7 @@
   }
 
   function renderProjectOffline() {
+    updateTools();
     projGen++;
     stopProjectPolling();
     $('projOffline').hidden = false;
@@ -3475,11 +3513,13 @@
 
   // Netz weg: Hinweis zeigen, nicht gespeicherte Builds ausgrauen. Netz wieder da: Prüfung wiederholen.
   window.addEventListener('offline', function () {
+    updateTools();
     if (offlineReason) return;
     setOffline(new AppError('network', 'Keine Verbindung.', ''));
     if (!$('buildsView').hidden) renderBuilds();
   });
   window.addEventListener('online', function () {
+    updateTools();
     if (!offlineReason || !token || loadAbort || game) return;
     if (!$('buildsView').hidden) refreshBuilds();
     else if (!$('projectView').hidden) loadProject(false);
@@ -3494,6 +3534,7 @@
   // Start
   // ---------------------------------------------------------------------------
   token = readStoredToken();
+  updateTools();
   if (location.hash === '#projekt') openProject();
   else if (token) refreshBuilds();
   else openTokenView(false);
