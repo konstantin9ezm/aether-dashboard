@@ -16,7 +16,7 @@
         { "name": "Audio", "detail": "miniaudio", "status": "geplant" },
         { "name": "UI", "detail": "RmlUi", "status": "geplant" },
         { "name": "Debug-UI", "detail": "Dear ImGui", "status": "fertig" },
-        { "name": "Profiler", "detail": "Tracy", "status": "geplant" },
+        { "name": "Profiler", "detail": "Tracy, nur nativ", "status": "fertig" },
         { "name": "Asset-System", "detail": "Katalog, Streaming", "status": "geplant" }
       ]
     },
