@@ -412,9 +412,12 @@ body.vorschau .legende{ display:none; }
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="vendor/three-r128.min.js"></script>
+<script src="gemeinsam.js"></script>
 <script>
 (function(){
 'use strict';
+// meldung, mitGeste und die Teilen-/Download-Hilfen stehen in gemeinsam.js (auch für logo.html).
+const { meldung, mitGeste, kannTeilen, kannHerunterladen, herunterladen } = window.AetherGemeinsam;
 
 /* ---------- Grundwerte ---------- */
 // Formate (Punkte bzw. Pixel des Bild-Exports). Reihenfolge = Anzeige-Reihenfolge.
@@ -1283,8 +1286,6 @@ function dialog({ titel, text, area, nurLesen, knoepfe, bilder }){
   (ta.hidden ? box.lastChild : ta).focus();
 }
 function frage(titel, text, ok, aktion){ dialog({ titel, text, knoepfe:[ { label:'Abbrechen' }, { label:ok, art:'danger', aktion } ] }); }
-let toastT = null;
-function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), t.length > 60 ? 5000 : 2600); }
 
 /* ---------- Als Bild sichern ---------- */
 // PNG je Format in voller Auflösung, ohne Hilfen. Ausgelöst nur durch Antippen/Klick (Nutzergeste): Die Bilder
@@ -1304,10 +1305,6 @@ function pngBild(key){
   const name = dateiname(key);
   return { key, name, url, w:f.w, h:f.h, datei:new File([u8], name, { type:'image/png' }) };
 }
-function mitGeste(ev){
-  if (!ev || ev.isTrusted !== true) return false;
-  return !(navigator.userActivation && navigator.userActivation.isActive === false);
-}
 function bilderZeigen(bilder, mitLinks){
   dialog({ titel:bilder.length === 1 ? 'Bild' : bilder.length + ' Bilder', bilder:bilder.map(b => Object.assign({}, b, { link:mitLinks ? b.link : null })),
     text:mitLinks ? 'Falls nicht alle Dateien heruntergeladen wurden, hier einzeln sichern.' : 'Lange drücken und sichern.',
@@ -1318,19 +1315,16 @@ function bildSichern(ev, keys){
   let bilder;
   try { bilder = keys.map(pngBild); } catch (e) { meldung('Das Bild ließ sich nicht erzeugen'); return; }
   const files = bilder.map(b => b.datei);
-  let teilen = false;
-  try { teilen = typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }); } catch (e) { teilen = false; }
-  if (teilen){
+  if (kannTeilen(files)){
     navigator.share({ files, title:'Aether – ' + (screen().name || 'Screen') })
       .then(() => meldung(files.length === 1 ? 'Bild weitergegeben' : files.length + ' Bilder weitergegeben'))
       .catch(e => { if (e && e.name === 'AbortError') return; bilderZeigen(bilder, false); });
     return;
   }
-  if ('download' in HTMLAnchorElement.prototype){
+  if (kannHerunterladen()){
     for (const b of bilder){
       b.link = URL.createObjectURL(b.datei);
-      const a = document.createElement('a'); a.href = b.link; a.download = b.name; a.hidden = true;
-      document.body.appendChild(a); a.click(); a.remove();
+      herunterladen(b.link, b.name);
     }
     meldung(bilder.length === 1 ? 'Bild wird heruntergeladen' : bilder.length + ' Bilder werden heruntergeladen');
     if (bilder.length > 1) bilderZeigen(bilder, true);

@@ -1,5 +1,5 @@
 // Service Worker des Aether-Dashboards: hält nur die App-Hülle (diese Seite, Manifest, Icons,
-// engine-map.json, Screen-Editor, Logo-Seite) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
+// engine-map.json, Screen-Editor, Logo-Seite, gemeinsam.js) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
 // Anfragen an api.github.com (mit Token im Authorization-Header) werden hier nie angefasst,
 // also auch nie in einem Cache abgelegt.
 'use strict';
@@ -8,10 +8,11 @@ var SHELL_CACHE = 'aether-shell-v1';
 // Ein geändertes sw.js wird neu installiert und legt dabei alle Einträge (auch neue) in denselben
 // Hüllen-Cache; der Name muss dafür nicht hochgezählt werden.
 // Der Screen-Editor (screen-editor.html mit three.js aus vendor/) gehört dazu, damit er offline startet, ebenso
-// die Logo-Seite (logo.html; ihre API-Antworten und das Token kommen nie hierher, siehe unten).
+// die Logo-Seite (logo.html; ihre API-Antworten und das Token kommen nie hierher, siehe unten) und gemeinsam.js
+// (Hilfsfunktionen dieser drei Seiten; ohne sie starten sie offline nicht).
 var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
-  'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html'];
+  'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js'];
 
 function shellKey(url) {
   // Ohne Query und Hash, damit "…/?x#projekt" denselben Eintrag trifft wie "…/".

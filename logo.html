@@ -153,6 +153,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 </div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="gemeinsam.js"></script>
 <script>
 (function(){
 'use strict';
@@ -174,62 +175,16 @@ const EBENEN = [
   { id:'ring-vorne',  name:'Ring vorne' }
 ];
 const BREITEN = [1024, 2048, 4096];
-// Zeitlimit je Anfrage wie in der Projektansicht (15 s); die Tests setzen dieselbe Variable wie dort.
-const PROJECT_TIMEOUT_MS = 15 * 1000;
-const projTimeoutMs = (typeof window.AETHER_TEST_PROJECT_TIMEOUT_MS === 'number' && window.AETHER_TEST_PROJECT_TIMEOUT_MS > 0)
-  ? window.AETHER_TEST_PROJECT_TIMEOUT_MS : PROJECT_TIMEOUT_MS;
-
 const $ = id => document.getElementById(id);
 
-/* ---------- Fehler und GitHub-API (inhaltsgleich mit der Projektansicht in index.html) ---------- */
-function AppError(kind, title, text){ this.kind = kind; this.title = title; this.text = text || ''; this.message = title; }
-AppError.prototype = Object.create(Error.prototype);
-function fmtTime(d){ return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }); }
-async function errorFromResponse(res, ctx){
-  const status = res.status;
-  const remaining = res.headers.get('x-ratelimit-remaining'), reset = res.headers.get('x-ratelimit-reset'), retryAfter = res.headers.get('retry-after');
-  let bodyMsg = '';
-  try { const j = await res.clone().json(); bodyMsg = String((j && j.message) || ''); } catch (e) { /* kein JSON */ }
-  if (status === 401) return new AppError('auth', 'GitHub lehnt das Token ab.', 'Das Token ist falsch, abgelaufen oder wurde widerrufen. Erzeuge auf GitHub ein neues Token und gib es im Dashboard ein.');
-  if ((status === 403 || status === 429) && (remaining === '0' || retryAfter || /rate limit/i.test(bodyMsg))){
-    let when = '';
-    if (reset && /^\d+$/.test(reset)){
-      const d = new Date(Number(reset) * 1000), mins = Math.max(1, Math.ceil((d.getTime() - Date.now()) / 60000));
-      when = ' Wieder möglich ab ' + fmtTime(d) + ' Uhr (in ca. ' + mins + ' Min.).';
-    } else if (retryAfter && /^\d+$/.test(retryAfter)) when = ' Bitte ca. ' + Math.max(1, Math.ceil(Number(retryAfter) / 60)) + ' Min. warten.';
-    return new AppError('ratelimit', 'GitHub-Rate-Limit erreicht.', 'Es wurden zu viele Anfragen an die GitHub-API geschickt.' + when);
-  }
-  if (status === 403) return new AppError('forbidden', 'Das Token hat keinen Zugriff.', 'Das Token braucht für ' + REPO_FULL + ' die Berechtigung „' + ((ctx && ctx.perm) || 'Contents: Read-only') + '“. Falls das Repo einer Organisation gehört, muss diese Fine-grained Tokens erlauben.');
-  if (status === 404 && ctx && ctx.notFound) return ctx.notFound;
-  if (status === 404) return new AppError('notfound', 'Nicht gefunden.', 'GitHub meldet 404 für eine benötigte Datei.');
-  if (status >= 500) return new AppError('server', 'GitHub hat gerade Probleme (HTTP ' + status + ').', 'Versuche es in ein paar Minuten noch einmal.');
-  return new AppError('http', 'Unerwartete Antwort von GitHub (HTTP ' + status + ').', bodyMsg);
-}
-async function api(path, opts){
-  opts = opts || {};
-  if (!opts.token) throw new AppError('notoken', 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
-  let res;
-  try {
-    res = await fetch(API + path, {
-      method:'GET',
-      headers:{ 'Accept':opts.accept || 'application/vnd.github+json', 'Authorization':'Bearer ' + opts.token },
-      cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', signal:opts.signal
-    });
-  } catch (e) {
-    if (e && e.name === 'AbortError') throw e;
-    throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
-  }
-  if (!res.ok) throw await errorFromResponse(res, opts);
-  return res;
-}
-function projTimeoutError(){ return new AppError('timeout', 'GitHub antwortet nicht.', 'Prüfe die Internetverbindung und versuche es erneut.'); }
-function withProjTimeout(p){
-  let timer;
-  return Promise.race([p, new Promise((resolve, reject) => { timer = setTimeout(() => reject(projTimeoutError()), projTimeoutMs); })]).finally(() => clearTimeout(timer));
-}
-function needTokenError(){ return new AppError('notoken', 'Kein Token gespeichert.', 'Für die Projektübersicht braucht das Dashboard ein GitHub-Token mit Lesezugriff auf ' + REPO_FULL + '.'); }
-function shortSha(sha){ return /^[0-9a-f]{7,40}$/i.test(String(sha || '')) ? String(sha).slice(0, 7).toLowerCase() : ''; }
-function contentsPath(p){ return REPO_PATH + '/contents/' + p.split('/').map(encodeURIComponent).join('/') + '?ref=' + encodeURIComponent(REF); }
+/* ---------- Fehler und GitHub-API (gemeinsam.js, wie in der Projektansicht in index.html) ---------- */
+// Zeitlimit je Anfrage 15 s wie in der Projektansicht; die Tests setzen dieselbe Variable wie dort.
+const G = window.AetherGemeinsam;
+const { AppError, withProjTimeout, needTokenError, shortSha } = G;
+const { api, contentsPath } = G.githubApi({
+  apiBase:API, repoFull:REPO_FULL, repoPath:REPO_PATH, ref:REF,
+  tokenOrt:'im Dashboard', ohneTokenArt:'notoken'
+});
 function fmtGeladen(iso){
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '?';
@@ -410,7 +365,7 @@ async function start(){
   ebenenZeigen();
   if (!token){
     stand = 'notoken';
-    const e = needTokenError();
+    const e = needTokenError(REPO_FULL);
     hinweis(e.title, e.text, true);
     if (!zeigeGespeichert()) ohneLogo('Noch kein Logo geladen – einmal online öffnen.');
     return;
@@ -442,12 +397,7 @@ async function start(){
 /* ---------- Sichern (gleicher Weg wie „Als Bild sichern“ im Screen-Editor) ---------- */
 // Teilen-Dialog mit Dateien (navigator.share), sonst Download über einen Link, sonst ein Dialog mit dem Bild
 // („Lange drücken und sichern“). Nur per Antippen/Klick (Nutzergeste); die Datei entsteht synchron.
-function mitGeste(ev){
-  if (!ev || ev.isTrusted !== true) return false;
-  return !(navigator.userActivation && navigator.userActivation.isActive === false);
-}
-let toastT = null;
-function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), t.length > 60 ? 5000 : 2600); }
+const { mitGeste, meldung, kannTeilen, kannHerunterladen, herunterladen } = G;
 function dialogZeigen(datei, url, mitLink){
   $('mTitel').textContent = datei.name;
   $('mText').textContent = mitLink ? 'Falls die Datei nicht heruntergeladen wurde, hier sichern.' : 'Lange drücken und sichern.';
@@ -462,18 +412,14 @@ function dateiSichern(ev, macheDatei){
   let d;
   try { d = macheDatei(); } catch (e) { meldung('Die Datei ließ sich nicht erzeugen'); return; }
   const files = [d.datei];
-  let teilen = false;
-  try { teilen = typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }); } catch (e) { teilen = false; }
-  if (teilen){
+  if (kannTeilen(files)){
     navigator.share({ files, title:'Aether – Logo' })
       .then(() => meldung('Datei weitergegeben'))
       .catch(e => { if (e && e.name === 'AbortError') return; dialogZeigen(d.datei, d.url || URL.createObjectURL(d.datei), false); });
     return;
   }
-  if ('download' in HTMLAnchorElement.prototype){
-    const url = URL.createObjectURL(d.datei);
-    const a = document.createElement('a'); a.href = url; a.download = d.datei.name; a.hidden = true;
-    document.body.appendChild(a); a.click(); a.remove();
+  if (kannHerunterladen()){
+    herunterladen(URL.createObjectURL(d.datei), d.datei.name);
     meldung('Datei wird heruntergeladen');
     return;
   }
