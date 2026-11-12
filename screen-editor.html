@@ -118,11 +118,9 @@ body.vorschau #rahmenBox, body.vorschau .hint{ display:none !important; }
   background:rgba(140,124,240,.9); color:#0b0920; font-size:14px; font-weight:500;
   padding:4px 12px; border-radius:999px; pointer-events:none; white-space:nowrap;
 }
-#fertig{
-  position:absolute; top:10px; right:10px; display:none;
-  background:rgba(15,19,37,.85); color:#ebe9ff; border:1px solid rgba(196,187,255,.5);
-}
-body.vorschau #fertig{ display:block; }
+.vorschau-knoepfe{ position:absolute; top:10px; right:10px; display:none; gap:8px; flex-wrap:wrap; justify-content:flex-end; max-width:calc(100% - 20px); }
+body.vorschau .vorschau-knoepfe{ display:flex; }
+.vorschau-knoepfe button{ min-height:44px; background:rgba(15,19,37,.85); color:#ebe9ff; border:1px solid rgba(196,187,255,.5); }
 
 /* Seitenleiste */
 .panel{
@@ -178,6 +176,12 @@ input[type=range]{ width:100%; accent-color:var(--sel); height:28px; margin:2px 
 .dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; }
 .dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
 .dlg textarea{ min-height:160px; font-family:ui-monospace, Menlo, monospace; font-size:13px; margin-bottom:10px; }
+.bilder{ display:flex; flex-direction:column; gap:12px; margin:0 0 12px; }
+.bilder[hidden]{ display:none; }
+.bilder figure{ margin:0; }
+.bilder img{ display:block; width:100%; height:auto; border-radius:6px; border:1px solid var(--line); -webkit-touch-callout:default; }
+.bilder figcaption{ font-size:13px; color:var(--muted); margin-top:4px; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.bilder a{ color:var(--accent); min-height:44px; display:inline-flex; align-items:center; }
 #toast{
   position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%);
   background:var(--text); color:var(--panel); padding:8px 14px; border-radius:999px; font-size:14px;
@@ -241,7 +245,10 @@ body.vorschau .overlay .el{ outline:none !important; }
           <div class="overlay" id="overlay"></div>
         </div>
         <div class="hint" id="hint" hidden>Antippen setzt einen Asteroiden</div>
-        <button id="fertig" type="button">Vorschau beenden</button>
+        <div class="vorschau-knoepfe" id="vorschauKnoepfe">
+          <button id="btnBildVorschau" type="button">Als Bild sichern</button>
+          <button id="fertig" type="button">Vorschau beenden</button>
+        </div>
       </div>
       <div class="leiste" id="leiste">
         <span class="griff-feld" id="griffA" role="separator" aria-orientation="horizontal" aria-label="Trennleiste: ziehen ändert die Höhe der Bühne, Doppeltipp stellt den Standard her" tabindex="0"><span class="griff"></span></span>
@@ -372,6 +379,10 @@ body.vorschau .overlay .el{ outline:none !important; }
       <h2>Sichern und weitergeben</h2>
       <p class="status" id="speicher">Wird auf diesem Gerät gespeichert.</p>
       <div class="row grow">
+        <button type="button" id="btnBild" class="primary">Als Bild sichern (alle Formate)</button>
+      </div>
+      <p class="note">Vier PNG-Bilder ohne Hilfen, wie „Vorschau ohne Hilfen“: 21:9 (2560 × 1080), iPhone quer (874 × 402), 16:9 · Switch 2 (1920 × 1080), iPad quer (1194 × 834). Auf iPad und iPhone öffnet sich der Teilen-Dialog („Bild sichern“ oder „In Dateien sichern“). Ausgeblendete Ebenen fehlen auch im Bild.</p>
+      <div class="row grow">
         <button type="button" id="btnText">Als Text kopieren</button>
       </div>
       <div class="row grow"><button type="button" id="btnImport">Text einfügen</button></div>
@@ -382,6 +393,7 @@ body.vorschau .overlay .el{ outline:none !important; }
 
 <div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <h2 id="mTitle"></h2><p id="mText"></p>
+  <div class="bilder" id="mBilder" hidden></div>
   <textarea id="mArea" hidden spellcheck="false"></textarea>
   <div class="row grow" id="mBtns"></div>
 </div></div>
@@ -1207,8 +1219,16 @@ document.addEventListener('keydown', e => {
 });
 
 /* ---------- Dialoge ---------- */
-function dialog({ titel, text, area, nurLesen, knoepfe }){
+function dialog({ titel, text, area, nurLesen, knoepfe, bilder }){
   $('mTitle').textContent = titel; $('mText').textContent = text || ''; $('mText').hidden = !text;
+  const bb = $('mBilder'); bb.innerHTML = ''; bb.hidden = !bilder;
+  for (const b of bilder || []){
+    const f = document.createElement('figure'), img = document.createElement('img'), cap = document.createElement('figcaption');
+    img.src = b.url; img.alt = b.name; img.width = b.w; img.height = b.h;
+    const t = document.createElement('span'); t.textContent = FORMATE[b.key].name + ' · ' + b.w + ' × ' + b.h; cap.appendChild(t);
+    if (b.link){ const a = document.createElement('a'); a.href = b.link; a.download = b.name; a.textContent = 'Herunterladen'; cap.appendChild(a); }
+    f.append(img, cap); bb.appendChild(f);
+  }
   const ta = $('mArea'); ta.hidden = area === undefined; ta.value = area || ''; ta.readOnly = !!nurLesen;
   const box = $('mBtns'); box.innerHTML = '';
   for (const k of knoepfe){
@@ -1223,6 +1243,61 @@ function dialog({ titel, text, area, nurLesen, knoepfe }){
 function frage(titel, text, ok, aktion){ dialog({ titel, text, knoepfe:[ { label:'Abbrechen' }, { label:ok, art:'danger', aktion } ] }); }
 let toastT = null;
 function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), t.length > 60 ? 5000 : 2600); }
+
+/* ---------- Als Bild sichern ---------- */
+// PNG je Format in voller Auflösung, ohne Hilfen. Ausgelöst nur durch Antippen/Klick (Nutzergeste): Die Bilder
+// entstehen synchron (toDataURL), damit navigator.share noch innerhalb der Geste aufgerufen wird.
+const REIHE = Object.keys(FORMATE);
+function dateiname(key){
+  const n = String(screen().name || 'Screen').normalize('NFC').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'Screen';
+  return 'aether-screen-' + n + '-' + FORMATE[key].datei + '.png';
+}
+function pngBild(key){
+  const f = FORMATE[key], cv = document.createElement('canvas');
+  cv.width = f.w; cv.height = f.h;
+  zeichneBild(key, f.w, f.h, cv.getContext('2d'));
+  const url = cv.toDataURL('image/png'), bin = atob(url.slice(url.indexOf(',') + 1)), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  cv.width = cv.height = 0; // Speicher frei (iOS)
+  const name = dateiname(key);
+  return { key, name, url, w:f.w, h:f.h, datei:new File([u8], name, { type:'image/png' }) };
+}
+function mitGeste(ev){
+  if (!ev || ev.isTrusted !== true) return false;
+  return !(navigator.userActivation && navigator.userActivation.isActive === false);
+}
+function bilderZeigen(bilder, mitLinks){
+  dialog({ titel:bilder.length === 1 ? 'Bild' : bilder.length + ' Bilder', bilder:bilder.map(b => Object.assign({}, b, { link:mitLinks ? b.link : null })),
+    text:mitLinks ? 'Falls nicht alle Dateien heruntergeladen wurden, hier einzeln sichern.' : 'Lange drücken und sichern.',
+    knoepfe:[ { label:'Schließen', art:'primary' } ] });
+}
+function bildSichern(ev, keys){
+  if (!mitGeste(ev)){ meldung('Bitte den Knopf antippen'); return; }
+  let bilder;
+  try { bilder = keys.map(pngBild); } catch (e) { meldung('Das Bild ließ sich nicht erzeugen'); return; }
+  const files = bilder.map(b => b.datei);
+  let teilen = false;
+  try { teilen = typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files }); } catch (e) { teilen = false; }
+  if (teilen){
+    navigator.share({ files, title:'Aether – ' + (screen().name || 'Screen') })
+      .then(() => meldung(files.length === 1 ? 'Bild weitergegeben' : files.length + ' Bilder weitergegeben'))
+      .catch(e => { if (e && e.name === 'AbortError') return; bilderZeigen(bilder, false); });
+    return;
+  }
+  if ('download' in HTMLAnchorElement.prototype){
+    for (const b of bilder){
+      b.link = URL.createObjectURL(b.datei);
+      const a = document.createElement('a'); a.href = b.link; a.download = b.name; a.hidden = true;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    meldung(bilder.length === 1 ? 'Bild wird heruntergeladen' : bilder.length + ' Bilder werden heruntergeladen');
+    if (bilder.length > 1) bilderZeigen(bilder, true);
+    return;
+  }
+  bilderZeigen(bilder, false);
+}
+$('btnBild').addEventListener('click', ev => bildSichern(ev, REIHE));
+$('btnBildVorschau').addEventListener('click', ev => bildSichern(ev, [ansicht]));
 
 /* ---------- Export und Import ---------- */
 function exportText(){
