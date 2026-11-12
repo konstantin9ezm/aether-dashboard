@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>Aether – Screen-Editor</title>
+<!--
+  Screen-Editor für die Menü-Screens von Aether (Grundlage: claude.ai-Artefakt „Aether – Screens fürs Menü“, Version 2).
+  Läuft ohne Netz: three.js r128 liegt im Repo (vendor/three-r128.min.js, MIT, siehe vendor/three-r128.LICENSE.txt),
+  keine externen Schriften. Das Logo nutzt die reduzierte Schrift „Jost Medium“ aus dem Spiel
+  (game/assets/fonts/Jost-Medium-Aether.ttf im Repo aether, nur die Zeichen von „Aether“, SIL OFL 1.1,
+  siehe vendor/Jost-OFL.txt), hier eingebettet. Gespeichert wird nur auf dem Gerät (localStorage).
+-->
+<style>
+@font-face{
+  font-family:"Jost Aether"; font-weight:500; font-style:normal; font-display:block;
+  src:url(data:font/ttf;base64,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) format("truetype");
+}
+:root{
+  color-scheme: light;
+  --bg:#e9e6f6; --panel:#f6f5fc; --line:#cdc7e8; --text:#1b1838; --muted:#5b5680;
+  --accent:#6a59df; --accent-ink:#ffffff; --sel:#f0951a; --sel-ink:#1c1206;
+  --field:#ffffff; --danger:#b8402b; --chip:#e4e0f6;
+  --stage:#03040a;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+    --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+    --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+  --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+  --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040;
+}
+html{ scroll-padding-top:env(safe-area-inset-top,0px); height:100%; }
+*,*::before,*::after{ box-sizing:inherit; }
+body{
+  margin:0; height:100%; background:var(--bg); color:var(--text);
+  font-family:"Avenir Next", "Futura", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size:16px; line-height:1.4; -webkit-text-size-adjust:100%;
+}
+.app{
+  height:100%; display:grid; grid-template-columns:minmax(0,1fr) minmax(290px,340px);
+  padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px);
+}
+@media (orientation: portrait), (max-width: 700px){
+  .app{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(220px,50%) minmax(0,1fr); }
+}
+body.vorschau .app{ grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
+body.vorschau .panel{ display:none; }
+
+/* Bühne */
+.stage{ position:relative; background:var(--stage); overflow:hidden; min-height:0; }
+#frame{ position:absolute; outline:1px solid rgba(196,187,255,.28); }
+body.vorschau #frame{ outline:none; }
+#view{ display:block; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+.overlay{ position:absolute; inset:0; pointer-events:none; }
+.overlay .box{
+  position:absolute; border:1.5px dashed rgba(196,187,255,.75); border-radius:6px;
+  color:rgba(222,216,255,.9); font-size:12px; padding:2px 6px;
+}
+.overlay .box span{ background:rgba(8,10,24,.6); padding:0 4px; border-radius:3px; }
+body.vorschau .overlay, body.vorschau #mini, body.vorschau .hint{ display:none !important; }
+#mini{ position:absolute; left:8px; bottom:8px; width:128px; height:128px; border-radius:8px; border:1px solid rgba(196,187,255,.3); pointer-events:none; }
+.hint{
+  position:absolute; top:8px; left:50%; transform:translateX(-50%);
+  background:rgba(140,124,240,.9); color:#0b0920; font-size:14px; font-weight:500;
+  padding:4px 12px; border-radius:999px; pointer-events:none; white-space:nowrap;
+}
+#fertig{
+  position:absolute; top:10px; right:10px; display:none;
+  background:rgba(15,19,37,.85); color:#ebe9ff; border:1px solid rgba(196,187,255,.5);
+}
+body.vorschau #fertig{ display:block; }
+
+/* Seitenleiste */
+.panel{
+  background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; min-height:0;
+  padding:14px 16px 28px; -webkit-overflow-scrolling:touch;
+}
+@media (orientation: portrait), (max-width: 700px){ .panel{ border-left:none; border-top:1px solid var(--line); } }
+.panel h1{ font-size:22px; font-weight:500; margin:0 0 2px; letter-spacing:.01em; }
+.panel h1 b{ font-weight:600; background:linear-gradient(60deg,#8c7cf0,#c4bbff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.lead{ color:var(--muted); font-size:14px; margin:0 0 14px; }
+section{ border-top:1px solid var(--line); padding:12px 0 4px; }
+section h2{ font-size:16px; font-weight:600; margin:0 0 8px; }
+.row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+.row.grow > *{ flex:1 1 0; }
+button{
+  font:inherit; font-size:15px; min-height:40px; padding:6px 12px; border-radius:10px;
+  border:1px solid var(--line); background:var(--chip); color:var(--text); cursor:pointer;
+}
+button.primary{ background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:500; }
+button.danger{ color:var(--danger); }
+button:disabled{ opacity:.45; cursor:default; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
+.zurueck{
+  display:flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 14px; margin:0 0 12px;
+  border-radius:10px; background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:16px; text-decoration:none;
+}
+.seg{ display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; width:100%; }
+.seg button{ flex:1; border:none; border-radius:0; background:transparent; min-height:38px; font-size:14px; }
+.seg button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); font-weight:500; }
+select, input[type=text], textarea{
+  font:inherit; font-size:16px; color:var(--text); background:var(--field);
+  border:1px solid var(--line); border-radius:10px; padding:7px 10px; min-height:40px; width:100%;
+}
+label.field{ display:block; margin-bottom:10px; }
+label.field .top{ display:flex; justify-content:space-between; font-size:14px; color:var(--muted); }
+label.field .top output{ color:var(--text); font-variant-numeric:tabular-nums; }
+input[type=range]{ width:100%; accent-color:var(--sel); height:28px; margin:2px 0 0; }
+.check{ display:flex; gap:8px; align-items:center; font-size:15px; margin-bottom:8px; }
+.check input{ width:20px; height:20px; accent-color:var(--sel); }
+.swatches{ display:flex; gap:8px; }
+.swatches button{ width:44px; min-height:36px; padding:0; border-radius:8px; border:2px solid transparent; }
+.swatches button[aria-pressed="true"]{ border-color:var(--sel); }
+.note{ font-size:13px; color:var(--muted); margin:4px 0 8px; }
+.status{ font-size:13px; color:var(--muted); }
+.stepper{ display:flex; align-items:center; gap:6px; }
+.stepper output{ min-width:30px; text-align:center; font-variant-numeric:tabular-nums; }
+.stepper button{ width:40px; padding:0; }
+
+/* Dialog */
+#modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
+#modal[hidden]{ display:none; }
+.dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
+.dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; }
+.dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
+.dlg textarea{ min-height:160px; font-family:ui-monospace, Menlo, monospace; font-size:13px; margin-bottom:10px; }
+#toast{
+  position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%);
+  background:var(--text); color:var(--panel); padding:8px 14px; border-radius:999px; font-size:14px;
+  opacity:0; transition:opacity .2s; pointer-events:none; z-index:30;
+}
+#toast.on{ opacity:1; }
+@media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
+
+/* v2 */
+.overlay .rahmen{ position:absolute; top:0; bottom:0; border-left:1.5px dashed; border-right:1.5px dashed; pointer-events:none; }
+.overlay .rahmen span{ position:absolute; bottom:4px; left:4px; font-size:11px; padding:0 4px; border-radius:3px; background:rgba(8,10,24,.7); white-space:nowrap; }
+.overlay .schatten{ position:absolute; top:0; bottom:0; background:rgba(0,0,0,.55); pointer-events:none; }
+.overlay .el{ position:absolute; border-radius:6px; }
+.overlay .el.umriss{ outline:1.5px dashed rgba(196,187,255,.75); outline-offset:0; }
+.overlay .el.zieh{ pointer-events:auto; cursor:move; touch-action:none; outline:2px dashed #ffa02e; }
+.overlay .el .lbl{ position:absolute; left:0; top:-18px; font-size:11px; color:rgba(222,216,255,.95); background:rgba(8,10,24,.7); padding:0 5px; border-radius:3px; white-space:nowrap; }
+body.vorschau .overlay .lbl{ display:none; }
+body.vorschau .overlay .el{ outline:none !important; }
+.overlay svg{ width:100%; height:100%; display:block; overflow:visible; }
+.menue{ display:flex; flex-direction:column; justify-content:space-between; height:100%; }
+.menue div{ display:flex; align-items:center; justify-content:center; border-radius:8px; color:#e6e3ff; background:rgba(22,26,46,.88); border:1px solid rgba(196,187,255,.25); font-family:system-ui, -apple-system, sans-serif; }
+.menue div.aktiv{ background:#e8871e; color:#1c1206; border:2px solid #ffffff; }
+#mini{ pointer-events:auto !important; width:168px !important; height:168px !important; touch-action:none; cursor:pointer; }
+.modus{ position:absolute; right:10px; bottom:10px; display:flex; border:1px solid rgba(196,187,255,.45); border-radius:10px; overflow:hidden; background:rgba(15,19,37,.85); }
+.modus button{ border:none; border-radius:0; background:transparent; color:#ebe9ff; min-height:40px; font-size:14px; padding:6px 12px; }
+.modus button[aria-pressed="true"]{ background:#ffa02e; color:#1c1206; font-weight:500; }
+body.vorschau .modus{ display:none; }
+.liste{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+.zeile{ display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:10px; padding:2px 4px 2px 10px; background:var(--field); }
+.zeile.sel{ border-color:var(--sel); }
+.zeile.aus{ opacity:.55; }
+.zeile .name{ flex:1; font-size:14px; cursor:pointer; min-height:36px; display:flex; align-items:center; gap:8px; }
+.zeile .punkt{ width:12px; height:12px; border-radius:50%; flex:none; }
+.zeile .auge{ min-height:36px; width:44px; padding:0; font-size:13px; background:transparent; border:none; color:var(--text); }
+.sub{ font-size:13px; color:var(--muted); margin:6px 0 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <div id="frame">
+      <canvas id="view" aria-label="Szene: Asteroiden vor dem Sternenhimmel"></canvas>
+      <div class="overlay" id="overlay"></div>
+    </div>
+    <canvas id="mini" aria-label="Draufsicht: antippen wählt, ziehen verschiebt in die Tiefe"></canvas>
+    <div class="hint" id="hint" hidden>Antippen setzt einen Asteroiden</div>
+    <div class="modus" id="modus" role="group" aria-label="Ziehen bewegt">
+      <button type="button" data-m="schieben">Verschieben</button>
+      <button type="button" data-m="tiefe">Tiefe</button>
+      <button type="button" data-m="drehen">Drehen</button>
+    </div>
+    <button id="fertig" type="button">Vorschau beenden</button>
+  </div>
+
+  <aside class="panel" id="panel">
+    <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Zum Dashboard</a>
+    <h1>Screens fürs <b>Aether</b>-Menü</h1>
+    <p class="lead">Asteroiden antippen und ziehen. Unten rechts wählst du, ob Ziehen verschiebt, die Tiefe ändert oder dreht. Zwei Finger ändern Größe und drehen. In der Draufsicht unten links ziehst du Asteroiden nach vorne oder hinten.</p>
+
+    <section>
+      <h2>Screen</h2>
+      <div class="row"><select id="screenSel" aria-label="Screen auswählen"></select></div>
+      <div class="row"><input type="text" id="screenName" aria-label="Name des Screens" maxlength="40"></div>
+      <div class="row grow">
+        <button id="btnNeu" type="button">Neu</button>
+        <button id="btnKopie" type="button">Kopie</button>
+        <button id="btnScreenWeg" type="button" class="danger">Löschen</button>
+      </div>
+      <p class="sub">Hauptformat (dafür gestaltest du)</p>
+      <div class="row"><div class="seg" id="geraet" role="group" aria-label="Hauptformat">
+        <button type="button" data-g="iphone">iPhone quer</button>
+        <button type="button" data-g="ipad">iPad quer</button>
+        <button type="button" data-g="desktop">16:9</button>
+      </div></div>
+      <p class="sub">Vorschau als</p>
+      <div class="row"><div class="seg" id="ansicht" role="group" aria-label="Vorschau als Gerät">
+        <button type="button" data-g="iphone">iPhone quer</button>
+        <button type="button" data-g="ipad">iPad quer</button>
+        <button type="button" data-g="desktop">16:9</button>
+      </div></div>
+      <p class="note">Die Höhe des Sichtfelds bleibt fest. Breitere Geräte sehen seitlich mehr, schmalere weniger.</p>
+      <div class="row"><button id="btnSterne" type="button">Anderer Sternenhimmel</button></div>
+    </section>
+
+    <section>
+      <h2>Ebenen</h2>
+      <div class="liste" id="listeOben"></div>
+      <label class="check"><input type="checkbox" id="layoutEdit"> Logo und Menübox verschieben</label>
+      <div class="row"><button type="button" id="btnLayoutReset">Lage von Logo und Menübox zurücksetzen</button></div>
+      <p class="sub">Asteroiden, von nah nach fern</p>
+      <div class="liste" id="listeAst"></div>
+      <div class="row grow">
+        <button type="button" id="btnAlleAn">Alle einblenden</button>
+        <button type="button" id="btnNurSel">Nur ausgewählten</button>
+      </div>
+      <p class="note">Ausblenden gilt nur hier im Editor, als Arbeitshilfe. Im Spiel liegen Logo und Menübox immer vor den Asteroiden.</p>
+    </section>
+
+    <section>
+      <h2>Asteroiden setzen</h2>
+      <label class="check"><input type="checkbox" id="platzieren"> Antippen auf freiem Himmel setzt einen neuen</label>
+      <label class="field"><span class="top">Abstand für neue <output id="outPlace"></output></span>
+        <input type="range" id="place" min="0" max="1000"></label>
+      <div class="row">
+        <div class="stepper"><button type="button" id="minus" aria-label="weniger">−</button><output id="anzahl">12</output><button type="button" id="plus" aria-label="mehr">+</button></div>
+        <button type="button" id="btnZufall" class="primary">Zufällig verteilen</button>
+      </div>
+      <label class="check"><input type="checkbox" id="frei" checked> Logo und Menübox frei halten</label>
+      <div class="row grow">
+        <button type="button" id="btnUndo">Rückgängig</button>
+        <button type="button" id="btnAlleWeg" class="danger">Alle entfernen</button>
+      </div>
+      <p class="status" id="zaehler"></p>
+    </section>
+
+    <section id="selBox">
+      <h2>Ausgewählter Asteroid</h2>
+      <p class="note" id="selLeer">Tippe einen Asteroiden an, um ihn zu bearbeiten.</p>
+      <div id="selCtl">
+        <label class="field"><span class="top">Größe (Radius) <output id="outR"></output></span>
+          <input type="range" id="selR" min="0" max="1000"></label>
+        <label class="field"><span class="top">Entfernung zur Kamera <output id="outD"></output></span>
+          <input type="range" id="selD" min="0" max="1000"></label>
+        <label class="field"><span class="top">Drehen <output id="outDreh"></output></span>
+          <input type="range" id="selDreh" min="0" max="360" step="1"></label>
+        <label class="field"><span class="top">Kippen <output id="outKipp"></output></span>
+          <input type="range" id="selKipp" min="0" max="360" step="1"></label>
+        <label class="field"><span class="top">Rollen <output id="outRoll"></output></span>
+          <input type="range" id="selRoll" min="0" max="360" step="1"></label>
+        <div class="row">
+          <button type="button" id="formMinus" aria-label="vorige Form">‹</button>
+          <span id="outForm" style="min-width:64px;text-align:center"></span>
+          <button type="button" id="formPlus" aria-label="nächste Form">›</button>
+          <div class="swatches" id="farben" role="group" aria-label="Farbe"></div>
+        </div>
+        <div class="row grow">
+          <button type="button" id="btnDup">Duplizieren</button>
+          <button type="button" id="btnWeg" class="danger">Entfernen</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Ansicht</h2>
+      <label class="check"><input type="checkbox" id="umrisse" checked> Umrisse und Beschriftungen</label>
+      <label class="check"><input type="checkbox" id="rahmen" checked> Rahmen der anderen Geräte</label>
+      <label class="check"><input type="checkbox" id="karte" checked> Draufsicht (Kamera unten, Blick nach oben)</label>
+      <div class="row"><button type="button" id="btnVorschau" class="primary">Vorschau ohne Hilfen</button></div>
+      <p class="note">Logo und Menübox sind angenähert (Logo-Schrift Jost Medium wie im Spiel, Ring vereinfacht, Menübox in Systemschrift), Größen nach den Regeln des Spiels (Maßstab = Bildhöhe / 400, höchstens 1,6). Kamera mit 65,9° Sichtfeld, senkrecht (wie im Spiel).</p>
+    </section>
+
+    <section>
+      <h2>Sichern und weitergeben</h2>
+      <p class="status" id="speicher">Wird auf diesem Gerät gespeichert.</p>
+      <div class="row grow">
+        <button type="button" id="btnText">Als Text kopieren</button>
+      </div>
+      <div class="row grow"><button type="button" id="btnImport">Text einfügen</button></div>
+      <p class="note">Den Text kannst du später in den Chat geben, damit Claude Code die Screens ins Spiel einbaut.</p>
+    </section>
+  </aside>
+</div>
+
+<div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <h2 id="mTitle"></h2><p id="mText"></p>
+  <textarea id="mArea" hidden spellcheck="false"></textarea>
+  <div class="row grow" id="mBtns"></div>
+</div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="vendor/three-r128.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ---------- Grundwerte ---------- */
+const PRESETS = {
+  iphone:  { w:874,  h:402, name:'iPhone quer' },
+  ipad:    { w:1180, h:820, name:'iPad quer' },
+  desktop: { w:1600, h:900, name:'16:9' }
+};
+const ASP = k => PRESETS[k].w / PRESETS[k].h;
+const ASP_MAX = Math.max(...Object.keys(PRESETS).map(ASP));
+const FOV = 65.9;
+const FARBEN = {
+  grau:   { name:'Grau',    hex:0x6e6b62, css:'#6e6b62' },
+  braun:  { name:'Braun',   hex:0x5e4a3a, css:'#5e4a3a' },
+  dunkel: { name:'Dunkel',  hex:0x3a3934, css:'#3a3934' },
+  rost:   { name:'Rostrot', hex:0x6b4233, css:'#6b4233' }
+};
+const FORMEN = 8;
+const R_MIN = 0.3, R_MAX = 80, D_MIN = 5, D_MAX = 900;
+// Eigener Schlüssel im Dashboard (der Speicher des claude.ai-Artefakts liegt auf einem anderen Ursprung).
+const STORE_KEY = 'aether.screenEditor';
+
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('de-DE', { maximumFractionDigits: n < 10 ? 1 : 0 });
+const r2 = n => Math.round(n * 100) / 100;
+const r1 = n => Math.round(n * 10) / 10;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const toLog = (t, a, b) => a * Math.pow(b / a, t / 1000);
+const fromLog = (v, a, b) => Math.round(1000 * Math.log(clamp(v, a, b) / a) / Math.log(b / a));
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const winkel = v => r1(((v % 360) + 360) % 360);
+function rng(seed){ let a = seed >>> 0; return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const zufallsFarbe = () => ['grau','grau','braun','dunkel','rost'][Math.floor(Math.random() * 5)];
+const neueLage = () => ({ logo:{ x:0, y:0 }, menue:{ x:0, y:0 } });
+
+/* ---------- Zustand ---------- */
+function neuerScreen(name){ return { id:uid(), name, geraet:'desktop', sterne:Math.floor(Math.random() * 1e6), asteroiden:[], lage:neueLage(), zeigeLogo:true, zeigeMenue:true }; }
+function startZustand(){ const s = neuerScreen('Screen 1'); return { version:2, aktiv:s.id, screens:[s], gespeichertUm:0 }; }
+function gueltig(s){ return s && Array.isArray(s.screens) && s.screens.length > 0; }
+function normalisiere(st){
+  st.version = 2;
+  for (const s of st.screens){
+    if (!PRESETS[s.geraet]) s.geraet = 'desktop';
+    if (!s.lage || !s.lage.logo || !s.lage.menue) s.lage = neueLage();
+    if (s.zeigeLogo === undefined) s.zeigeLogo = true;
+    if (s.zeigeMenue === undefined) s.zeigeMenue = true;
+    for (const a of s.asteroiden){ if (!Number.isFinite(a.roll)) a.roll = 0; a.aus = !!a.aus; }
+  }
+  return st;
+}
+let state = normalisiere(ladeLokal() || startZustand());
+let selectedId = null, undo = [], platzieren = false, placeDepth = 80, anzahl = 12;
+let zeigeUmrisse = true, zeigeRahmen = true, zeigeKarte = true, vorschau = false, layoutEdit = false, modus = 'schieben';
+const screen = () => state.screens.find(s => s.id === state.aktiv) || state.screens[0];
+let ansicht = screen().geraet;
+const sel = () => screen().asteroiden.find(a => a.id === selectedId) || null;
+
+/* ---------- Three.js ---------- */
+const canvas = $('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x03040a);
+const camera = new THREE.PerspectiveCamera(FOV, 2, 0.1, 4000);
+scene.add(new THREE.HemisphereLight(0x8a90b0, 0x1a1410, 0.55));
+const sun = new THREE.DirectionalLight(0xfff1dc, 1.15); sun.position.set(4, 3, 2); scene.add(sun);
+const astGroup = new THREE.Group(); scene.add(astGroup);
+
+let stars = null, starSeed = null;
+function baueSterne(seed){
+  if (stars && starSeed === seed) return;
+  if (stars){ scene.remove(stars); stars.children.forEach(o => { o.geometry.dispose(); o.material.dispose(); }); }
+  starSeed = seed; stars = new THREE.Group();
+  const r = rng(seed), pr = renderer.getPixelRatio();
+  const lagen = [ { n:2600, size:1.3, min:0.22, max:0.7 }, { n:240, size:2.4, min:0.6, max:1.0 } ];
+  for (const L of lagen){
+    const pos = new Float32Array(L.n * 3), col = new Float32Array(L.n * 3);
+    for (let i = 0; i < L.n; i++){
+      const u = r() * 2 - 1, th = r() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      pos[i*3] = s * Math.cos(th) * 1800; pos[i*3+1] = u * 1800; pos[i*3+2] = s * Math.sin(th) * 1800;
+      const b = L.min + (L.max - L.min) * Math.pow(r(), 2), t = r();
+      let cr = b, cg = b, cb = b;
+      if (t < 0.12){ cb = Math.min(1, b * 1.25); cr = b * 0.85; } else if (t < 0.2){ cr = Math.min(1, b * 1.2); cb = b * 0.8; }
+      col[i*3] = cr; col[i*3+1] = cg; col[i*3+2] = cb;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    stars.add(new THREE.Points(g, new THREE.PointsMaterial({ size:L.size * pr, sizeAttenuation:false, vertexColors:true, depthWrite:false })));
+  }
+  scene.add(stars);
+}
+
+const geomCache = {}, edgeCache = {};
+function astGeom(form){
+  if (geomCache[form]) return geomCache[form];
+  const g = new THREE.IcosahedronGeometry(1, 1), p = g.attributes.position, r = rng(form * 7919 + 13);
+  const sx = 0.85 + r() * 0.45, sy = 0.65 + r() * 0.3, sz = 0.8 + r() * 0.35, offs = new Map();
+  for (let i = 0; i < p.count; i++){
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const k = Math.round(x * 1000) + ',' + Math.round(y * 1000) + ',' + Math.round(z * 1000);
+    if (!offs.has(k)) offs.set(k, 0.78 + r() * 0.44);
+    const f = offs.get(k);
+    p.setXYZ(i, x * f * sx, y * f * sy, z * f * sz);
+  }
+  g.computeVertexNormals();
+  return (geomCache[form] = g);
+}
+function edgeGeom(form){ return edgeCache[form] || (edgeCache[form] = new THREE.EdgesGeometry(astGeom(form), 1)); }
+
+function quatVon(a){ return new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(a.kipp), rad(a.dreh), rad(a.roll || 0), 'YXZ')); }
+function setzeQuat(a, q){ const e = new THREE.Euler().setFromQuaternion(q, 'YXZ'); a.kipp = winkel(deg(e.x)); a.dreh = winkel(deg(e.y)); a.roll = winkel(deg(e.z)); }
+
+const meshes = new Map();
+function syncSzene(){
+  const sc = screen(), ids = new Set(sc.asteroiden.map(a => a.id));
+  baueSterne(sc.sterne);
+  for (const [id, m] of meshes){ if (!ids.has(id)){ astGroup.remove(m); m.material.dispose(); meshes.delete(id); } }
+  for (const a of sc.asteroiden){
+    let m = meshes.get(a.id);
+    if (!m || m.userData.form !== a.form){
+      if (m){ astGroup.remove(m); m.material.dispose(); }
+      m = new THREE.Mesh(astGeom(a.form), new THREE.MeshStandardMaterial({ flatShading:true, roughness:0.95, metalness:0 }));
+      m.userData = { id:a.id, form:a.form, edges:null }; meshes.set(a.id, m); astGroup.add(m);
+    }
+    m.visible = !a.aus;
+    m.position.set(a.x, a.y, a.z); m.scale.setScalar(a.r);
+    m.rotation.set(rad(a.kipp), rad(a.dreh), rad(a.roll || 0), 'YXZ');
+    m.material.color.setHex((FARBEN[a.farbe] || FARBEN.grau).hex);
+    const ist = a.id === selectedId && !vorschau;
+    m.material.emissive.setHex(ist ? 0x2a1400 : 0x000000);
+    if (ist && !m.userData.edges){ const e = new THREE.LineSegments(edgeGeom(a.form), new THREE.LineBasicMaterial({ color:0xffa02e })); m.add(e); m.userData.edges = e; }
+    if (!ist && m.userData.edges){ m.remove(m.userData.edges); m.userData.edges.material.dispose(); m.userData.edges = null; }
+  }
+  zeichne(); karte();
+}
+
+let wartet = false;
+function zeichne(){ if (wartet) return; wartet = true; requestAnimationFrame(() => { wartet = false; renderer.render(scene, camera); }); }
+
+/* ---------- Logo und Menübox ---------- */
+function elemente(key){
+  const p = PRESETS[key], s = Math.min(p.h / 400, 1.6), L = screen().lage;
+  const S = 92 * s, lw = 3.75 * S, lh = 1.37 * S, mw = 316 * s, mh = 168 * s, gap = 14 * s;
+  const top = (p.h - (lh + gap + mh)) / 2;
+  const lx = p.w / 2 + L.logo.x * s, ly = top + L.logo.y * s;
+  const mx = p.w / 2 + L.menue.x * s, my = top + lh + gap + L.menue.y * s;
+  return {
+    p, s,
+    logo:  { x0:(lx - lw / 2) / p.w, x1:(lx + lw / 2) / p.w, y0:ly / p.h, y1:(ly + lh) / p.h },
+    menue: { x0:(mx - mw / 2) / p.w, x1:(mx + mw / 2) / p.w, y0:my / p.h, y1:(my + mh) / p.h }
+  };
+}
+const LOGO_SVG = '<svg viewBox="0 0 375 137" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'
+  + '<defs><linearGradient id="lg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#8C7CF0"/><stop offset="1" stop-color="#C4BBFF"/></linearGradient></defs>'
+  + '<g transform="rotate(-15.5 187.5 72)"><path d="M9.5 72 A178 30 0 0 1 365.5 72" fill="none" stroke="#5f5880" stroke-width="9" stroke-linecap="round" stroke-dasharray="7 5 3 6 10 4 4 7"/></g>'
+  + '<text x="190" y="106" text-anchor="middle" font-family="Jost Aether, Futura, sans-serif" font-weight="500" font-size="100" fill="#000" opacity=".35">Aether</text>'
+  + '<text x="187.5" y="103" text-anchor="middle" font-family="Jost Aether, Futura, sans-serif" font-weight="500" font-size="100" fill="url(#lg)">Aether</text>'
+  + '<g transform="rotate(-15.5 187.5 72)"><path d="M9.5 72 A178 30 0 0 0 365.5 72" fill="none" stroke="#b9b1e2" stroke-width="10" stroke-linecap="round" stroke-dasharray="9 4 5 6 12 3 3 8"/>'
+  + '<circle cx="40" cy="88" r="9" fill="#cfc8f2"/><circle cx="58" cy="94" r="6" fill="#b9b1e2"/><circle cx="26" cy="80" r="5" fill="#a69ed1"/></g></svg>';
+
+/* ---------- Layout ---------- */
+const stage = $('stage'), frameEl = $('frame'), overlay = $('overlay');
+overlay.innerHTML = '<div id="rahmenBox"></div>'
+  + '<div class="el" id="logoEl"><span class="lbl">Logo</span>' + LOGO_SVG + '</div>'
+  + '<div class="el" id="menueEl"><span class="lbl">Menübox</span><div class="menue"><div class="aktiv">Spiel starten</div><div>Einstellungen</div><div>Beenden</div></div></div>';
+const logoEl = $('logoEl'), menueEl = $('menueEl'), rahmenBox = $('rahmenBox');
+let canvasAsp = ASP_MAX, frameH = 1;
+
+function inCanvas(R){
+  const fw = ASP(ansicht) / canvasAsp, fx0 = 0.5 - fw / 2;
+  return { x0:fx0 + R.x0 * fw, x1:fx0 + R.x1 * fw, y0:R.y0, y1:R.y1 };
+}
+function setzeEl(el, R){ const C = inCanvas(R); Object.assign(el.style, { left:(C.x0 * 100) + '%', top:(C.y0 * 100) + '%', width:((C.x1 - C.x0) * 100) + '%', height:((C.y1 - C.y0) * 100) + '%' }); }
+function positioniere(){
+  const E = elemente(ansicht), sc = screen(), px = frameH / E.p.h;
+  setzeEl(logoEl, E.logo); setzeEl(menueEl, E.menue);
+  logoEl.style.display = sc.zeigeLogo ? '' : 'none';
+  menueEl.style.display = sc.zeigeMenue ? '' : 'none';
+  for (const el of [logoEl, menueEl]){
+    el.classList.toggle('umriss', zeigeUmrisse && !layoutEdit);
+    el.classList.toggle('zieh', layoutEdit && !vorschau);
+    el.querySelector('.lbl').style.display = (zeigeUmrisse || layoutEdit) ? '' : 'none';
+  }
+  const kn = menueEl.querySelectorAll('.menue div');
+  kn.forEach(d => { d.style.height = (48 * E.s * px) + 'px'; d.style.fontSize = Math.max(8, 18 * E.s * px) + 'px'; d.style.borderRadius = (8 * E.s * px) + 'px'; });
+}
+function layout(){
+  const pad = vorschau ? 0 : 12;
+  canvasAsp = vorschau ? ASP(ansicht) : ASP_MAX;
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  let w = Math.min(sw - 2 * pad, (sh - 2 * pad) * canvasAsp), h = w / canvasAsp;
+  w = Math.max(10, Math.floor(w)); h = Math.max(10, Math.floor(h)); frameH = h;
+  Object.assign(frameEl.style, { width:w + 'px', height:h + 'px', left:Math.round((sw - w) / 2) + 'px', top:Math.round((sh - h) / 2) + 'px' });
+  renderer.setSize(w, h, false);
+  camera.aspect = canvasAsp; camera.updateProjectionMatrix();
+  let r = '';
+  if (!vorschau){
+    const fw = ASP(ansicht) / canvasAsp, x0 = 0.5 - fw / 2;
+    if (fw < 0.999){ r += '<div class="schatten" style="left:0;width:' + (x0 * 100) + '%"></div><div class="schatten" style="right:0;width:' + (x0 * 100) + '%"></div>'; }
+    if (zeigeRahmen) for (const k of Object.keys(PRESETS)){
+      const f = ASP(k) / canvasAsp, l = 0.5 - f / 2, haupt = k === screen().geraet;
+      const farbe = haupt ? '#ffa02e' : (k === ansicht ? '#c4bbff' : 'rgba(196,187,255,.45)');
+      r += '<div class="rahmen" style="left:' + (l * 100) + '%;width:' + (f * 100) + '%;border-color:' + farbe + '"><span style="color:' + farbe + ';' + (k === 'ipad' ? 'left:auto;right:4px;' : '') + (k === 'desktop' ? 'bottom:22px;' : '') + '">' + PRESETS[k].name + (haupt ? ' · Hauptformat' : '') + '</span></div>';
+    }
+  }
+  rahmenBox.innerHTML = r;
+  positioniere(); zeichne(); karte();
+}
+new ResizeObserver(layout).observe(stage);
+
+/* Logo und Menübox ziehen */
+function ziehbar(el, key){
+  let st = null;
+  el.addEventListener('pointerdown', ev => {
+    if (!layoutEdit || vorschau) return;
+    ev.preventDefault(); ev.stopPropagation();
+    try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+    const L = screen().lage[key];
+    st = { id:ev.pointerId, x:ev.clientX, y:ev.clientY, lx:L.x, ly:L.y, gemerkt:false };
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!st || ev.pointerId !== st.id) return;
+    const E = elemente(ansicht), k = frameH / E.p.h * E.s;
+    if (!st.gemerkt){ merke(); st.gemerkt = true; }
+    const L = screen().lage[key];
+    L.x = r1(st.lx + (ev.clientX - st.x) / k); L.y = r1(st.ly + (ev.clientY - st.y) / k);
+    positioniere();
+  });
+  const ende = ev => { if (!st || ev.pointerId !== st.id) return; if (st.gemerkt) speichere(); st = null; };
+  el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
+}
+ziehbar(logoEl, 'logo'); ziehbar(menueEl, 'menue');
+
+/* ---------- Draufsicht ---------- */
+const mini = $('mini'), S_MINI = 168;
+let kartenMass = null, kartenZieh = null;
+function kartenGeo(){
+  if (kartenZieh) return kartenZieh.geo;
+  const as = screen().asteroiden; let maxD = 150;
+  for (const a of as) maxD = Math.max(maxD, (-a.z + a.r) * 1.1);
+  const L = S_MINI - 14;
+  return { maxD, L, k:L / maxD, cx:S_MINI / 2, cy:S_MINI - 7 };
+}
+function karte(){
+  mini.style.display = zeigeKarte && !vorschau ? 'block' : 'none';
+  if (!zeigeKarte || vorschau) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), S = S_MINI, ctx = mini.getContext('2d');
+  mini.width = S * dpr; mini.height = S * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgba(8,10,24,.88)'; ctx.fillRect(0, 0, S, S);
+  const g = kartenGeo(), th = Math.tan(FOV * Math.PI / 360);
+  for (const key of Object.keys(PRESETS)){
+    const hf = th * ASP(key), haupt = key === screen().geraet;
+    ctx.strokeStyle = haupt ? 'rgba(255,160,46,.8)' : 'rgba(196,187,255,.3)'; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(g.cx, g.cy); ctx.lineTo(g.cx - hf * g.L, g.cy - g.L); ctx.moveTo(g.cx, g.cy); ctx.lineTo(g.cx + hf * g.L, g.cy - g.L); ctx.stroke();
+  }
+  const as = [...screen().asteroiden].sort((a, b) => a.z - b.z);
+  for (const a of as){
+    ctx.beginPath(); ctx.arc(g.cx + a.x * g.k, g.cy + a.z * g.k, Math.max(2, a.r * g.k), 0, Math.PI * 2);
+    const ist = a.id === selectedId;
+    if (a.aus){ ctx.strokeStyle = ist ? '#ffa02e' : 'rgba(205,200,228,.5)'; ctx.stroke(); }
+    else { ctx.fillStyle = ist ? '#ffa02e' : 'rgba(205,200,228,.8)'; ctx.fill(); }
+  }
+  ctx.fillStyle = '#c4bbff'; ctx.beginPath(); ctx.arc(g.cx, g.cy, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(233,231,255,.75)'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('bis ' + fmt(g.maxD) + ' m', 6, 14);
+}
+function kartenPunkt(ev){ const r = mini.getBoundingClientRect(); return { x:(ev.clientX - r.left) * S_MINI / r.width, y:(ev.clientY - r.top) * S_MINI / r.height }; }
+mini.addEventListener('pointerdown', ev => {
+  ev.preventDefault();
+  const g = kartenGeo(), p = kartenPunkt(ev);
+  let best = null, bd = 14;
+  for (const a of screen().asteroiden){
+    const d = Math.hypot(g.cx + a.x * g.k - p.x, g.cy + a.z * g.k - p.y) - Math.max(2, a.r * g.k);
+    if (d < bd){ bd = d; best = a; }
+  }
+  if (best){ selectedId = best.id; } else if (!sel()) return;
+  try { mini.setPointerCapture(ev.pointerId); } catch (e) {}
+  kartenZieh = { id:ev.pointerId, geo:g, gemerkt:false, x:p.x, y:p.y, bewegt:false };
+  syncSzene(); panel();
+});
+mini.addEventListener('pointermove', ev => {
+  if (!kartenZieh || ev.pointerId !== kartenZieh.id) return;
+  const a = sel(); if (!a) return;
+  const g = kartenZieh.geo, p = kartenPunkt(ev);
+  if (!kartenZieh.bewegt && Math.hypot(p.x - kartenZieh.x, p.y - kartenZieh.y) < 3) return;
+  if (!kartenZieh.gemerkt){ merke(); kartenZieh.gemerkt = true; }
+  kartenZieh.bewegt = true;
+  a.x = r2((p.x - g.cx) / g.k); a.z = r2(Math.min(-D_MIN, Math.max(-D_MAX, (p.y - g.cy) / g.k)));
+  syncSzene(); werte();
+});
+const kartenEnde = ev => { if (!kartenZieh || ev.pointerId !== kartenZieh.id) return; const b = kartenZieh.bewegt; kartenZieh = null; if (b){ speichere(); panel(); } karte(); };
+mini.addEventListener('pointerup', kartenEnde); mini.addEventListener('pointercancel', kartenEnde);
+
+/* ---------- Eingabe auf der Bühne ---------- */
+const ray = new THREE.Raycaster();
+function setzeStrahl(ev){
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), camera);
+  return ray;
+}
+function punktAufZ(ev, z){ const d = setzeStrahl(ev).ray.direction; if (d.z > -1e-6) return null; return d.clone().multiplyScalar(z / d.z); }
+function setzeEntfernung(a, d){ const f = d / -a.z; a.x = r2(a.x * f); a.y = r2(a.y * f); a.z = r2(-d); }
+
+const ptrs = new Map(); let drag = null, pinch = null;
+canvas.addEventListener('pointerdown', ev => {
+  ev.preventDefault();
+  try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+  ptrs.set(ev.pointerId, { x:ev.clientX, y:ev.clientY });
+  if (ptrs.size === 1){
+    const hits = setzeStrahl(ev).intersectObjects(astGroup.children.filter(m => m.visible), false);
+    if (hits.length){ waehle(hits[0].object.userData.id); starteZiehen(ev, false); }
+    else if (platzieren && modus === 'schieben'){
+      const hit = punktAufZ(ev, -placeDepth); if (!hit) return;
+      merke();
+      const a = { id:uid(), x:r2(hit.x), y:r2(hit.y), z:-placeDepth, r:r2(placeDepth * 0.05), form:1 + Math.floor(Math.random() * FORMEN), dreh:Math.round(Math.random() * 360), kipp:Math.round(Math.random() * 360), roll:0, aus:false, farbe:zufallsFarbe() };
+      screen().asteroiden.push(a); selectedId = a.id; syncSzene(); panel(); speichere(); starteZiehen(ev, true);
+    } else if (modus !== 'schieben' && sel() && !sel().aus){ starteZiehen(ev, false); }
+    else waehle(null);
+  } else if (ptrs.size === 2 && sel()){
+    drag = null; const [p1, p2] = [...ptrs.values()];
+    pinch = { d0:Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, w0:Math.atan2(p2.y - p1.y, p2.x - p1.x), r0:sel().r, q0:quatVon(sel()), gemerkt:false };
+  }
+});
+function starteZiehen(ev, gemerkt){
+  const a = sel(); if (!a) return;
+  if (modus === 'schieben'){ const hit = punktAufZ(ev, a.z); if (!hit) return; drag = { art:'schieben', ox:a.x - hit.x, oy:a.y - hit.y, bewegt:false, gemerkt }; }
+  else if (modus === 'tiefe') drag = { art:'tiefe', y0:ev.clientY, d0:-a.z, bewegt:false, gemerkt };
+  else drag = { art:'drehen', x0:ev.clientX, y0:ev.clientY, q0:quatVon(a), bewegt:false, gemerkt };
+}
+const ACHSE_X = new THREE.Vector3(1, 0, 0), ACHSE_Y = new THREE.Vector3(0, 1, 0), ACHSE_Z = new THREE.Vector3(0, 0, 1);
+canvas.addEventListener('pointermove', ev => {
+  if (!ptrs.has(ev.pointerId)) return;
+  ptrs.set(ev.pointerId, { x:ev.clientX, y:ev.clientY });
+  const a = sel(); if (!a) return;
+  if (pinch && ptrs.size >= 2){
+    const [p1, p2] = [...ptrs.values()];
+    if (!pinch.gemerkt){ merke(); pinch.gemerkt = true; }
+    a.r = r2(clamp(pinch.r0 * Math.hypot(p1.x - p2.x, p1.y - p2.y) / pinch.d0, R_MIN, R_MAX));
+    const dw = Math.atan2(p2.y - p1.y, p2.x - p1.x) - pinch.w0;
+    setzeQuat(a, new THREE.Quaternion().setFromAxisAngle(ACHSE_Z, -dw).multiply(pinch.q0));
+    syncSzene(); werte();
+  } else if (drag){
+    if (!drag.bewegt){ if (!drag.gemerkt) merke(); drag.bewegt = true; }
+    if (drag.art === 'schieben'){ const hit = punktAufZ(ev, a.z); if (!hit) return; a.x = r2(hit.x + drag.ox); a.y = r2(hit.y + drag.oy); }
+    else if (drag.art === 'tiefe'){ setzeEntfernung(a, r2(clamp(drag.d0 * Math.exp(-(ev.clientY - drag.y0) * 0.006), D_MIN, D_MAX))); }
+    else {
+      const k = 0.012, dx = ev.clientX - drag.x0, dy = ev.clientY - drag.y0;
+      const q = new THREE.Quaternion().setFromAxisAngle(ACHSE_Y, dx * k).multiply(new THREE.Quaternion().setFromAxisAngle(ACHSE_X, dy * k)).multiply(drag.q0);
+      setzeQuat(a, q);
+    }
+    syncSzene(); werte();
+  }
+});
+function loslassen(ev){
+  ptrs.delete(ev.pointerId);
+  if (ptrs.size < 2 && pinch){ pinch = null; speichere(); }
+  if (ptrs.size === 0){ if (drag && drag.bewegt){ speichere(); panel(); } drag = null; }
+}
+canvas.addEventListener('pointerup', loslassen);
+canvas.addEventListener('pointercancel', loslassen);
+
+document.querySelectorAll('#modus button').forEach(b => b.addEventListener('click', () => { modus = b.dataset.m; modusAnzeige(); }));
+function modusAnzeige(){ document.querySelectorAll('#modus button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === modus))); }
+
+/* ---------- Bearbeiten ---------- */
+function merke(){ const sc = screen(); undo.push(JSON.stringify({ a:sc.asteroiden, l:sc.lage })); if (undo.length > 80) undo.shift(); $('btnUndo').disabled = false; }
+function rueckgaengig(){
+  if (!undo.length) return;
+  const o = JSON.parse(undo.pop()), sc = screen();
+  sc.asteroiden = o.a; sc.lage = o.l;
+  if (!sel()) selectedId = null;
+  syncSzene(); positioniere(); panel(); speichere();
+}
+function waehle(id){ selectedId = id; syncSzene(); panel(); }
+
+function zufaelligVerteilen(n, frei){
+  merke();
+  const sc = screen(), th = Math.tan(FOV * Math.PI / 360), asp = ASP_MAX;
+  const fwH = ASP(sc.geraet) / asp, E = elemente(sc.geraet);
+  const rects = frei ? [E.logo, E.menue].map(R => ({ x0:0.5 + (R.x0 - 0.5) * fwH, x1:0.5 + (R.x1 - 0.5) * fwH, y0:R.y0, y1:R.y1 })) : [];
+  let gesetzt = 0;
+  for (let i = 0; i < n; i++){
+    for (let t = 0; t < 40; t++){
+      const d = Math.exp(Math.log(25) + Math.random() * (Math.log(500) - Math.log(25)));
+      const r = d * (0.012 + Math.random() * 0.07);
+      const nx = Math.random() * 2.3 - 1.15, ny = Math.random() * 2.3 - 1.15;
+      const fx = (nx + 1) / 2, fy = (1 - ny) / 2, ry = r / (d * th) / 2, rx = ry / asp;
+      const ok = rects.every(R => fx + rx < R.x0 - 0.01 || fx - rx > R.x1 + 0.01 || fy + ry < R.y0 - 0.01 || fy - ry > R.y1 + 0.01);
+      if (!ok) continue;
+      const hh = d * th;
+      sc.asteroiden.push({ id:uid(), x:r2(nx * hh * asp), y:r2(ny * hh), z:r2(-d), r:r2(r), form:1 + Math.floor(Math.random() * FORMEN), dreh:Math.round(Math.random() * 360), kipp:Math.round(Math.random() * 360), roll:0, aus:false, farbe:zufallsFarbe() });
+      gesetzt++; break;
+    }
+  }
+  syncSzene(); panel(); speichere();
+  if (gesetzt < n) meldung(gesetzt + ' von ' + n + ' gesetzt, der Rest passte nicht neben Logo und Menübox');
+}
+
+/* ---------- Seitenleiste ---------- */
+const farbenEl = $('farben');
+for (const [key, f] of Object.entries(FARBEN)){
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.f = key; b.title = f.name;
+  b.setAttribute('aria-label', 'Farbe ' + f.name); b.style.background = f.css;
+  b.addEventListener('click', () => { const a = sel(); if (!a) return; merke(); a.farbe = key; syncSzene(); werte(); speichere(); });
+  farbenEl.appendChild(b);
+}
+function zeile(name, aus, istSel, punkt, data){
+  return '<div class="zeile' + (aus ? ' aus' : '') + (istSel ? ' sel' : '') + '" data-z="' + data + '">'
+    + '<span class="name" data-w="' + data + '">' + (punkt ? '<span class="punkt" style="background:' + punkt + '"></span>' : '') + name + '</span>'
+    + '<button type="button" class="auge" data-a="' + data + '" aria-label="' + (aus ? 'einblenden' : 'ausblenden') + '">' + (aus ? 'aus' : 'an') + '</button></div>';
+}
+function ebenen(){
+  const sc = screen();
+  $('listeOben').innerHTML = zeile('Logo', !sc.zeigeLogo, false, '#a99cf5', 'logo') + zeile('Menübox', !sc.zeigeMenue, false, '#e8871e', 'menue');
+  const idx = new Map(sc.asteroiden.map((a, i) => [a.id, i + 1]));
+  const liste = [...sc.asteroiden].sort((a, b) => b.z - a.z);
+  $('listeAst').innerHTML = liste.length ? liste.map(a => zeile('Nr. ' + idx.get(a.id) + ' · ' + fmt(-a.z) + ' m · Ø ' + fmt(a.r * 2) + ' m', a.aus, a.id === selectedId, (FARBEN[a.farbe] || FARBEN.grau).css, a.id)).join('') : '<p class="note">Noch keine Asteroiden.</p>';
+}
+function listenKlick(e){
+  const sc = screen(), auge = e.target.closest('[data-a]'), name = e.target.closest('[data-w]');
+  if (auge){
+    const k = auge.dataset.a;
+    if (k === 'logo') sc.zeigeLogo = !sc.zeigeLogo;
+    else if (k === 'menue') sc.zeigeMenue = !sc.zeigeMenue;
+    else { const a = sc.asteroiden.find(x => x.id === k); if (a) a.aus = !a.aus; }
+    syncSzene(); positioniere(); ebenen(); speichere();
+  } else if (name){
+    const k = name.dataset.w;
+    if (k === 'logo' || k === 'menue') return;
+    waehle(selectedId === k ? null : k);
+  }
+}
+$('listeOben').addEventListener('click', listenKlick);
+$('listeAst').addEventListener('click', listenKlick);
+
+function panel(){
+  const sc = screen(), selEl = $('screenSel');
+  selEl.innerHTML = '';
+  for (const s of state.screens){ const o = document.createElement('option'); o.value = s.id; o.textContent = s.name || 'Ohne Namen'; o.selected = s.id === sc.id; selEl.appendChild(o); }
+  if (document.activeElement !== $('screenName')) $('screenName').value = sc.name;
+  $('btnScreenWeg').disabled = state.screens.length < 2;
+  document.querySelectorAll('#geraet button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === sc.geraet)));
+  document.querySelectorAll('#ansicht button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === ansicht)));
+  $('platzieren').checked = platzieren; $('hint').hidden = !platzieren || vorschau;
+  $('layoutEdit').checked = layoutEdit;
+  $('place').value = fromLog(placeDepth, D_MIN, D_MAX); $('outPlace').textContent = fmt(placeDepth) + ' m';
+  $('anzahl').textContent = anzahl;
+  $('btnUndo').disabled = undo.length === 0;
+  $('btnAlleWeg').disabled = sc.asteroiden.length === 0;
+  $('btnNurSel').disabled = !sel();
+  $('zaehler').textContent = sc.asteroiden.length === 1 ? '1 Asteroid in diesem Screen' : sc.asteroiden.length + ' Asteroiden in diesem Screen';
+  ebenen(); werte(); modusAnzeige();
+}
+function werte(){
+  const a = sel();
+  $('selLeer').hidden = !!a; $('selCtl').hidden = !a;
+  if (!a) return;
+  const d = -a.z;
+  $('selR').value = fromLog(a.r, R_MIN, R_MAX); $('outR').textContent = fmt(a.r) + ' m';
+  $('selD').value = fromLog(d, D_MIN, D_MAX); $('outD').textContent = fmt(d) + ' m';
+  $('selDreh').value = a.dreh; $('outDreh').textContent = Math.round(a.dreh) + '°';
+  $('selKipp').value = a.kipp; $('outKipp').textContent = Math.round(a.kipp) + '°';
+  $('selRoll').value = a.roll || 0; $('outRoll').textContent = Math.round(a.roll || 0) + '°';
+  $('outForm').textContent = 'Form ' + a.form;
+  farbenEl.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === a.farbe)));
+}
+
+function regler(id, setze){
+  const el = $(id); let gemerkt = false;
+  el.addEventListener('pointerdown', () => { if (sel()){ merke(); gemerkt = true; } });
+  el.addEventListener('keydown', () => { if (sel() && !gemerkt){ merke(); gemerkt = true; } });
+  el.addEventListener('input', () => { const a = sel(); if (!a) return; if (!gemerkt){ merke(); gemerkt = true; } setze(a, Number(el.value)); syncSzene(); werte(); });
+  el.addEventListener('change', () => { gemerkt = false; speichere(); ebenen(); });
+}
+regler('selR', (a, v) => { a.r = r2(toLog(v, R_MIN, R_MAX)); });
+regler('selD', (a, v) => { setzeEntfernung(a, r2(toLog(v, D_MIN, D_MAX))); });
+regler('selDreh', (a, v) => { a.dreh = v; });
+regler('selKipp', (a, v) => { a.kipp = v; });
+regler('selRoll', (a, v) => { a.roll = v; });
+
+$('place').addEventListener('input', e => { placeDepth = r2(toLog(Number(e.target.value), D_MIN, D_MAX)); $('outPlace').textContent = fmt(placeDepth) + ' m'; });
+$('platzieren').addEventListener('change', e => { platzieren = e.target.checked; $('hint').hidden = !platzieren; });
+$('minus').addEventListener('click', () => { anzahl = Math.max(1, anzahl - 1); $('anzahl').textContent = anzahl; });
+$('plus').addEventListener('click', () => { anzahl = Math.min(80, anzahl + 1); $('anzahl').textContent = anzahl; });
+$('btnZufall').addEventListener('click', () => zufaelligVerteilen(anzahl, $('frei').checked));
+$('btnUndo').addEventListener('click', rueckgaengig);
+$('btnAlleWeg').addEventListener('click', () => frage('Alle Asteroiden entfernen?', 'Mit „Rückgängig“ holst du sie zurück, solange du diesen Screen nicht wechselst.', 'Alle entfernen', () => { merke(); screen().asteroiden = []; selectedId = null; syncSzene(); panel(); speichere(); }));
+$('formMinus').addEventListener('click', () => { const a = sel(); if (!a) return; merke(); a.form = a.form <= 1 ? FORMEN : a.form - 1; syncSzene(); werte(); speichere(); });
+$('formPlus').addEventListener('click', () => { const a = sel(); if (!a) return; merke(); a.form = a.form >= FORMEN ? 1 : a.form + 1; syncSzene(); werte(); speichere(); });
+$('btnDup').addEventListener('click', () => {
+  const a = sel(); if (!a) return; merke();
+  const b = Object.assign({}, a, { id:uid(), x:r2(a.x + a.r * 2.2), dreh:Math.round(Math.random() * 360), aus:false });
+  screen().asteroiden.push(b); selectedId = b.id; syncSzene(); panel(); speichere();
+});
+$('btnWeg').addEventListener('click', () => { const a = sel(); if (!a) return; merke(); screen().asteroiden = screen().asteroiden.filter(x => x.id !== a.id); selectedId = null; syncSzene(); panel(); speichere(); });
+$('btnAlleAn').addEventListener('click', () => { const sc = screen(); sc.asteroiden.forEach(a => a.aus = false); sc.zeigeLogo = true; sc.zeigeMenue = true; syncSzene(); positioniere(); ebenen(); speichere(); });
+$('btnNurSel').addEventListener('click', () => { const a = sel(); if (!a) return; screen().asteroiden.forEach(x => x.aus = x.id !== a.id); syncSzene(); ebenen(); speichere(); });
+$('layoutEdit').addEventListener('change', e => { layoutEdit = e.target.checked; positioniere(); });
+$('btnLayoutReset').addEventListener('click', () => { merke(); screen().lage = neueLage(); positioniere(); speichere(); });
+
+function wechsleScreen(id){ state.aktiv = id; selectedId = null; undo = []; ansicht = screen().geraet; syncSzene(); layout(); panel(); speichere(); }
+$('screenSel').addEventListener('change', e => wechsleScreen(e.target.value));
+$('screenName').addEventListener('input', e => { screen().name = e.target.value; const o = $('screenSel').selectedOptions[0]; if (o) o.textContent = e.target.value || 'Ohne Namen'; speichere(); });
+$('btnNeu').addEventListener('click', () => { const s = neuerScreen('Screen ' + (state.screens.length + 1)); s.geraet = screen().geraet; state.screens.push(s); wechsleScreen(s.id); });
+$('btnKopie').addEventListener('click', () => {
+  const alt = screen(), s = JSON.parse(JSON.stringify(alt));
+  s.id = uid(); s.name = alt.name + ' (Kopie)'; s.asteroiden.forEach(a => a.id = uid());
+  state.screens.push(s); wechsleScreen(s.id);
+});
+$('btnScreenWeg').addEventListener('click', () => {
+  if (state.screens.length < 2) return;
+  frage('„' + (screen().name || 'Ohne Namen') + '“ löschen?', 'Der Screen und seine Asteroiden sind danach weg.', 'Löschen', () => {
+    state.screens = state.screens.filter(s => s.id !== state.aktiv); wechsleScreen(state.screens[0].id);
+  });
+});
+document.querySelectorAll('#geraet button').forEach(b => b.addEventListener('click', () => { screen().geraet = b.dataset.g; ansicht = b.dataset.g; layout(); panel(); speichere(); }));
+document.querySelectorAll('#ansicht button').forEach(b => b.addEventListener('click', () => { ansicht = b.dataset.g; layout(); panel(); }));
+$('btnSterne').addEventListener('click', () => { screen().sterne = Math.floor(Math.random() * 1e6); syncSzene(); speichere(); });
+$('umrisse').addEventListener('change', e => { zeigeUmrisse = e.target.checked; positioniere(); });
+$('rahmen').addEventListener('change', e => { zeigeRahmen = e.target.checked; layout(); });
+$('karte').addEventListener('change', e => { zeigeKarte = e.target.checked; karte(); });
+$('btnVorschau').addEventListener('click', () => { vorschau = true; document.body.classList.add('vorschau'); syncSzene(); layout(); panel(); });
+$('fertig').addEventListener('click', () => { vorschau = false; document.body.classList.remove('vorschau'); syncSzene(); layout(); panel(); });
+
+document.addEventListener('keydown', e => {
+  const t = e.target.tagName;
+  if (t === 'INPUT' && e.target.type === 'text' || t === 'TEXTAREA' || t === 'SELECT') return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z'){ e.preventDefault(); rueckgaengig(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel()){ e.preventDefault(); $('btnWeg').click(); }
+  else if (e.key === 'Escape' && vorschau){ $('fertig').click(); }
+});
+
+/* ---------- Dialoge ---------- */
+function dialog({ titel, text, area, nurLesen, knoepfe }){
+  $('mTitle').textContent = titel; $('mText').textContent = text || ''; $('mText').hidden = !text;
+  const ta = $('mArea'); ta.hidden = area === undefined; ta.value = area || ''; ta.readOnly = !!nurLesen;
+  const box = $('mBtns'); box.innerHTML = '';
+  for (const k of knoepfe){
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = k.label;
+    if (k.art) b.className = k.art;
+    b.addEventListener('click', () => { if (k.aktion && k.aktion(ta.value) === false) return; $('modal').hidden = true; });
+    box.appendChild(b);
+  }
+  $('modal').hidden = false;
+  (ta.hidden ? box.lastChild : ta).focus();
+}
+function frage(titel, text, ok, aktion){ dialog({ titel, text, knoepfe:[ { label:'Abbrechen' }, { label:ok, art:'danger', aktion } ] }); }
+let toastT = null;
+function meldung(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2600); }
+
+/* ---------- Export und Import ---------- */
+function exportText(){
+  return JSON.stringify({
+    format:'aether-menue-screens', version:2, einheiten:'Meter, Grad; Lage von Logo und Menübox in Punkten bei Maßstab 1 (Spiel: Maßstab = Bildhöhe / 400, höchstens 1,6), Verschiebung gegenüber der Standardlage',
+    kamera:{ position:[0,0,0], blickrichtung:[0,0,-1], oben:[0,1,0], sichtfeldGrad:FOV, sichtfeldAchse:'senkrecht (Spiel: verticalFovRadians = 1,15)' },
+    hinweis:'radius ist ungefähr. form (1–8) und farbe sind Varianten dieses Editors; die Zuordnung zu den Spiel-Asteroiden passiert beim Einbau. Drehung als Euler-Winkel in der Reihenfolge YXZ (drehen um Y, kippen um X, rollen um Z). Ausblenden im Editor wird nicht exportiert.',
+    screens: state.screens.map(s => ({
+      name:s.name, hauptformat:s.geraet, sternenSeed:s.sterne,
+      lage:{ logo:[r1(s.lage.logo.x), r1(s.lage.logo.y)], menue:[r1(s.lage.menue.x), r1(s.lage.menue.y)] },
+      asteroiden: s.asteroiden.map(a => ({ position:[r2(a.x), r2(a.y), r2(a.z)], radius:r2(a.r), form:a.form, drehungGrad:{ kippen:r1(a.kipp), drehen:r1(a.dreh), rollen:r1(a.roll || 0) }, farbe:a.farbe }))
+    }))
+  }, null, 1);
+}
+// Liest Exporte der Versionen 1 und 2 (Text aus dem bisherigen claude.ai-Artefakt). Version 1 kannte
+// noch keine Lage von Logo und Menübox und kein Rollen; beides fängt bei 0 an.
+function importiere(text){
+  let o; try { o = JSON.parse(text); } catch (e) { return null; }
+  if (!o || o.format !== 'aether-menue-screens' || !Array.isArray(o.screens) || !o.screens.length) return null;
+  const v = o.version === undefined ? 1 : Number(o.version);
+  if (!(v === 1 || v === 2)) return null;
+  const xy = v => (Array.isArray(v) && v.length === 2) ? { x:Number(v[0]) || 0, y:Number(v[1]) || 0 } : { x:0, y:0 };
+  return o.screens.map(s => {
+    const g = s.hauptformat || s.geraet;
+    return {
+      id:uid(), name:String(s.name || 'Screen'), geraet:PRESETS[g] ? g : 'desktop',
+      sterne:Number.isFinite(s.sternenSeed) ? s.sternenSeed : Math.floor(Math.random() * 1e6),
+      lage:{ logo:xy(s.lage && s.lage.logo), menue:xy(s.lage && s.lage.menue) }, zeigeLogo:true, zeigeMenue:true,
+      asteroiden:(Array.isArray(s.asteroiden) ? s.asteroiden : []).filter(a => Array.isArray(a.position) && a.position.length === 3).map(a => ({
+        id:uid(), x:Number(a.position[0]) || 0, y:Number(a.position[1]) || 0, z:Math.min(-D_MIN, Number(a.position[2]) || -50),
+        r:clamp(Number(a.radius) || 2, R_MIN, R_MAX), form:clamp(Math.round(Number(a.form) || 1), 1, FORMEN),
+        dreh:Number(a.drehungGrad && a.drehungGrad.drehen) || 0, kipp:Number(a.drehungGrad && a.drehungGrad.kippen) || 0, roll:Number(a.drehungGrad && a.drehungGrad.rollen) || 0, aus:false,
+        farbe:FARBEN[a.farbe] ? a.farbe : 'grau'
+      }))
+    };
+  });
+}
+async function kopiere(text){
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  try { const ta = $('mArea'); ta.focus(); ta.select(); return document.execCommand('copy'); } catch (e) { return false; }
+}
+$('btnText').addEventListener('click', () => {
+  const t = exportText();
+  dialog({ titel:'Alle Screens als Text', text:'Diesen Text kannst du kopieren und in den Chat einfügen.', area:t, nurLesen:true,
+    knoepfe:[ { label:'Schließen' }, { label:'Kopieren', art:'primary', aktion:() => { kopiere(t).then(ok => meldung(ok ? 'Kopiert' : 'Kopieren ging nicht: Text markieren und kopieren')); return false; } } ] });
+});
+$('btnImport').addEventListener('click', () => {
+  dialog({ titel:'Screens einfügen', text:'Füge hier einen Text ein, den du vorher mit „Als Text kopieren“ erzeugt hast.', area:'',
+    knoepfe:[
+      { label:'Abbrechen' },
+      { label:'Hinzufügen', aktion:v => { const s = importiere(v); if (!s){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens.push(...s); wechsleScreen(s[0].id); meldung(s.length + ' Screen(s) hinzugefügt'); } },
+      { label:'Alles ersetzen', art:'danger', aktion:v => { const s = importiere(v); if (!s){ meldung('Das ist kein gültiger Screens-Text'); return false; } state.screens = s; wechsleScreen(s[0].id); meldung('Screens ersetzt'); } }
+    ] });
+});
+
+/* ---------- Speichern (nur auf diesem Gerät) ---------- */
+function ladeLokal(){ try { const t = localStorage.getItem(STORE_KEY); if (t){ const s = JSON.parse(t); if (gueltig(s)) return s; } } catch (e) {} return null; }
+function speichere(){
+  state.gespeichertUm = Date.now();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); $('speicher').textContent = 'Wird auf diesem Gerät gespeichert.'; }
+  catch (e) { $('speicher').textContent = 'Speichern auf diesem Gerät gerade nicht möglich (Speicher voll oder gesperrt).'; }
+}
+
+/* ---------- Start ---------- */
+modusAnzeige(); syncSzene(); layout(); panel();
+})();
+</script>
+</body>
+</html>
