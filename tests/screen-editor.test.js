@@ -497,10 +497,10 @@ describe('Screen-Editor: Regel C', () => {
     for (const [k, [w, h]] of Object.entries(FORMATE)) assert.ok(Math.abs((R[k].x1 - R[k].x0) / (R[k].y1 - R[k].y0) - w / h) < 0.03 * w / h, `Rahmen ${k}: Seitenverhältnis`);
     assert.ok(Math.abs((R.ipad.x1 - R.ipad.x0) - (R.desktop.x1 - R.desktop.x0)) <= 3.5, 'iPad: volle 16:9-Breite');
     assert.ok(Math.abs((R.ultrawide.y1 - R.ultrawide.y0) - (R.desktop.y1 - R.desktop.y0)) <= 3.5, '21:9: gleiche Höhe wie 16:9');
-    // Beschriftungen und Farben
+    // Farben; keine Beschriftung an den Rahmen (die Namen stehen in der Legende unter der Bühne)
     const labels = await page.$$eval('#rahmenBox .rahmen', (es) => es.map((e) => [e.dataset.k, e.textContent, getComputedStyle(e).borderTopColor, getComputedStyle(e).borderTopWidth]));
     const L = Object.fromEntries(labels.map((l) => [l[0], l]));
-    assert.equal(L.desktop[1], '16:9 · Switch 2 · Hauptformat = sicherer Bereich');
+    for (const k of ['desktop', 'iphone', 'ipad', 'ultrawide']) assert.equal(L[k][1], '', `Rahmen ${k} ohne Beschriftung`);
     assert.deepEqual([L.desktop[2], L.iphone[2], L.ipad[2], L.ultrawide[2]], ['rgb(255, 160, 46)', 'rgb(196, 187, 255)', 'rgb(120, 220, 150)', 'rgb(120, 200, 255)']);
     assert.ok(parseFloat(L.desktop[3]) > parseFloat(L.iphone[3]), '16:9 kräftiger Rahmen');
     // Abdunklung außerhalb von 16:9 (ca. 55–60 %)
@@ -534,6 +534,146 @@ describe('Screen-Editor: Regel C', () => {
       assert.ok(Math.abs(E.s - Math.min(h16 / 400, 1.6)) < 1e-9, `Maßstab ${k}: ${E.s}`);
     }
     assert.ok(Math.abs((await page.evaluate(() => window.AetherScreenEditor.elemente('iphone'))).s - 402 / 400) < 1e-9);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legende unter der Bühne (statt Beschriftungen auf der Bühne)
+// ---------------------------------------------------------------------------
+const LEGENDE = [['desktop', '16:9 · PC & Switch 2'], ['ipad', 'iPad'], ['iphone', 'iPhone'], ['ultrawide', '21:9'], ['logo-menue', 'Logo/Menübox']];
+const LEGENDE_VIEWPORTS = [
+  { name: '390×844', viewport: { width: 390, height: 844 }, device: { deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: '402×874', viewport: { width: 402, height: 874 }, device: { deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: '874×402', viewport: { width: 874, height: 402 }, device: { deviceScaleFactor: 3, isMobile: true, hasTouch: true } },
+  { name: '1194×834', viewport: { width: 1194, height: 834 }, device: { deviceScaleFactor: 2, isMobile: true, hasTouch: true } },
+  { name: '1280×800', viewport: { width: 1280, height: 800 } }
+];
+async function legendeMessen(page) {
+  return page.evaluate(() => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x0: r.left, x1: r.right, y0: r.top, y1: r.bottom, w: r.width, h: r.height }; };
+    const leg = document.getElementById('legende');
+    const cs = getComputedStyle(leg);
+    return {
+      sichtbar: cs.display !== 'none' && leg.offsetHeight > 0,
+      leg: box(leg), stage: box(document.getElementById('stage')), frame: box(document.getElementById('frame')),
+      eintraege: [...leg.querySelectorAll('.eintrag')].map((e) => ({ k: e.dataset.k, text: e.textContent.trim(), box: box(e), clip: e.scrollWidth > e.clientWidth + 0.5, font: getComputedStyle(e).fontSize }))
+    };
+  });
+}
+function assertLegendeLage(m, label) {
+  assert.ok(m.sichtbar, `${label}: Legende sichtbar`);
+  assert.ok(inside(m.leg, m.stage), `${label}: Legende im Bühnen-Bereich ${JSON.stringify([m.leg, m.stage])}`);
+  assert.ok(m.leg.y0 >= m.frame.y1 - 0.5, `${label}: Legende unter dem Bühnenbild (außerhalb) ${JSON.stringify([m.leg, m.frame])}`);
+  assert.equal(m.eintraege.length, 5, `${label}: fünf Einträge`);
+  for (const e of m.eintraege) {
+    assert.ok(inside(e.box, m.leg) && inside(e.box, m.stage), `${label}: „${e.text}“ nicht abgeschnitten ${JSON.stringify(e.box)}`);
+    assert.ok(!e.clip, `${label}: „${e.text}“ vollständig`);
+    assert.equal(e.font, '12px', `${label}: feste Schriftgröße`);
+  }
+  for (let i = 0; i < m.eintraege.length; i++) for (let j = i + 1; j < m.eintraege.length; j++) {
+    assert.ok(!overlaps(m.eintraege[i].box, m.eintraege[j].box), `${label}: „${m.eintraege[i].text}“ überlappt „${m.eintraege[j].text}“`);
+  }
+  // Passt die Zeile nicht in die Breite, bricht sie um (mehrere Zeilen statt Überlauf).
+  const breite = m.eintraege.reduce((s, e) => s + e.box.w, 0) + 14 * 4 + 16;
+  const zeilen = new Set(m.eintraege.map((e) => Math.round(e.box.y0))).size;
+  if (breite > m.stage.w) assert.ok(zeilen >= 2, `${label}: Legende bricht um (${zeilen} Zeile(n) bei ${Math.round(m.stage.w)} px)`);
+}
+
+describe('Screen-Editor: Legende statt Beschriftungen', () => {
+  test('keine Beschriftung auf der Bühne; Legende mit fünf Einträgen in den Farben und Linienarten der Rahmen', async () => {
+    const { context, page, log } = await newPage();
+    await openEditor(page);
+    const ov = await page.evaluate(() => {
+      const o = document.getElementById('overlay');
+      const fremd = [...o.querySelectorAll('*')].filter((e) => !e.closest('.menue') && !e.closest('svg'))
+        .flatMap((e) => [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => n.textContent.trim()));
+      return { fremd, lbl: o.querySelectorAll('.lbl, .rahmen span').length, rahmenText: document.getElementById('rahmenBox').textContent };
+    });
+    assert.deepEqual(ov.fremd, [], 'kein Text auf der Bühne außer Logo und Menü selbst');
+    assert.equal(ov.lbl, 0, 'keine Beschriftungs-Elemente');
+    assert.equal(ov.rahmenText, '');
+    for (const alt of ['iPad quer', 'iPhone quer', 'Logo', 'Menübox', '16:9', '21:9']) {
+      assert.ok(!(await page.$eval('#overlay', (o, t) => [...o.querySelectorAll('.rahmen, .el > span')].some((e) => e.textContent.includes(t)), alt)), `„${alt}“ nicht auf der Bühne`);
+    }
+    const body = await page.evaluate(() => document.body.innerText);
+    assert.ok(!body.includes('Hauptformat = sicherer Bereich'), 'alter Text nicht mehr sichtbar');
+    assert.ok(body.includes('16:9 · PC & Switch 2'), 'neuer Name sichtbar');
+    assert.equal(await page.textContent('#ansicht [data-g="desktop"]'), '16:9 · PC & Switch 2', 'Formatwahl');
+    assert.match(await page.textContent('#hauptformat'), /^16:9 · PC & Switch 2 \(1920 × 1080/, 'Hinweis Hauptformat');
+    assert.equal(await page.textContent('#vergleich figure[data-k="desktop"] figcaption'), '16:9 · PC & Switch 2 · 1920 × 1080', 'Vergleichsansicht');
+    assert.doesNotMatch(body, /16:9 · Switch 2/, 'alter Name nirgends mehr sichtbar');
+    const ex = await exportiert(page);
+    assert.equal(ex.version, 3);
+    assert.equal(ex.formate.find((f) => f.schluessel === 'desktop').name, '16:9 · Switch 2', 'Exportformat (Version 3) unverändert');
+
+    // Einträge, Farben und Linienarten wie die Rahmen
+    const m = await legendeMessen(page);
+    assert.deepEqual(m.eintraege.map((e) => [e.k, e.text]), LEGENDE);
+    const rahmen = await page.$$eval('#rahmenBox .rahmen', (es) => Object.fromEntries(es.map((e) => [e.dataset.k, { c: getComputedStyle(e).borderTopColor, s: getComputedStyle(e).borderTopStyle }])));
+    const muster = await page.$$eval('#legende .eintrag', (es) => Object.fromEntries(es.map((e) => { const cs = getComputedStyle(e.querySelector('.muster')); return [e.dataset.k, { c: cs.borderTopColor, s: cs.borderTopStyle, w: parseFloat(cs.borderTopWidth), len: e.querySelector('.muster').getBoundingClientRect().width }]; })));
+    for (const k of ['desktop', 'ipad', 'iphone', 'ultrawide']) {
+      assert.equal(muster[k].c, rahmen[k].c, `${k}: Farbe wie der Rahmen`);
+      assert.equal(muster[k].s, rahmen[k].s, `${k}: Linienart wie der Rahmen`);
+      assert.ok(muster[k].len >= 16 && muster[k].w > 0, `${k}: kurzes Linienmuster`);
+    }
+    assert.deepEqual([rahmen.desktop.s, muster.desktop.s], ['solid', 'solid'], '16:9 durchgezogen');
+    for (const k of ['ipad', 'iphone', 'ultrawide']) assert.equal(muster[k].s, 'dashed', `${k} gestrichelt`);
+    const umriss = await page.$eval('#logoEl', (e) => { const cs = getComputedStyle(e); return { c: cs.outlineColor, s: cs.outlineStyle }; });
+    assert.deepEqual([muster['logo-menue'].c, muster['logo-menue'].s], [umriss.c, umriss.s], 'Logo/Menübox wie die gestrichelten Kästen');
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  for (const V of LEGENDE_VIEWPORTS) {
+    test(`Legende: keine Überlappung, nichts abgeschnitten, Umbruch bei wenig Breite (${V.name})`, async () => {
+      const quer = V.viewport.width > V.viewport.height && V.viewport.width >= 1000;
+      const lagen = [{ anordnung: 'A', a: 0.05 }, { anordnung: 'A', a: 0.95 }];
+      if (quer) lagen.push({ anordnung: 'B', b: 0.05 }, { anordnung: 'B', b: 0.62 }, { anordnung: 'B', b: 0.95 });
+      const breiten = [];
+      for (const lage of lagen) {
+        const { context, page, log } = await newPage({ viewport: V.viewport, device: V.device, init: { fn: (a) => { try { localStorage.setItem('aether.screenEditor.layout', JSON.stringify(a)); } catch (e) {} }, arg: lage } });
+        await openEditor(page);
+        await page.waitForTimeout(250);
+        const label = `${V.name} ${JSON.stringify(lage)}`;
+        const m = await legendeMessen(page);
+        assertLegendeLage(m, label);
+        breiten.push(Math.round(m.stage.w));
+        // Gesamtanordnung bleibt ohne Überlappung (Mindestgrößen gelten weiter).
+        assertNoOverlap(await layoutRects(page), label);
+        if (lage.b === 0.05) await page.screenshot({ path: path.join(OUT, `editor-legende-${V.viewport.width}x${V.viewport.height}-schmal.png`) });
+        if (lage.anordnung === 'A' && lage.a === 0.95) await page.screenshot({ path: path.join(OUT, `editor-legende-${V.viewport.width}x${V.viewport.height}.png`) });
+        assert.deepEqual(log.errors, [], label);
+        await context.close();
+      }
+      if (quer) assert.ok(Math.min(...breiten) <= 300 && Math.max(...breiten) >= 700, `Bühnenbreiten von der Mindestgröße bis voll: ${breiten.join(', ')}`);
+    });
+  }
+
+  test('Legende fehlt in „Vorschau ohne Hilfen“ und im Bild-Export', async () => {
+    const { context, page, log } = await newPage({ init: { fn: shareMock } });
+    await openEditor(page);
+    await page.click('#btnZufall');
+    assert.ok(await page.isVisible('#legende'));
+    for (const k of Object.keys(FORMATE)) {
+      await page.click(`#ansicht [data-g="${k}"]`);
+      await page.click('#btnVorschau');
+      assert.ok(await page.isHidden('#legende'), `Vorschau ${k}: keine Legende`);
+      const fr = await rect(page, '#frame'), st = await rect(page, '#stage');
+      assert.ok(Math.abs(fr.h - st.h) <= 1.5 || Math.abs(fr.w - st.w) <= 1.5, `Vorschau ${k}: Bild nutzt die ganze Fläche (kein Platz für die Legende)`);
+      await page.click('#fertig');
+    }
+    assert.ok(await page.isVisible('#legende'), 'nach der Vorschau wieder da');
+    // Bild-Export: gleiche Bilder, auch wenn die Legende auffällig verändert wird (sie gehört nicht zum Bild).
+    await page.click('#btnBild');
+    await page.waitForFunction(() => window.__share.calls.length === 1);
+    await page.evaluate(() => { const l = document.getElementById('legende'); l.style.background = '#ff00ff'; l.style.fontSize = '40px'; });
+    await page.click('#btnBild');
+    await page.waitForFunction(() => window.__share.calls.length === 2);
+    const [c1, c2] = await page.evaluate(() => window.__share.calls);
+    assert.deepEqual(c2.files.map((f) => [f.name, f.w, f.h, f.hash]), c1.files.map((f) => [f.name, f.w, f.h, f.hash]), 'Export unabhängig von der Legende');
+    assert.deepEqual(c1.files.map((f) => [f.w, f.h]), [[2560, 1080], [874, 402], [1920, 1080], [1194, 834]], 'Bilder genau in Formatgröße, kein Legendenstreifen');
     assert.deepEqual(log.errors, []);
     await context.close();
   });
@@ -694,7 +834,9 @@ function shareMock() {
     const files = await Promise.all(d.files.map(async (f) => {
       const b = new Uint8Array(await f.arrayBuffer()), v = new DataView(b.buffer);
       const sig = [...b.slice(0, 8)].join(',');
-      return { name: f.name, type: f.type, sig, w: v.getUint32(16), h: v.getUint32(20), bytes: b.length };
+      let hash = 2166136261; // FNV-1a über alle Bytes (Vergleich zweier Exporte)
+      for (let i = 0; i < b.length; i++) hash = Math.imul(hash ^ b[i], 16777619) >>> 0;
+      return { name: f.name, type: f.type, sig, w: v.getUint32(16), h: v.getUint32(20), bytes: b.length, hash };
     }));
     window.__share.calls.push({ title: d.title, files, active: navigator.userActivation ? navigator.userActivation.isActive : null });
   };
