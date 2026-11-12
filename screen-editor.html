@@ -201,6 +201,7 @@ body.vorschau .overlay .el{ outline:none !important; }
 /* Legende unter dem Bühnenbild (statt Beschriftungen auf der Bühne): Linienmuster wie die Rahmen, feste Schriftgröße */
 .legende{ position:absolute; left:0; right:0; bottom:0; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px 14px; padding:2px 8px 6px; font-size:12px; line-height:16px; color:#c9c4ee; pointer-events:none; }
 .legende .eintrag{ display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.legende .eintrag[hidden]{ display:none; }
 .legende .muster{ flex:none; width:22px; height:0; border-top:1.5px dashed; }
 .legende .eintrag.haupt .muster{ border-top:3px solid; }
 .legende .eintrag.el .muster{ border-top-color:rgba(196,187,255,.75); }
@@ -373,7 +374,7 @@ body.vorschau .legende{ display:none; }
 
     <section>
       <h2>Ansicht</h2>
-      <label class="check"><input type="checkbox" id="umrisse" checked> Umrisse und Beschriftungen</label>
+      <label class="check"><input type="checkbox" id="umrisse" checked> Umrisse</label>
       <label class="check"><input type="checkbox" id="rahmen" checked> Rahmen der anderen Geräte</label>
       <label class="check"><input type="checkbox" id="karte" checked> Draufsicht (Kamera unten, Blick nach oben)</label>
       <p class="sub">Anordnung</p>
@@ -606,6 +607,18 @@ const LOGO_SVG = '<svg viewBox="0 0 375 137" preserveAspectRatio="xMidYMid meet"
 const stage = $('stage'), frameEl = $('frame'), overlay = $('overlay'), legendeEl = $('legende');
 // Farben der Legende aus den Formaten (dieselben Werte wie die Rahmen)
 legendeEl.querySelectorAll('.eintrag[data-k]').forEach(e => { const f = FORMATE[e.dataset.k]; if (f) e.querySelector('.muster').style.borderTopColor = f.farbe; });
+// Legende zeigt nur Einträge für Rahmen bzw. Kästen, die gerade sichtbar sind:
+// „Rahmen der anderen Geräte“ steuert iPad, iPhone und 21:9 (16:9 ist immer da); „Umrisse“ steuert die gestrichelten
+// Kästen um Logo und Menübox (nicht sichtbar beim Verschieben – dann orange – und wenn beide ausgeblendet sind).
+// Rückgabe: true, wenn sich etwas geändert hat (dann muss die Bühne neu gerechnet werden, die Höhe kann sich ändern).
+function legendeFiltern(){
+  const sc = screen();
+  const zeigen = { desktop:true, ipad:zeigeRahmen, iphone:zeigeRahmen, ultrawide:zeigeRahmen,
+    'logo-menue':zeigeUmrisse && !layoutEdit && (sc.zeigeLogo || sc.zeigeMenue) };
+  let geaendert = false;
+  legendeEl.querySelectorAll('.eintrag[data-k]').forEach(e => { const aus = !zeigen[e.dataset.k]; if (e.hidden !== aus){ e.hidden = aus; geaendert = true; } });
+  return geaendert;
+}
 // Höhe der Legende unter dem Bühnenbild (0 in „Vorschau ohne Hilfen“)
 const legendeH = () => vorschau ? 0 : legendeEl.offsetHeight;
 overlay.innerHTML = '<div id="rahmenBox"></div>'
@@ -618,6 +631,7 @@ const pxProPunkt = (E, v) => E.tpp * frameH / (2 * v.tanV);
 function pct(el, C){ Object.assign(el.style, { left:(C.x0 * 100) + '%', top:(C.y0 * 100) + '%', width:((C.x1 - C.x0) * 100) + '%', height:((C.y1 - C.y0) * 100) + '%' }); }
 function setzeEl(el, R, v){ pct(el, inBlick(R, v)); }
 function positioniere(){
+  if (legendeFiltern()){ layout(); return; }
   const v = blick(), E = elemente(ansicht), sc = screen(), px = pxProPunkt(E, v);
   setzeEl(logoEl, E.logo, v); setzeEl(menueEl, E.menue, v);
   logoEl.style.display = sc.zeigeLogo ? '' : 'none';
@@ -631,6 +645,7 @@ function positioniere(){
   vergleichPlanen();
 }
 function layout(){
+  legendeFiltern();
   const pad = vorschau ? 0 : 12, v = blick(), canvasAsp = v.tanH / v.tanV;
   const sw = stage.clientWidth, sh = Math.max(20, stage.clientHeight - legendeH());
   let w = Math.min(sw - 2 * pad, (sh - 2 * pad) * canvasAsp), h = w / canvasAsp;

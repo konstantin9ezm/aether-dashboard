@@ -405,7 +405,11 @@ Projektansicht), weil die Home-Bildschirm-App keinen Zurück-Knopf hat.
 - **Unterer Bereich:** *Draufsicht* (Kamera unten, Blick nach oben; antippen wählt, ziehen verschiebt in die Tiefe)
   oder *Vergleich*: vier kleine Bilder, so wie jedes Gerät den Screen zeigt, nach jeder Änderung neu (gedrosselt).
 - **Vorschau ohne Hilfen** zeigt genau das unter „Vorschau als“ gewählte Format, mit Logo und Menübox, ohne
-  Rahmen und Beschriftungen.
+  Rahmen, Umrisse und Legende.
+- **Legende** unter der Bühne (statt Beschriftungen auf der Bühne): nur Einträge für Rahmen und Kästen, die gerade
+  sichtbar sind. „Rahmen der anderen Geräte“ steuert iPad, iPhone und 21:9 (16:9 ist immer da), „Umrisse“ die
+  gestrichelten Kästen „Logo/Menübox“ (diese fehlen auch, solange „Logo und Menübox verschieben“ an ist – dann sind
+  die Kästen orange – oder Logo und Menübox beide ausgeblendet sind).
 
 **Formate und Regel C**
 
@@ -413,10 +417,10 @@ Projektansicht), weil die Home-Bildschirm-App keinen Zurück-Knopf hat.
 |---|---|---|
 | 21:9 | 2560 × 1080 | 65,9° × 113,9° |
 | iPhone quer | 874 × 402 | 65,9° × 109,3° |
-| **16:9 · Switch 2** (auch TV/PC) | 1920 × 1080 | 65,9° × 98,1° |
+| **16:9 · PC & Switch 2** (auch TV) | 1920 × 1080 | 65,9° × 98,1° |
 | iPad quer | 1194 × 834 | 77,7° × 98,1° |
 
-Hauptformat ist fest **16:9 · Switch 2**. Regel C: *Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar.*
+Hauptformat ist fest **16:9 · PC & Switch 2**. Regel C: *Das 16:9-Bild ist auf jedem Gerät vollständig sichtbar.*
 Breitere Geräte sehen bei gleicher Höhe seitlich mehr, schmalere (iPad) die volle 16:9-Breite und oben/unten mehr.
 Eine einzige Funktion `sicht(format)` rechnet das über die Kamera exakt um (Tangens des halben Sichtfelds:
 `tanV = tan(65,9°/2) · max(1, (16/9) / A)`, `tanH = tanV · A`, A = Breite/Höhe); Bühne, Vorschau, Vergleich und
@@ -441,7 +445,7 @@ Regel C ist ein eigener Auftrag im Repo aether.
   Form 1–8, Drehung YXZ in Grad, Farbe). Das Hauptformat je Screen aus Version 2 entfällt.
 - „Text einfügen“ liest Exporte der Versionen **1, 2 und 3** (Hinzufügen oder Alles ersetzen). Umrechnung: Kamera,
   Einheiten und Bezugspunkte sind in allen Versionen gleich, also bleiben Asteroiden und Lage unverändert; ein
-  altes Hauptformat (iPhone, iPad, 16:9) wird zu 16:9 · Switch 2. Was früher für ein breiteres Hauptformat am Rand
+  altes Hauptformat (iPhone, iPad, 16:9) wird zu 16:9 · PC & Switch 2. Was früher für ein breiteres Hauptformat am Rand
   lag, steht jetzt in der gedimmten Randfläche. Version 1 kannte keine Lage und kein Rollen: beides wird 0.
 - **Als Bild sichern (alle Formate):** vier PNG in den Größen der Tabelle, ohne Hilfen (wie „Vorschau ohne
   Hilfen“), Namen `aether-screen-<Name>-<Format>.png` (`21x9`, `iphone-quer`, `16x9-switch2`, `ipad-quer`). In der

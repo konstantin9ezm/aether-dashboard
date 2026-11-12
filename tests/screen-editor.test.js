@@ -651,6 +651,56 @@ describe('Screen-Editor: Legende statt Beschriftungen', () => {
     });
   }
 
+  test('Legende zeigt nur sichtbare Rahmen und Kästen (je Schalterkombination); Schalter heißt „Umrisse“', async () => {
+    const { context, page, log } = await newPage();
+    await openEditor(page);
+    const schalter = await page.$eval('#umrisse', (e) => e.closest('label').textContent.trim());
+    assert.equal(schalter, 'Umrisse', 'Schaltertext');
+    assert.equal(await page.$eval('#rahmen', (e) => e.closest('label').textContent.trim()), 'Rahmen der anderen Geräte');
+    const ANDERE = ['ipad', 'iphone', 'ultrawide'];
+    const faelle = [
+      { name: 'alle an', umrisse: true, rahmen: true, erwartet: LEGENDE.map((l) => l[0]) },
+      { name: '„Rahmen der anderen Geräte“ aus', umrisse: true, rahmen: false, erwartet: ['desktop', 'logo-menue'] },
+      { name: '„Umrisse“ aus', umrisse: false, rahmen: true, erwartet: ['desktop', ...ANDERE] },
+      { name: 'beide aus', umrisse: false, rahmen: false, erwartet: ['desktop'] },
+      { name: 'wieder alle an', umrisse: true, rahmen: true, erwartet: LEGENDE.map((l) => l[0]) }
+    ];
+    for (const f of faelle) {
+      await page.setChecked('#umrisse', f.umrisse);
+      await page.setChecked('#rahmen', f.rahmen);
+      await page.waitForTimeout(100);
+      const z = await page.evaluate(() => ({
+        sichtbar: [...document.querySelectorAll('#legende .eintrag')].filter((e) => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0).map((e) => e.dataset.k),
+        alle: [...document.querySelectorAll('#legende .eintrag')].map((e) => [e.dataset.k, e.textContent.trim()]),
+        rahmen: [...document.querySelectorAll('#rahmenBox .rahmen')].map((e) => e.dataset.k).sort(),
+        umriss: ['logoEl', 'menueEl'].map((id) => document.getElementById(id)).some((e) => e.classList.contains('umriss') && getComputedStyle(e).outlineStyle === 'dashed')
+      }));
+      assert.deepEqual(z.sichtbar, f.erwartet, `${f.name}: Einträge in der Reihenfolge wie bisher`);
+      assert.deepEqual(z.alle, LEGENDE, `${f.name}: Reihenfolge und Texte im Dokument unverändert`);
+      // Gegenstück auf der Bühne: genau die Einträge, deren Rahmen/Kästen sichtbar sind
+      assert.deepEqual(z.rahmen, f.erwartet.filter((k) => k !== 'logo-menue').sort(), `${f.name}: Rahmen auf der Bühne`);
+      assert.equal(z.umriss, f.erwartet.includes('logo-menue'), `${f.name}: Kästen um Logo/Menübox`);
+      // Lage wie bisher: unter dem Bühnenbild, im Bühnen-Bereich, ohne Überlappung
+      const m = await legendeMessen(page);
+      const sicht = m.eintraege.filter((e) => e.box.w > 0);
+      assert.ok(inside(m.leg, m.stage) && m.leg.y0 >= m.frame.y1 - 0.5, `${f.name}: Legende unter dem Bühnenbild`);
+      for (const e of sicht) assert.ok(inside(e.box, m.leg) && !e.clip && e.font === '12px', `${f.name}: „${e.text}“ vollständig`);
+      for (let i = 0; i < sicht.length; i++) for (let j = i + 1; j < sicht.length; j++) assert.ok(!overlaps(sicht[i].box, sicht[j].box), `${f.name}: keine Überlappung`);
+    }
+    // Farben und Linienmuster der verbliebenen Einträge unverändert
+    await page.setChecked('#rahmen', false);
+    const muster = await page.$eval('#legende .eintrag[data-k="desktop"] .muster', (e) => { const cs = getComputedStyle(e); return [cs.borderTopStyle, parseFloat(cs.borderTopWidth)]; });
+    assert.deepEqual(muster, ['solid', 3]);
+    // Logo und Menübox verschieben: Kästen orange statt gestrichelt hell → Eintrag „Logo/Menübox“ entfällt so lange
+    await page.setChecked('#rahmen', true);
+    await page.check('#layoutEdit');
+    assert.deepEqual(await page.$$eval('#legende .eintrag:not([hidden])', (es) => es.map((e) => e.dataset.k)), ['desktop', 'ipad', 'iphone', 'ultrawide']);
+    await page.uncheck('#layoutEdit');
+    assert.equal(await page.isVisible('#legende .eintrag[data-k="logo-menue"]'), true);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
   test('Legende fehlt in „Vorschau ohne Hilfen“ und im Bild-Export', async () => {
     const { context, page, log } = await newPage({ init: { fn: shareMock } });
     await openEditor(page);
