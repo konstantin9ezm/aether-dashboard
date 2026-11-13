@@ -219,7 +219,15 @@ const mock = {
       ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok',
       wfId: 42, latest: undefined, ciJobsByRun: {}, ciJobsFail: [],
       // Dashboard-Repo (öffentlich): standardmäßig ohne gemergte PRs, damit die übrigen Tests unverändert bleiben.
-      dashPulls: [], dash: 'ok', dashDeny: null });
+      dashPulls: [], dash: 'ok', dashDeny: null,
+      // Gesteuerte Verzögerung: Solange dashHold gilt, wartet jede Dashboard-Anfrage, bis releaseDash() sie freigibt.
+      dashHold: false, dashHeld: [], commits: null, pulls: null });
+  },
+  releaseDash() {
+    this.dashHold = false;
+    const open = this.dashHeld;
+    this.dashHeld = [];
+    for (const go of open) go();
   }
 };
 mock.reset();
@@ -259,6 +267,7 @@ async function githubApi(route) {
     return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
   }
   if (url.pathname === `${DASH_BASE}/pulls`) {
+    if (mock.dashHold) await new Promise((go) => mock.dashHeld.push(go));
     // Öffentliches Repo: ohne Token lesbar. Mit Token: 401 bei falschem/widerrufenem Token, sonst ggf. mock.dashDeny.
     assert.equal(url.searchParams.get('state'), 'closed');
     assert.equal(url.searchParams.get('base'), 'main');
@@ -318,11 +327,11 @@ async function githubApi(route) {
   if (p === `${BASE}/pulls`) {
     assert.equal(q.get('state'), 'closed');
     assert.equal(q.get('base'), 'main');
-    return json(route, 200, PULLS);
+    return json(route, 200, mock.pulls || PULLS);
   }
   if (p === `${BASE}/commits`) {
     assert.equal(q.get('sha'), 'main');
-    return json(route, 200, COMMITS);
+    return json(route, 200, mock.commits || COMMITS);
   }
   if (p === `${BASE}/contents/ROADMAP.md`) {
     assert.equal(q.get('ref'), 'main');
@@ -387,8 +396,10 @@ async function openProject(page) {
   await waitProjectLoaded(page);
 }
 async function waitProjectLoaded(page) {
+  // Die Zeitleiste gilt erst als fertig, wenn auch die Dashboard-PRs nachgeladen sind (#timelineList[data-dash] ≠ loading).
   await page.waitForFunction(() => ['ciBody', 'timelineBody', 'roadmapBody', 'engineBody']
-    .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); }));
+    .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); })
+    && !document.querySelector('#timelineList[data-dash="loading"]'));
 }
 async function waitCiTime(page) {
   await page.waitForSelector('#ciTime[data-state]');
@@ -2045,5 +2056,259 @@ describe('Zeitleiste mit Dashboard-PRs', () => {
     await page.setViewportSize({ width: 320, height: 900 });
     await page.screenshot({ path: path.join(OUT, 'zeitleiste-320.png'), fullPage: false });
     await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zeitleiste: aether-Einträge sofort, Dashboard-PRs werden nachgeladen
+// Verzögerung über den Test-Server (mock.dashHold / mock.releaseDash), gewartet wird nur auf Seitenzustand.
+// ---------------------------------------------------------------------------
+describe('Zeitleiste lädt Dashboard-PRs nach', () => {
+  const dpr = (number, title, merged_at, merge_commit_sha) => ({
+    number, title, merged_at, merge_commit_sha, state: 'closed', base: { ref: 'main' }, html_url: `${GH_DASH}/pull/${number}`
+  });
+  // DB#11 hat genau dieselbe Merge-Zeit wie aether-PR #2: aether steht davor.
+  const DASH_PULLS = [
+    dpr(10, 'Dashboard: Zeitleiste', '2026-11-05T12:00:00Z', sha('2')),
+    dpr(9, 'Dashboard: Filter', '2026-11-04T19:30:00Z', sha('3')),
+    dpr(11, 'Dashboard: gleiche Zeit', '2026-11-03T12:00:00Z', sha('7')),
+    dpr(8, 'Verworfen', null, sha('5')),
+    dpr(7, 'Dashboard: Grundgerüst', '2026-10-31T08:00:00Z', sha('4'))
+  ];
+  const ORDER_ALL = ['DB#10', 'commit', 'PR#3', 'DB#9', 'PR#2', 'DB#11', 'commit', 'DB#7', 'PR#1'];
+  const ORDER_SPIEL = ['commit', 'PR#3', 'PR#2', 'commit', 'PR#1'];
+  const items = (page) => page.$$eval('#timeline a', (as) => as.map((a) => ({
+    repo: a.dataset.repo, kind: a.dataset.kind, href: a.href,
+    badge: a.querySelector('.ic').textContent, badgeBg: getComputedStyle(a.querySelector('.ic')).backgroundColor,
+    num: a.querySelector('.num').textContent, text: a.textContent.replace(/\s+/g, ' ').trim()
+  })));
+  const short = (e) => (e.repo === 'dashboard' ? 'DB' : e.kind === 'pr' ? 'PR' : 'commit') + (e.kind === 'pr' ? '#' + /#(\d+)/.exec(e.num)[1] : '');
+  const chips = (page) => page.$$eval('#timelineFilter button', (bs) => bs.map((b) => `${b.textContent}=${b.getAttribute('aria-pressed')}`));
+  const dashReq = () => mock.requests.filter((r) => r.path === `${DASH_BASE}/pulls`);
+  // Warten, bis der Test-Server n Dashboard-Anfragen festhält: Zustand des Test-Servers, kurz nachgesehen (keine feste Wartezeit).
+  async function untilHeld(n = 1) {
+    while (mock.dashHeld.length < n) await new Promise((r) => setImmediate(r));
+  }
+  const loadingShown = (page) => page.waitForSelector('#timelineDashLoading', { timeout: 10000 });
+  const dashSettled = (page) => page.waitForSelector('#timelineList[data-dash="ok"], #timelineList[data-dash="error"]');
+  const commitN = (i, date, parent) => commit(i.toString(16).padStart(40, 'a'), `Commit ${i}`, date, parent ? [parent] : []);
+
+  // Referenz: gleiche Daten ohne Verzögerung.
+  async function reference(setup, expand) {
+    mock.reset();
+    setup();
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    if (expand) await page.click('#timelineMore');
+    const r = { items: await items(page), html: await page.$eval('#timelineBody', (b) => b.innerHTML) };
+    await context.close();
+    return r;
+  }
+
+  test('(a) aether-Einträge sofort, Ladehinweis, danach eingemischt wie ohne Verzögerung', async () => {
+    const ref = await reference(() => { mock.dashPulls = DASH_PULLS; });
+    assert.deepEqual(ref.items.map(short), ORDER_ALL, 'Referenz: gleiche Zeit → aether zuerst');
+
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    mock.dashHold = true;
+    const { context, page, log } = await newPage(null);
+    await page.goto(baseUrl);
+    await page.click('#tabProject');
+    await loadingShown(page);
+    assert.equal(mock.dashHeld.length, 1, 'Dashboard-Antwort steht noch aus');
+    assert.deepEqual((await items(page)).map(short), ORDER_SPIEL, 'aether-Einträge stehen schon da');
+    assert.equal(await text(page, '#timelineDashLoading'), 'Dashboard-PRs werden geladen …');
+    assert.equal(await page.$('#timelineBody .loadline'), null, 'kein „Lade Zeitleiste …“ mehr');
+    assert.equal(await page.$('#timelineDashNote'), null);
+    // Gleicher Stil und gleiche Stelle wie „Dashboard-PRs nicht verfügbar“: zwischen Chips und Liste.
+    assert.equal(await page.$eval('#timelineDashLoading', (n) => n.className), 'muted tl-note');
+    const order = await page.evaluate(() => [...document.getElementById('timelineBody').children].map((e) => e.id));
+    assert.deepEqual(order, ['timelineFilter', 'timelineDashLoading', 'timelineList']);
+    assert.ok(await page.isDisabled('#projReload'), 'Aktualisieren erst frei, wenn alles geladen ist');
+
+    mock.releaseDash();
+    await dashSettled(page);
+    assert.equal(await page.$('#timelineDashLoading'), null, 'Ladehinweis weg');
+    assert.deepEqual(await items(page), ref.items, 'Endergebnis identisch');
+    assert.equal(await page.$eval('#timelineBody', (b) => b.innerHTML), ref.html, 'DOM identisch');
+    await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+    assert.equal(dashReq().length, 1);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  for (const mode of ['error', 'tokenThenAnonError']) {
+    test(`(b) Dashboard-Anfrage scheitert beim Nachladen (${mode}): aether bleibt, „nicht verfügbar“`, async () => {
+      mock.reset();
+      mock.dashPulls = DASH_PULLS;
+      if (mode === 'error') mock.dash = 'error'; else { mock.dashDeny = 403; mock.dash = 'anonError'; }
+      mock.dashHold = true;
+      const { context, page, log } = await newPage(null);
+      await page.goto(baseUrl);
+      await page.click('#tabProject');
+      await loadingShown(page);
+      assert.deepEqual((await items(page)).map(short), ORDER_SPIEL);
+      if (mode === 'tokenThenAnonError') {
+        // Erste Anfrage (mit Token) abgelehnt → Rückfall ohne Token, auch diese wird festgehalten.
+        mock.dashHold = true;
+        const go = mock.dashHeld.shift();
+        go();
+        await untilHeld(1);
+        assert.ok(await page.$('#timelineDashLoading'), 'Ladehinweis bleibt während des Rückfalls');
+        assert.deepEqual((await items(page)).map(short), ORDER_SPIEL);
+      }
+      mock.releaseDash();
+      await page.waitForSelector('#timelineDashNote');
+      assert.equal(await text(page, '#timelineDashNote'), 'Dashboard-PRs nicht verfügbar');
+      assert.equal(await page.$('#timelineDashLoading'), null);
+      assert.deepEqual((await items(page)).map(short), ORDER_SPIEL, 'aether-Einträge bleiben');
+      assert.equal(await page.$('#timelineBody .msg'), null, 'keine Fehlerkarte');
+      assert.ok(await page.isHidden('#projOffline'), 'kein Offline-Hinweis');
+      assert.deepEqual(dashReq().map((r) => r.auth), mode === 'error' ? [`Bearer ${TOKEN}`] : [`Bearer ${TOKEN}`, null]);
+      await assertNoLeak(log, page);
+      await context.close();
+    });
+  }
+
+  test('(c) Filter „Dashboard“ / „Spiel“ während des Nachladens bleiben erhalten', async () => {
+    for (const f of ['dashboard', 'spiel']) {
+      mock.reset();
+      mock.dashPulls = DASH_PULLS;
+      mock.dashHold = true;
+      const { context, page } = await newPage(null);
+      await page.goto(baseUrl);
+      await page.click('#tabProject');
+      await loadingShown(page);
+      await page.click(`#timelineFilter button[data-filter="${f}"]`);
+      if (f === 'dashboard') {
+        assert.equal(await text(page, '#timelineDashLoading'), 'Dashboard-PRs werden geladen …', 'Hinweis statt Liste');
+        assert.equal(await text(page, '#timelineList'), '', 'keine Liste, kein „Keine Dashboard-PRs.“');
+        assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=false', 'Dashboard=true']);
+      } else {
+        assert.equal(await page.$('#timelineDashLoading'), null, 'Filter „Spiel“: kein Ladehinweis');
+        assert.deepEqual((await items(page)).map(short), ORDER_SPIEL);
+        assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=true', 'Dashboard=false']);
+      }
+      mock.releaseDash();
+      await dashSettled(page);
+      if (f === 'dashboard') {
+        assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=false', 'Dashboard=true'], 'Filter bleibt „Dashboard“');
+        assert.deepEqual((await items(page)).map(short), ['DB#10', 'DB#9', 'DB#11', 'DB#7']);
+      } else {
+        assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=true', 'Dashboard=false'], 'Filter bleibt „Spiel“');
+        assert.deepEqual((await items(page)).map(short), ORDER_SPIEL);
+      }
+      assert.equal(await page.$('#timelineDashLoading'), null);
+      await context.close();
+    }
+  });
+
+  test('(c) „Ältere anzeigen“ während des Nachladens bleibt aufgeklappt (Alle und Spiel)', async () => {
+    // 20 aether-Commits (linear), dazu 5 Dashboard-PRs mittendrin.
+    const commits = [];
+    for (let i = 20; i >= 1; i--) commits.push(commitN(i, `2026-11-${String(i).padStart(2, '0')}T10:00:00Z`, i > 1 ? (i - 1).toString(16).padStart(40, 'a') : null));
+    const dash = [2, 5, 9, 14, 18].map((d, k) => dpr(50 + k, `DB ${50 + k}`, `2026-11-${String(d).padStart(2, '0')}T11:00:00Z`, sha('6')));
+    for (const f of ['alle', 'spiel']) {
+      const ref = await reference(() => { mock.commits = commits; mock.pulls = []; mock.dashPulls = dash; }, true);
+      mock.reset();
+      mock.commits = commits;
+      mock.pulls = [];
+      mock.dashPulls = dash;
+      mock.dashHold = true;
+      const { context, page } = await newPage(null);
+      await page.goto(baseUrl);
+      await page.click('#tabProject');
+      await loadingShown(page);
+      if (f === 'spiel') await page.click('#timelineFilter button[data-filter="spiel"]');
+      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (5)');
+      await page.click('#timelineMore');
+      assert.equal((await page.$$('#timeline a')).length, 20);
+      mock.releaseDash();
+      await dashSettled(page);
+      const tl = await items(page);
+      assert.equal(await page.$('#timelineMore'), null, `${f}: Liste bleibt aufgeklappt`);
+      if (f === 'alle') {
+        assert.equal(tl.length, 25, 'alle 25 Einträge sichtbar');
+        // Ohne Verzögerung (aufgeklappt): dieselben 25 in derselben Reihenfolge.
+        assert.deepEqual(tl, ref.items, 'wie ohne Verzögerung');
+        assert.equal(tl.filter((e) => e.repo === 'dashboard').length, 5);
+        assert.deepEqual(tl.slice(0, 3).map(short), ['commit', 'commit', 'DB#54'], 'nach Zeit gemischt');
+      } else {
+        assert.equal(tl.length, 20);
+        assert.ok(tl.every((e) => e.repo === 'aether'));
+      }
+      assert.deepEqual(await chips(page), f === 'alle' ? ['Alle=true', 'Spiel=false', 'Dashboard=false'] : ['Alle=false', 'Spiel=true', 'Dashboard=false']);
+      // Filterwechsel klappt wie bisher wieder ein.
+      await page.click('#timelineFilter button[data-filter="alle"]');
+      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (10)');
+      await context.close();
+    }
+  });
+
+  test('(d) Dashboard-Antwort im Cache: kein Ladehinweis, Liste in einem Schritt', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await page.click('#tabPlay');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    const before = mock.requests.length;
+    // Käme doch eine Anfrage, hinge sie – dann wäre der Ladehinweis zu sehen.
+    mock.dashHold = true;
+    await page.evaluate(() => {
+      window.__tlSeen = [];
+      new MutationObserver(() => {
+        const l = document.getElementById('timelineList');
+        window.__tlSeen.push((document.getElementById('timelineDashLoading') ? 'hint' : '') + (l ? l.dataset.dash : ''));
+      }).observe(document.getElementById('timelineBody'), { childList: true, subtree: true, attributes: true });
+    });
+    await page.click('#tabProject');
+    await waitProjectLoaded(page);
+    await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+    const seen = await page.evaluate(() => window.__tlSeen);
+    assert.ok(seen.length > 0, 'neu gezeichnet');
+    assert.ok(seen.every((s) => s !== 'hint' && !/hint|loading/.test(s)), `nie Ladehinweis: ${seen.join(',')}`);
+    assert.deepEqual((await items(page)).map(short), ORDER_ALL);
+    assert.equal(mock.requests.length, before, 'keine neue Anfrage');
+    assert.equal(mock.dashHeld.length, 0);
+    mock.releaseDash();
+    await context.close();
+  });
+
+  // Erstes Laden (Spielansicht beim Start + Projektansicht): genau dieselben Anfragen wie vor dem Nachladen.
+  const FIRST_LOAD = [
+    `${BASE}/contents/index.json?ref=web-build`,
+    `${BASE}/contents/builds/aaaaaaa?ref=web-build`,
+    `${BASE}/actions/workflows?per_page=100`,
+    `${BASE}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`,
+    `${BASE}/commits?sha=main&per_page=50`,
+    `${DASH_BASE}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`,
+    `${BASE}/contents/ROADMAP.md?ref=main`,
+    `${BASE}/actions/workflows/42/runs?branch=main&per_page=1&exclude_pull_requests=true`,
+    `${BASE}/actions/workflows/42/runs?branch=main&status=completed&per_page=5&exclude_pull_requests=true`,
+    `${BASE}/actions/runs/9001/jobs?filter=latest&per_page=100`,
+    `${BASE}/contents/.github/workflows/build.yml?ref=0abc1234def5678900000000000000000000beef`
+  ];
+  test('(e) Anfragen beim ersten Laden unverändert, auch mit verzögerter Dashboard-Antwort', async () => {
+    const counts = [];
+    for (const hold of [false, true]) {
+      mock.reset();
+      mock.dashPulls = DASH_PULLS;
+      mock.dashHold = hold;
+      const { context, page } = await newPage(null);
+      await page.goto(baseUrl);
+      await page.click('#tabProject');
+      if (hold) { await loadingShown(page); mock.releaseDash(); }
+      await waitProjectLoaded(page);
+      await waitCiTime(page);
+      await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+      counts.push(mock.requests.length);
+      assert.deepEqual(mock.requests.map((r) => r.path + r.query).sort(), [...FIRST_LOAD].sort(), 'dieselben Anfragen');
+      assert.equal(dashReq().length, 1, 'genau eine Dashboard-Anfrage');
+      await context.close();
+    }
+    // 11 = die 10 des Tests „Kurzer Cache“ + Workflow-ID (dort als Toleranz 10–11 erlaubt); vorher wie nachher gemessen.
+    assert.deepEqual(counts, [FIRST_LOAD.length, FIRST_LOAD.length], `Anfragen: ${counts.join(', ')}`);
   });
 });

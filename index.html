@@ -2854,13 +2854,24 @@
   // --- 2. Zeitleiste -----------------------------------------------------------
   // Gemergte PRs aus aether (mit Commits auf main, wie bisher) und aus aether-dashboard (nur PRs) in einer Liste.
   // Fehler beim Dashboard-Repo: aether-Einträge trotzdem zeigen, dazu die Zeile „Dashboard-PRs nicht verfügbar“.
+  // Gewartet wird nur auf aether. Ist die Dashboard-Liste dann schon da (60-s-Cache oder schon angekommen),
+  // wird sie gleich eingemischt; sonst kommt sie als Promise mit und wird nachgeladen (dash: 'loading').
   async function fetchTimeline(force) {
     needToken();
-    var r = await Promise.all([
-      fetchAetherTimeline(force),
-      fetchDashboardPulls(force).then(function (list) { return list; }, function () { return null; })
-    ]);
-    return { items: mergeTimeline(r[0], r[1] || []), dashError: r[1] === null };
+    var aetherP = fetchAetherTimeline(force);
+    var done = peekDashboardPulls(force);
+    var dashP = fetchDashboardPulls(force).then(function (list) { return list; }, function () { return null; });
+    dashP.then(function (list) { if (!done) done = { list: list }; });
+    var aether = await aetherP;
+    if (done) return { aether: aether, items: mergeTimeline(aether, done.list || []), dash: done.list === null ? 'error' : 'ok' };
+    return { aether: aether, items: mergeTimeline(aether, []), dash: 'loading', later: dashP };
+  }
+
+  // Liegt die Dashboard-Liste frisch im Cache? (Nur lesen, keine Anfrage.) Dann ohne Ladehinweis in einem Schritt.
+  function peekDashboardPulls(force) {
+    if (force) return null;
+    var c = projCache[dashOhneToken ? 'timelineDashOhneToken' : 'timelineDash'];
+    return c && !c.pending && Date.now() - c.t < PROJECT_TTL ? { list: c.data } : null;
   }
 
   async function fetchAetherTimeline(force) {
@@ -2979,16 +2990,22 @@
 
   var TL_FILTERS = [{ id: 'alle', label: 'Alle' }, { id: 'spiel', label: 'Spiel' }, { id: 'dashboard', label: 'Dashboard' }];
 
+  // Filterleiste einmal; Hinweiszeile und Liste werden aus st gezeichnet, auch wenn die Dashboard-PRs nachkommen.
+  // Filter (tlFilter) und „Ältere anzeigen“ (st.expanded) bleiben dabei erhalten.
   function renderTimeline(box, data) {
     box.textContent = '';
     $('tlTitle').textContent = 'Zeitleiste';
-    var all = data.items;
+    var gen = projGen;
+    var st = { aether: data.aether, all: data.items, dash: data.dash, expanded: false, note: null };
+    box._tl = st;
     var bar = el('div', 'tl-filter');
     bar.id = 'timelineFilter';
     bar.setAttribute('role', 'group');
     bar.setAttribute('aria-label', 'Zeitleiste filtern');
     var list = el('div');
     list.id = 'timelineList';
+    st.list = list;
+    st.box = box;
     TL_FILTERS.forEach(function (f) {
       var b = el('button', null, f.label);
       b.type = 'button';
@@ -2996,22 +3013,42 @@
       b.setAttribute('aria-pressed', String(tlFilter === f.id));
       b.addEventListener('click', function () {
         tlFilter = f.id;
+        st.expanded = false;
         bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x.dataset.filter === tlFilter)); });
-        renderTimelineList(list, filterTimeline(all, tlFilter));
+        paintTimeline(st);
       });
       bar.appendChild(b);
     });
     box.appendChild(bar);
-    if (data.dashError) {
-      var note = el('p', 'muted tl-note', 'Dashboard-PRs nicht verfügbar');
-      note.id = 'timelineDashNote';
-      box.appendChild(note);
-    }
     box.appendChild(list);
-    renderTimelineList(list, filterTimeline(all, tlFilter));
+    paintTimeline(st);
+    if (!data.later) return;
+    return data.later.then(function (dash) {
+      if (gen !== projGen || box._tl !== st || !list.isConnected) return;
+      st.all = mergeTimeline(st.aether, dash || []);
+      st.dash = dash === null ? 'error' : 'ok';
+      paintTimeline(st);
+    });
   }
 
-  function renderTimelineList(box, items) {
+  // Hinweiszeile (Fehler bzw. „werden geladen …“, nicht im Filter „Spiel“) und Liste.
+  // Im Filter „Dashboard“ steht während des Ladens nur der Hinweis statt der Liste.
+  function paintTimeline(st) {
+    if (st.note) { st.note.remove(); st.note = null; }
+    var loading = st.dash === 'loading';
+    if (st.dash === 'error' || (loading && tlFilter !== 'spiel')) {
+      var note = el('p', 'muted tl-note', loading ? 'Dashboard-PRs werden geladen …' : 'Dashboard-PRs nicht verfügbar');
+      note.id = loading ? 'timelineDashLoading' : 'timelineDashNote';
+      if (loading) note.setAttribute('role', 'status');
+      st.box.insertBefore(note, st.list);
+      st.note = note;
+    }
+    st.list.dataset.dash = st.dash;
+    if (loading && tlFilter === 'dashboard') { st.list.textContent = ''; return; }
+    renderTimelineList(st.list, filterTimeline(st.all, tlFilter), st);
+  }
+
+  function renderTimelineList(box, items, st) {
     box.textContent = '';
     if (!items.length) {
       box.appendChild(el('p', 'muted', tlFilter === 'dashboard' ? 'Keine Dashboard-PRs.' : 'Noch keine Einträge auf ' + MAIN + '.'));
@@ -3042,12 +3079,14 @@
       li.appendChild(a);
       ol.appendChild(li);
     };
-    items.slice(0, TIMELINE_SHOW).forEach(addItem);
+    var expanded = st && st.expanded;
+    items.slice(0, expanded ? items.length : TIMELINE_SHOW).forEach(addItem);
     box.appendChild(ol);
-    if (items.length > TIMELINE_SHOW) {
+    if (!expanded && items.length > TIMELINE_SHOW) {
       var more = mkBtn('Ältere anzeigen (' + (items.length - TIMELINE_SHOW) + ')', function () {
         items.slice(TIMELINE_SHOW).forEach(addItem);
         more.remove();
+        if (st) st.expanded = true;
       });
       more.classList.add('block', 'mt');
       more.id = 'timelineMore';
