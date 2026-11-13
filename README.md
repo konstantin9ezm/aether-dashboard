@@ -601,6 +601,21 @@ Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüs
   (Exponent der Verteilung 1–5; 2,3), Zufallswert (1 … 4 294 967 295, Textfeld, Übernahme mit Enter/Verlassen) mit
   „Neu würfeln“ und „Wie im Spiel (zurücksetzen)“ (alle Ring-Regler auf die Spielwerte, ein Schritt). Die Streuung
   quer zum Ring (0,085 → 0,03) hat keinen Regler.
+- **Ring: „Ring (Regler) | Brocken bearbeiten“** (Umschalter im Reiter „Ring“). Im Modus „Ring (Regler)“ lässt sich
+  auf der Bühne nichts anfassen. Im Modus „Brocken bearbeiten“ (nur dann `touch-action: none` auf der Bühne): Antippen
+  wählt einen Brocken (orangefarbener Rahmen mit Eckgriffen, nur Anzeige), eine freie Stelle hebt die Auswahl auf,
+  Ziehen verschiebt (Finger, Maus, Trackpad gleich), Regler „Größe“ (0,25–4 ×) und „Drehung“ (±180°), „Vor die
+  Schrift“, „Hinter die Schrift“, „Löschen“ (Taste Entf; Backspace löscht nie), „+ Brocken setzen“ (danach auf eine
+  Stelle tippen: eigener Brocken mit Form aus dem Zufallsgenerator, mittlerer Größe, vorne/hinten nach der Lage).
+  Anzeige „Ausgewählt: Brocken <Nr.>“ (Nr. = `brocken-<Nr.>` im SVG) bzw. „Eigener Brocken“. Jede Aktion, jeder Zug
+  ist ein Rückgängig-Schritt.
+- **Einzeländerungen (E3):** je Brocken-Nummer in `einstellungen.brocken` (`dx`, `dy` = Versatz in Ring-Koordinaten,
+  in Halbachsen; `groesse` = Faktor; `drehung` = Zusatzwinkel in Grad; `lage` = Vorrang vorne/hinten; `geloescht`);
+  eigene Brocken in `einstellungen.eigene` (Lage in Ring-Koordinaten, Größe relativ zur mittleren Brocken-Größe).
+  Neigung, Breite, Höhe und Brocken-Größe behalten die Änderungen (sie machen sie mit). Anzahl, Zufallswert, „Neu
+  würfeln“, Lage des Kopfs, Schweif-Länge, Dichte und „Wie im Spiel“ verteilen den Ring neu: Gibt es Änderungen an
+  Brocken des Rings, fragt die Seite vorher „Änderungen an Brocken des Rings verwerfen? Selbst gesetzte Brocken
+  bleiben.“ (Verwerfen/Abbrechen; Esc = Abbrechen). Rückfrage und Änderung sind zusammen ein Schritt.
 - **Reiter „Ausgabe“:** „PNG sichern“ (transparent, nur sichtbare Ebenen, 1024/2048/4096 px) und „SVG sichern“
   (Schrift als Pfade, kein `<text>`, keine Schriftdatei; Gruppen `ring-hinten`, `schatten` bzw. `leuchten`, `tiefe`,
   `schrift`, `umriss`, `ring-vorne` je nach Inhalt; Verlauf als `linearGradient`, Weichheit als `feGaussianBlur`).
@@ -621,7 +636,8 @@ Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüs
 - **Bedienung:** Regler mit `touch-action: none` (Ziehen scrollt die Seite nicht), Tippflächen ≥ 44 × 44 px. In den
   Hex-Feldern löscht Backspace nur Zeichen; außerhalb von Textfeldern schließt Backspace einen offenen Dialog.
 
-**Testschnittstelle:** `window.AetherLogoEditor` (nur lesen: Zustand, SVG, Ebenen, PNG-Quelle, Verlauf, Ring).
+**Testschnittstelle:** `window.AetherLogoEditor` (nur lesen: Zustand, SVG, Ebenen, PNG-Quelle, Verlauf, Ring mit
+Brocken, Modus, Auswahl, Markierung, Bild→Bildschirm-Koordinaten).
 
 ## Schriften (Logo-Editor)
 
@@ -809,8 +825,12 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
 - `tests/logo-ring.test.js` – Logo-Editor Stufe 2 (Ring): Standardwerte ergeben die Referenz-Brocken des Spiels
   (eigene, im Test festgehaltene Werte: Lage, Umriss, Farben, 49 hinten/101 vorne, Ausdehnung 375 × 137 px), jeder
   Regler ändert den Ring, „Wie im Spiel“, Zufallswert/„Neu würfeln“, Anzahl 10–400, Projekt Version 2 (Rundlauf) und
-  Version 1 (lädt mit Spielwerten), SVG/PNG mit Ring, Neuladen, offline, 4 API-Anfragen, kein Token, Leistung.
-  Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=referenz|version1 node --test tests/logo-ring.test.js`.
+  Version 1 (lädt mit Spielwerten), SVG/PNG mit Ring, Neuladen, offline, 4 API-Anfragen, kein Token, Leistung;
+  Modus-Umschalter, Auswahl/Markierung, Ziehen (Maus und Touch ohne Seiten-Scrollen), Größe, Drehung, vor/hinter,
+  Löschen (Entf, nicht Backspace), eigener Brocken, E3 (Änderungen folgen Neigung/Breite/Höhe/Größe), Rückfrage nur
+  mit Änderungen, Abbrechen/Verwerfen, Rückgängig/Wiederholen, Projekt mit Änderungen, Layout in beiden Modi.
+  Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=referenz|neigung|ohne-frage|verwerfen-alles|loeschen|regler-anfassbar|version1
+  node --test tests/logo-ring.test.js`.
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,

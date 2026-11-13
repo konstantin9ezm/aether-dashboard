@@ -207,7 +207,9 @@ const SCHRIFTEN = [
 const dateiFuer = (id, w, k) => id === 'orbitron' ? `fonts/orbitron/Orbitron-${w === 400 ? 'Regular' : STIL[w]}.ttf` : id === 'audiowide' ? 'fonts/audiowide/Audiowide-Regular.ttf' : `fonts/${id}/${id}-latin-${w}-${k ? 'italic' : 'normal'}.woff`;
 const START = { schrift: 'jost', staerke: 500, kursiv: false, abstand: 0, farbe1: '#8C7CF0', farbe2: '#C4BBFF', tiefe: 0, richtung: 'so', umriss: 0, umrissFarbe: '#1B1838', effekt: 'schatten', weich: 0, ringHinten: true, ringVorne: true,
   // Stufe 2: Ring-Einstellungen mit den Spielwerten aus game/src/Logo.cpp
-  ring: { neigung: 0.27, breite: 1.78, hoehe: 0.3, anzahl: 150, groesseMin: 0.011, groesseMax: 0.075, kopf: 2.25, schweif: 5.85, dichte: 2.3, zufall: 0x9E3779B9 } };
+  ring: { neigung: 0.27, breite: 1.78, hoehe: 0.3, anzahl: 150, groesseMin: 0.011, groesseMax: 0.075, kopf: 2.25, schweif: 5.85, dichte: 2.3, zufall: 0x9E3779B9 },
+  // Stufe 2, Teil 2: keine Einzeländerungen, keine eigenen Brocken
+  brocken: {}, eigene: [] };
 
 // ---------------------------------------------------------------------------
 describe('Logo-Editor: Schriften', () => {

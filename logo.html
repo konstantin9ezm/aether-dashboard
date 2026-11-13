@@ -100,8 +100,9 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .row.grow > *{ flex:1 1 0; }
 .sub{ font-size:13px; color:var(--muted); margin:10px 0 0; }
 .note{ font-size:13px; color:var(--muted); margin:6px 0 0; }
-#modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
-#modal[hidden]{ display:none; }
+#modal, #frage{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
+#modal[hidden], #frage[hidden]{ display:none; }
+#frage p{ color:var(--text); font-size:16px; }
 .dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
 .dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; }
 .dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
@@ -154,6 +155,18 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
 .zahl{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:16px; min-height:44px; padding:6px 8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
 .zahl[aria-invalid="true"]{ border-color:var(--danger); }
 .ring-knopf{ margin-top:14px; }
+#ringRegler[hidden], #ringBrocken[hidden]{ display:none; }
+.auswahl-text{ font-size:15px; margin:4px 0 10px; min-height:1.4em; }
+/* Bühne im Modus „Brocken bearbeiten“: Ziehen bewegt Brocken, nicht die Seite */
+#editorBuehne{ position:relative; }
+#editorBuehne.bearbeiten{ touch-action:none; cursor:pointer; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+#editorBuehne.bearbeiten.setzen{ cursor:crosshair; }
+#editorBild{ -webkit-user-drag:none; }
+.auswahl{ position:absolute; pointer-events:none; border:2px solid var(--sel); border-radius:2px; }
+.auswahl[hidden]{ display:none; }
+.auswahl .griff{ position:absolute; width:8px; height:8px; background:var(--sel); border:1px solid #1c1206; }
+.auswahl .griff:nth-child(1){ left:-5px; top:-5px; } .auswahl .griff:nth-child(2){ right:-5px; top:-5px; }
+.auswahl .griff:nth-child(3){ left:-5px; bottom:-5px; } .auswahl .griff:nth-child(4){ right:-5px; bottom:-5px; }
 /* Aufklappbare Karten (Arbeitsdatei, Im Spiel) */
 .karte h2 .klapp{ all:unset; box-sizing:border-box; display:flex; align-items:center; gap:6px; width:100%; min-height:44px; cursor:pointer; flex-wrap:wrap; font-weight:600; color:var(--text); }
 .karte h2 .klapp::before{ content:"›"; display:inline-block; width:1em; text-align:center; transition:transform .15s; }
@@ -184,7 +197,8 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
       </div>
     </div>
     <div class="buehne" id="editorBuehne" data-bg="dunkel">
-      <img id="editorBild" alt="Logo-Entwurf" hidden>
+      <img id="editorBild" alt="Logo-Entwurf" draggable="false" hidden>
+      <div id="editorAuswahl" class="auswahl" aria-hidden="true" hidden><span class="griff"></span><span class="griff"></span><span class="griff"></span><span class="griff"></span></div>
       <p class="leer" id="editorLeer">Lade Schrift …</p>
     </div>
     <div class="seg" id="hintergrund" role="group" aria-label="Hintergrund (nur zur Anzeige)">
@@ -260,6 +274,10 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
         <label class="check" data-ring="hinten"><input type="checkbox" id="rHinten"><span>Ring hinten</span></label>
         <label class="check" data-ring="vorne"><input type="checkbox" id="rVorne"><span>Ring vorne</span></label>
       </div>
+      <div class="seg" id="rModus" role="group" aria-label="Ring-Modus">
+        <button type="button" data-modus="regler" aria-pressed="true">Ring (Regler)</button>
+        <button type="button" data-modus="brocken" aria-pressed="false">Brocken bearbeiten</button>
+      </div>
       <div id="ringRegler">
         <div class="felder">
           <div class="feld">
@@ -306,6 +324,26 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
           </div>
         </div>
         <div class="row grow ring-knopf"><button type="button" id="btnWieImSpiel">Wie im Spiel (zurücksetzen)</button></div>
+      </div>
+      <div id="ringBrocken" hidden>
+        <p class="auswahl-text" id="bAuswahl" role="status" aria-live="polite"></p>
+        <div class="row grow"><button type="button" id="btnBrockenSetzen" aria-pressed="false">+ Brocken setzen</button></div>
+        <div class="felder">
+          <div class="feld">
+            <label class="titel" for="bGroesse">Größe <output id="bGroesseWert" for="bGroesse"></output></label>
+            <input type="range" id="bGroesse">
+          </div>
+          <div class="feld">
+            <label class="titel" for="bDrehung">Drehung <output id="bDrehungWert" for="bDrehung"></output></label>
+            <input type="range" id="bDrehung">
+          </div>
+        </div>
+        <div class="row grow ring-knopf">
+          <button type="button" id="btnVorne" aria-pressed="false">Vor die Schrift</button>
+          <button type="button" id="btnHinten" aria-pressed="false">Hinter die Schrift</button>
+          <button type="button" id="btnLoeschen">Löschen</button>
+        </div>
+        <p class="note">Brocken antippen wählt ihn, Ziehen verschiebt ihn, eine freie Stelle hebt die Auswahl auf (Taste Entf löscht). Änderungen bleiben bei Neigung, Breite, Höhe und Brocken-Größe erhalten und machen sie mit; Anzahl, Zufallswert, Kopf, Schweif und Dichte verteilen den Ring neu.</p>
       </div>
       <p class="note" id="ringQuelle">Der Ring wird wie im Spiel berechnet (game/src/Logo.cpp): gleiche Formeln, gleicher Zufallsgenerator, Mitte auf der Mitte der Schrift, px bei Schriftgröße 100.</p>
     </div>
@@ -378,6 +416,10 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
   <h2 id="mTitel"></h2><p id="mText"></p>
   <div id="mInhalt"></div>
   <div class="row grow"><button type="button" id="mZu" class="primary">Schließen</button></div>
+</div></div>
+<div id="frage" hidden><div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="fText">
+  <p id="fText">Änderungen an Brocken des Rings verwerfen? Selbst gesetzte Brocken bleiben.</p>
+  <div class="row grow"><button type="button" id="fAbbrechen">Abbrechen</button><button type="button" id="fVerwerfen" class="primary">Verwerfen</button></div>
 </div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -1219,6 +1261,17 @@ const RING_BEREICHE = {
 };
 const ZUFALL_MAX = 4294967295;   // Zufallswert: 1 … 2^32 − 1 (XorShift32; 0 ergäbe nur Nullen)
 const RING_KEYS = Object.keys(RING_BEREICHE).concat(['zufall']);
+// E3: Diese Ring-Regler verteilen die Brocken neu (Nummer, Form oder Platz auf der Ringbahn ändern sich); bei
+// Einzeländerungen an Ring-Brocken fragt die Seite vorher. Neigung, Breite, Höhe und Brocken-Größe verschieben,
+// verformen bzw. skalieren nur – Einzeländerungen bleiben und machen sie mit.
+const RING_VERTEILT = ['anzahl', 'zufall', 'kopf', 'schweif', 'dichte'];
+// Einzeländerungen (selbst gewählt): Versatz in Ring-Koordinaten (Halbachsen), Größe als Faktor, Drehung in Grad
+const BROCKEN_BEREICHE = {
+  versatz:{ min:-20, max:20 },
+  groesse:{ min:0.25, max:4, schritt:0.05 },
+  drehung:{ min:-180, max:180, schritt:1 }
+};
+const MAX_EIGENE = 200;          // selbst gesetzte Brocken je Projekt (selbst gewählt)
 // Startzustand = heutiges Logo, soweit möglich (Jost 500, Verlauf wie im Spiel, leichter dunkler Schatten)
 const START = Object.freeze({
   schrift:'jost', staerke:500, kursiv:false, abstand:0,
@@ -1227,7 +1280,9 @@ const START = Object.freeze({
   umriss:0, umrissFarbe:'#1B1838',
   effekt:'schatten', weich:0,
   ringHinten:true, ringVorne:true,
-  ring:Object.freeze({ ...RingRechnung.SPIEL })
+  ring:Object.freeze({ ...RingRechnung.SPIEL }),
+  brocken:Object.freeze({}),     // Einzeländerungen je Brocken-Nummer: { dx, dy, groesse, drehung, lage, geloescht }
+  eigene:Object.freeze([])       // selbst gesetzte Brocken: { id, x, y, groesse, drehung, lage, form }
 });
 const SCHATTEN = { dx:2.5, dy:3, deckkraft:0.35 };  // wie der Schatten des heutigen Logos (selbst gewählt: aus der Annäherung im Screen-Editor)
 const MAX_VERLAUF = 100;                             // Schritte für Rückgängig (selbst gewählt)
@@ -1253,6 +1308,38 @@ function ringNormal(o){
   if (r.groesseMin > r.groesseMax) r.groesseMin = r.groesseMax;
   r.zufall = zufallOk(o.zufall) ? o.zufall : START.ring.zufall;
   return r;
+}
+// Einzeländerungen prüfen (nur gültige Nummern, nur Abweichungen; leere fallen weg)
+const versatz = v => typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.min(BROCKEN_BEREICHE.versatz.max, Math.max(BROCKEN_BEREICHE.versatz.min, v)) * 10000) / 10000 : 0;
+function aenderungNormal(o){
+  o = (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  const e = {
+    dx:versatz(o.dx), dy:versatz(o.dy),
+    groesse:ringZahl(o.groesse, BROCKEN_BEREICHE.groesse, 1),
+    drehung:ringZahl(o.drehung, BROCKEN_BEREICHE.drehung, 0),
+    lage:o.lage === 'vorne' || o.lage === 'hinten' ? o.lage : null,
+    geloescht:o.geloescht === true
+  };
+  return e.dx || e.dy || e.groesse !== 1 || e.drehung || e.lage || e.geloescht ? e : null;
+}
+function brockenNormal(o){
+  const out = {};
+  if (o && typeof o === 'object' && !Array.isArray(o))
+    for (const k of Object.keys(o).filter(k => /^(0|[1-9]\d{0,2})$/.test(k) && Number(k) < RING_BEREICHE.anzahl.max).sort((a, b) => a - b)){
+      const e = aenderungNormal(o[k]); if (e) out[k] = e;
+    }
+  return out;
+}
+function eigeneNormal(a){
+  const out = [], ids = new Set();
+  for (const o of Array.isArray(a) ? a : []){
+    if (out.length >= MAX_EIGENE) break;
+    if (!o || typeof o !== 'object' || !Number.isInteger(o.id) || o.id < 1 || o.id > 1e6 || ids.has(o.id) || !zufallOk(o.form)) continue;
+    ids.add(o.id);
+    out.push({ id:o.id, x:versatz(o.x), y:versatz(o.y), groesse:ringZahl(o.groesse, BROCKEN_BEREICHE.groesse, 1),
+      drehung:ringZahl(o.drehung, BROCKEN_BEREICHE.drehung, 0), lage:o.lage === 'hinten' ? 'hinten' : 'vorne', form:o.form });
+  }
+  return out;
 }
 function naechsteStaerke(s, w){
   let best = s.staerken[0];
@@ -1289,6 +1376,8 @@ function normalisiere(o){
   z.ringHinten = o.ringHinten !== false;
   z.ringVorne = o.ringVorne !== false;
   z.ring = ringNormal(o.ring);   // fehlt in Version 1: Spielwerte
+  z.brocken = brockenNormal(o.brocken);
+  z.eigene = eigeneNormal(o.eigene);
   h.push(...anpassen(z));
   return { z, hinweise:h };
 }
@@ -1512,9 +1601,25 @@ function ringAufbau(z){
     eintrag.pts = fo.pts;
     gruppen[eintrag.vorne ? 'vorne' : 'hinten'].push({ eintrag, text:brockenText(id, eintrag.m, fo) });
   };
+  const rad = Math.PI / 180, aend = z.brocken || {};
   for (const c of ringBasis(p)){
-    const m = R.punkt(p, S, c.angle, c.across, 0, 0), r = Math.fround(R.radius(c, p) * S);
-    dazu({ schluessel:'r' + c.nr, nr:c.nr, m, r, vorne:c.vorne }, 'brocken-' + c.nr, R.form(m, r, c.spin, c.seed, c.shade, c.vorne, 0));
+    const e = aend[c.nr];
+    if (e && e.geloescht) continue;
+    // E3: Versatz in Ring-Koordinaten (folgt Neigung/Breite/Höhe), Größe als Faktor, Drehung als Zusatzwinkel
+    let m = R.punkt(p, S, c.angle, c.across, 0, 0), r = Math.fround(R.radius(c, p) * S);
+    let vorne = c.vorne, dreh = 0;
+    if (e){
+      if (e.dx || e.dy){ const b = R.bahn(c, p); m = R.ausRing(p, S, b.X + e.dx, b.Y + e.dy, 0, 0); }
+      r *= e.groesse; dreh = e.drehung * rad;
+      if (e.lage) vorne = e.lage === 'vorne';
+    }
+    dazu({ schluessel:'r' + c.nr, nr:c.nr, m, r, vorne }, 'brocken-' + c.nr, R.form(m, r, c.spin, c.seed, c.shade, vorne, dreh));
+  }
+  // Selbst gesetzte Brocken: Lage in Ring-Koordinaten, Größe relativ zur mittleren Brocken-Größe, über den Ring-Brocken
+  const mittel = (p.groesseMin + p.groesseMax) / 2 * S;
+  for (const o of z.eigene || []){
+    const m = R.ausRing(p, S, o.x, o.y, 0, 0), r = mittel * o.groesse, vorne = o.lage === 'vorne';
+    dazu({ schluessel:'e' + o.id, id:o.id, m, r, vorne }, 'eigen-' + o.id, R.form(m, r, 0, o.form, 0.5, vorne, o.drehung * rad));
   }
   for (const k of ['hinten', 'vorne']) for (const g of gruppen[k]) liste.push(g.eintrag);
   return { hinten:gruppen.hinten.map(g => g.text).join(''), vorne:gruppen.vorne.map(g => g.text).join(''), box, brocken:liste };
@@ -1546,7 +1651,7 @@ async function zeichnen(){
   aktuell = { ...b, text:svg, json, geladen:false, ring:r };
   const a = aktuell, alt = bildUrl, img = $('editorBild');
   bildUrl = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' }));
-  img.onload = () => { if (alt) URL.revokeObjectURL(alt); if (aktuell === a) a.geladen = true; };
+  img.onload = () => { if (alt) URL.revokeObjectURL(alt); if (aktuell === a){ a.geladen = true; gezeigt = a; auswahlZeigen(); } };
   img.src = bildUrl; img.hidden = false; $('editorLeer').hidden = true;
   ausgabeKnoepfe();
   clearTimeout(pngTimer); pngTimer = setTimeout(editorPngVorbereiten, 150);
@@ -1619,6 +1724,7 @@ function bedienungZeigen(){
   $('sWeich').disabled = z.effekt === 'aus';
   ringAnzeigen();
   ringReglerZeigen();
+  brockenZeigen();
 }
 // Ring-Regler: Werte und Anzeige (Grad, px bei Schriftgröße 100)
 const grad = v => v * 180 / Math.PI;
@@ -1684,7 +1790,31 @@ function ringWerte(werte){
   if ('groesseMax' in werte && r.groesseMax < r.groesseMin) r.groesseMin = r.groesseMax;
   return ringNormal(r);
 }
-function ringAendern(werte, schritt){ aendere(z => { z.ring = ringWerte(werte); }, schritt); }
+// E3: Verteilt die Änderung den Ring neu und gibt es Einzeländerungen an Ring-Brocken, zuerst fragen. „Verwerfen“
+// übernimmt die Änderung und entfernt nur diese Einzeländerungen (selbst gesetzte Brocken bleiben) – EIN Schritt;
+// „Abbrechen“ lässt Regler und Ring unverändert.
+const hatAenderungen = z => Object.keys(z.brocken).length > 0;
+let frageWerte = null;
+function ringAendern(werte, schritt){
+  // Rückfrage offen: der Regler darf weiterlaufen, übernommen wird erst bei „Verwerfen“ der letzte Wert
+  if (frageWerte){ frageWerte = { ...frageWerte, ...werte }; return; }
+  const neu = ringWerte(werte);
+  if (hatAenderungen(zustand) && RING_VERTEILT.some(k => neu[k] !== zustand.ring[k])){
+    frageWerte = { ...werte };
+    $('frage').hidden = false; $('fAbbrechen').focus();
+    return;
+  }
+  aendere(z => { z.ring = neu; }, schritt);
+}
+function frageSchliessen(verwerfen){
+  if (!frageWerte) return;
+  const w = frageWerte;
+  frageWerte = null; $('frage').hidden = true;
+  if (verwerfen) aendere(z => { z.ring = ringWerte(w); z.brocken = {}; }, true);
+  else bedienungZeigen();
+}
+$('fVerwerfen').addEventListener('click', () => frageSchliessen(true));
+$('fAbbrechen').addEventListener('click', () => frageSchliessen(false));
 // Regler: Ziehen zeigt live (ohne Schritt), Loslassen ist EIN Schritt
 for (const e of RING_REGLER){
   const key = e.dataset.ringRegler, wert = () => ({ [key]:ringZahl(Number(e.value), RING_BEREICHE[key], zustand.ring[key]) });
@@ -1699,7 +1829,8 @@ $('rZufall').addEventListener('change', () => {
   if (v === null || v === zustand.ring.zufall){ $('rZufall').value = String(zustand.ring.zufall); $('rZufall').removeAttribute('aria-invalid'); return; }
   ringAendern({ zufall:v }, true);
 });
-$('rZufall').addEventListener('keydown', e => { if (e.key === 'Enter') $('rZufall').blur(); });
+// Enter übernimmt (Verlassen des Felds); preventDefault, damit das Enter nicht auf „Abbrechen“ der Rückfrage landet
+$('rZufall').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); $('rZufall').blur(); } });
 function neuerZufall(){
   const a = new Uint32Array(1);
   do crypto.getRandomValues(a); while (!a[0] || a[0] === zustand.ring.zufall);
@@ -1707,6 +1838,176 @@ function neuerZufall(){
 }
 $('btnWuerfeln').addEventListener('click', () => ringAendern({ zufall:neuerZufall() }, true));
 $('btnWieImSpiel').addEventListener('click', () => ringAendern({ ...RingRechnung.SPIEL }, true));
+
+/* ---------- Brocken bearbeiten (Modus-Umschalter V1, Einzeländerungen E3) ---------- */
+// Nur im Reiter „Ring“ und im Modus „Brocken bearbeiten“ lässt sich auf der Bühne etwas anfassen. Auswahl, Modus und
+// „+ Brocken setzen“ gehören zur Bedienung, nicht zum Projekt (kein Rückgängig-Schritt).
+let modus = 'regler', auswahl = null, setzen = false, zug = null, gezeigt = null;
+const bearbeitbar = () => modus === 'brocken' && $('tabRing').getAttribute('aria-selected') === 'true';
+const nrVon = k => Number(k.slice(1));
+function gewaehlt(z){   // { art:'ring'|'eigen', nr|id, e } oder null, wenn die Auswahl (nicht mehr) da ist
+  if (!auswahl) return null;
+  if (auswahl[0] === 'r'){
+    const nr = nrVon(auswahl), e = z.brocken[nr];
+    return nr < z.ring.anzahl && !(e && e.geloescht) ? { art:'ring', nr, e:e || null } : null;
+  }
+  const o = z.eigene.find(x => x.id === nrVon(auswahl));
+  return o ? { art:'eigen', id:o.id, o } : null;
+}
+function modusZeigen(){
+  for (const b of $('rModus').children) b.setAttribute('aria-pressed', String(b.dataset.modus === modus));
+  $('ringRegler').hidden = modus !== 'regler'; $('ringBrocken').hidden = modus !== 'brocken';
+  const an = bearbeitbar();
+  if (!an) setzen = false;
+  $('editorBuehne').classList.toggle('bearbeiten', an);
+  $('editorBuehne').classList.toggle('setzen', an && setzen);
+  brockenZeigen();
+}
+function brockenZeigen(){
+  const g = gewaehlt(zustand);
+  if (auswahl && !g) auswahl = null;
+  $('bAuswahl').textContent = setzen ? 'Auf eine freie Stelle der Bühne tippen – dort entsteht ein neuer Brocken.'
+    : !g ? 'Nichts ausgewählt – Brocken auf der Bühne antippen.'
+    : g.art === 'ring' ? 'Ausgewählt: Brocken ' + g.nr : 'Ausgewählt: Eigener Brocken';
+  $('btnBrockenSetzen').setAttribute('aria-pressed', String(setzen));
+  const gr = g ? (g.art === 'ring' ? (g.e ? g.e.groesse : 1) : g.o.groesse) : 1;
+  const dr = g ? (g.art === 'ring' ? (g.e ? g.e.drehung : 0) : g.o.drehung) : 0;
+  if (Number($('bGroesse').value) !== gr) $('bGroesse').value = String(gr);
+  if (Number($('bDrehung').value) !== dr) $('bDrehung').value = String(dr);
+  $('bGroesseWert').textContent = g ? dez(gr, 2) + ' ×' : '–';
+  $('bDrehungWert').textContent = g ? Math.round(dr) + '°' : '–';
+  const vorne = !g ? null : g.art === 'eigen' ? g.o.lage === 'vorne'
+    : g.e && g.e.lage ? g.e.lage === 'vorne' : ringBasis(zustand.ring)[g.nr].vorne;
+  for (const id of ['bGroesse', 'bDrehung', 'btnVorne', 'btnHinten', 'btnLoeschen']) $(id).disabled = !g;
+  $('btnVorne').setAttribute('aria-pressed', String(!!g && vorne === true));
+  $('btnHinten').setAttribute('aria-pressed', String(!!g && vorne === false));
+  auswahlZeigen();
+}
+// Einen Brocken ändern: Ring-Brocken über seine Einzeländerung, eigene Brocken direkt
+function aendereBrocken(f, schritt){
+  const g = gewaehlt(zustand);
+  if (!g) return;
+  aendere(z => {
+    if (g.art === 'ring'){
+      const e = { dx:0, dy:0, groesse:1, drehung:0, lage:null, geloescht:false, ...(z.brocken[g.nr] || {}) };
+      f(e, 'ring', g.nr);
+      const n = aenderungNormal(e);
+      if (n) z.brocken[g.nr] = n; else delete z.brocken[g.nr];
+    } else {
+      const i = z.eigene.findIndex(x => x.id === g.id);
+      const o = { ...z.eigene[i] };
+      if (f(o, 'eigen') === 'weg') z.eigene.splice(i, 1);
+      else z.eigene[i] = eigeneNormal([o])[0];
+    }
+  }, schritt);
+}
+for (const b of $('rModus').children) b.addEventListener('click', () => { modus = b.dataset.modus; setzen = false; modusZeigen(); });
+regler('bGroesse', BROCKEN_BEREICHE.groesse); regler('bDrehung', BROCKEN_BEREICHE.drehung);
+for (const [id, key] of [['bGroesse', 'groesse'], ['bDrehung', 'drehung']]){
+  const e = $(id), wert = () => ringZahl(Number(e.value), BROCKEN_BEREICHE[key], key === 'groesse' ? 1 : 0);
+  e.addEventListener('input', () => aendereBrocken(o => { o[key] = wert(); }, false));
+  e.addEventListener('change', () => aendereBrocken(o => { o[key] = wert(); }, true));
+}
+// vorne/hinten: beim Ring-Brocken als Vorrang gespeichert (gleich der Lage auf dem Ring → kein Vorrang)
+function lageSetzen(lage){
+  const c = auswahl && auswahl[0] === 'r' ? ringBasis(zustand.ring)[nrVon(auswahl)] : null;
+  aendereBrocken((o, art) => { o.lage = art === 'ring' && c && c.vorne === (lage === 'vorne') ? null : lage; }, true);
+}
+$('btnVorne').addEventListener('click', () => lageSetzen('vorne'));
+$('btnHinten').addEventListener('click', () => lageSetzen('hinten'));
+function loeschen(){ aendereBrocken((o, art) => { if (art === 'ring') o.geloescht = true; else return 'weg'; }, true); auswahl = null; brockenZeigen(); }
+$('btnLoeschen').addEventListener('click', loeschen);
+$('btnBrockenSetzen').addEventListener('click', () => { setzen = !setzen; modusZeigen(); });
+
+// Bühne ↔ Bildkoordinaten (viewBox des gezeigten Bildes; das Bild ist mit object-fit: contain eingepasst)
+function bildRahmen(){
+  if (!gezeigt) return null;
+  const img = $('editorBild'), r = img.getBoundingClientRect(), vb = gezeigt.vb;
+  if (!r.width || !r.height) return null;
+  const k = Math.min(r.width / vb.w, r.height / vb.h), w = vb.w * k, h = vb.h * k;
+  return { vb, k, left:r.left + (r.width - w) / 2, top:r.top + (r.height - h) / 2, w, h };
+}
+function bildPunkt(ev){
+  const f = bildRahmen();
+  return f ? { x:f.vb.x + (ev.clientX - f.left) / f.k, y:f.vb.y + (ev.clientY - f.top) / f.k, k:f.k } : null;
+}
+function imVieleck(q, pts){
+  let drin = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+    const a = pts[i], b = pts[j];
+    if ((a.y > q.y) !== (b.y > q.y) && q.x < (b.x - a.x) * (q.y - a.y) / (b.y - a.y) + a.x) drin = !drin;
+  }
+  return drin;
+}
+// Treffer: oberster Brocken unter dem Finger, sonst der nächste im Umkreis von 22 px (Tippfläche 44 px)
+function treffer(q){
+  const liste = gezeigt && gezeigt.ring ? gezeigt.ring.brocken : [];
+  for (let i = liste.length - 1; i >= 0; i--) if (imVieleck(q, liste[i].pts)) return liste[i];
+  let best = null, bd = 22 / q.k;
+  for (const b of liste){ const d = Math.hypot(b.m.x - q.x, b.m.y - q.y) - b.r; if (d < bd){ bd = d; best = b; } }
+  return best;
+}
+const buehne = $('editorBuehne');
+buehne.addEventListener('pointerdown', ev => {
+  if (!bearbeitbar() || zug || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+  const q = bildPunkt(ev);
+  if (!q) return;
+  ev.preventDefault();
+  if (setzen){
+    const p = zustand.ring, rq = RingRechnung.inRing(p, GROESSE, q.x, q.y, 0, 0);
+    const id = zustand.eigene.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    if (zustand.eigene.length >= MAX_EIGENE){ editorMeldung('Höchstens ' + MAX_EIGENE + ' eigene Brocken'); return; }
+    const form = new Uint32Array(1); do crypto.getRandomValues(form); while (!form[0]);
+    setzen = false; auswahl = 'e' + id;
+    aendere(z => { z.eigene.push(eigeneNormal([{ id, x:rq.X, y:rq.Y, groesse:1, drehung:0, lage:rq.Y > 0 ? 'vorne' : 'hinten', form:form[0] }])[0]); }, true);
+    modusZeigen();
+    return;
+  }
+  const t = treffer(q);
+  auswahl = t ? t.schluessel : null;
+  brockenZeigen();
+  if (!t) return;
+  zug = { id:ev.pointerId, q0:q, m0:{ ...t.m }, schluessel:t.schluessel, bewegt:false };
+  try { buehne.setPointerCapture(ev.pointerId); } catch (e) {}
+});
+buehne.addEventListener('pointermove', ev => {
+  if (!zug || ev.pointerId !== zug.id) return;
+  const q = bildPunkt(ev);
+  if (!q) return;
+  ev.preventDefault();
+  const dx = q.x - zug.q0.x, dy = q.y - zug.q0.y;
+  if (!zug.bewegt && Math.hypot(dx, dy) * q.k < 3) return;   // kleines Zittern beim Antippen ist kein Zug
+  zug.bewegt = true;
+  const p = zustand.ring, ziel = RingRechnung.inRing(p, GROESSE, zug.m0.x + dx, zug.m0.y + dy, 0, 0);
+  aendereBrocken((o, art, nr) => {
+    if (art === 'ring'){ const b = RingRechnung.bahn(ringBasis(p)[nr], p); o.dx = ziel.X - b.X; o.dy = ziel.Y - b.Y; }
+    else { o.x = ziel.X; o.y = ziel.Y; }
+  }, false);
+});
+function zugEnde(ev){
+  if (!zug || ev.pointerId !== zug.id) return;
+  const bewegt = zug.bewegt;
+  zug = null;
+  if (bewegt) merke();   // ein Zug = ein Schritt
+}
+buehne.addEventListener('pointerup', zugEnde);
+buehne.addEventListener('pointercancel', zugEnde);
+buehne.addEventListener('dragstart', ev => { if (bearbeitbar()) ev.preventDefault(); });
+// Markierung: orangefarbener Rahmen mit Eckgriffen um den gewählten Brocken (HTML über dem Bild, nur Anzeige,
+// nicht im SVG/PNG; 5 px Abstand, 8 px Griffe – selbst gewählt)
+function auswahlZeigen(){
+  const ov = $('editorAuswahl'), f = bearbeitbar() && auswahl ? bildRahmen() : null;
+  const b = f && gezeigt.ring ? gezeigt.ring.brocken.find(x => x.schluessel === auswahl) : null;
+  if (!b){ ov.hidden = true; return; }
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const q of b.pts){ x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+  const br = buehne.getBoundingClientRect(), rand = 5 + 2;   // Abstand + Rahmenbreite
+  const l = f.left + (x1 - f.vb.x) * f.k - rand, t = f.top + (y1 - f.vb.y) * f.k - rand;
+  ov.style.left = (l - br.left - buehne.clientLeft) + 'px'; ov.style.top = (t - br.top - buehne.clientTop) + 'px';
+  ov.style.width = ((x2 - x1) * f.k + 2 * rand) + 'px'; ov.style.height = ((y2 - y1) * f.k + 2 * rand) + 'px';
+  ov.hidden = false;
+}
+window.addEventListener('resize', auswahlZeigen);
 $('btnUndo').addEventListener('click', rueckgaengig);
 $('btnRedo').addEventListener('click', wiederholen);
 
@@ -1715,6 +2016,7 @@ const REITER = [['tabSchrift', 'panelSchrift'], ['tabRing', 'panelRing'], ['tabA
 for (const [tab] of REITER) $(tab).addEventListener('click', () => {
   for (const [t, p] of REITER){ const an = t === tab; $(t).setAttribute('aria-selected', String(an)); $(p).hidden = !an; }
   if (tab === 'tabAusgabe') editorPngVorbereiten();
+  modusZeigen();
 });
 document.querySelectorAll('#eBreite button').forEach(b => b.addEventListener('click', () => {
   eBreite = Number(b.dataset.w);
@@ -1762,7 +2064,12 @@ $('projDatei').addEventListener('change', () => { const f = $('projDatei').files
 // Tastatur: Strg/⌘+Z, Strg/⌘+Umschalt+Z – nicht in Texteingabefeldern
 const istTextfeld = e => !!e && (e.isContentEditable || (e.localName === 'input' && !['range', 'color', 'checkbox', 'radio', 'button', 'file'].includes(e.type)) || e.localName === 'textarea' || e.localName === 'select');
 document.addEventListener('keydown', e => {
+  if (!$('frage').hidden){   // Rückfrage offen: Esc/Backspace = Abbrechen, sonst keine Kürzel
+    if (e.key === 'Escape' || (e.key === 'Backspace' && !istTextfeld(e.target))){ e.preventDefault(); frageSchliessen(false); }
+    return;
+  }
   if (istTextfeld(e.target)) return;   // dort löscht Backspace Zeichen und sonst passiert nichts
+  if (e.key === 'Delete' && bearbeitbar() && auswahl && $('frage').hidden && $('modal').hidden){ e.preventDefault(); loeschen(); return; }   // „Entf“, nie Backspace
   if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'z'){ e.preventDefault(); if (e.shiftKey) wiederholen(); else rueckgaengig(); }
   else if (e.key === 'Backspace' && !$('modal').hidden){ e.preventDefault(); $('modal').hidden = true; }   // Backspace = zurück (wie Esc)
 });
@@ -1778,7 +2085,7 @@ for (const id of ['klappSvg', 'klappPng']) $(id).addEventListener('click', () =>
 const kartenOffen = window.AETHER_TEST_KARTEN_OFFEN === true;
 klappe('klappSvg', kartenOffen); klappe('klappPng', kartenOffen);
 
-bedienungZeigen(); verlaufKnoepfe(); ringAnzeigen(); planeZeichnen();
+bedienungZeigen(); verlaufKnoepfe(); ringAnzeigen(); modusZeigen(); planeZeichnen();
 
 // Schnittstelle für die automatischen Tests (nur lesen)
 window.AetherLogoEditor = Object.freeze({
@@ -1793,8 +2100,12 @@ window.AetherLogoEditor = Object.freeze({
   pngSvg:() => ePng.svg,
   verlauf:() => ({ pos:vpos, laenge:verlauf.length, max:MAX_VERLAUF }),
   ring:() => ({ stand:'bereit', einstellungen:{ ...zustand.ring }, spiel:{ ...RingRechnung.SPIEL }, box:aktuell && aktuell.ring ? { ...aktuell.ring.box } : null,
-    brocken:aktuell && aktuell.ring ? aktuell.ring.brocken.map(b => ({ schluessel:b.schluessel, nr:b.nr, x:b.m.x, y:b.m.y, r:b.r, vorne:b.vorne })) : [] }),
+    brocken:aktuell && aktuell.ring ? aktuell.ring.brocken.map(b => ({ schluessel:b.schluessel, nr:b.nr, id:b.id, x:b.m.x, y:b.m.y, r:b.r, vorne:b.vorne, pts:b.pts.map(q => [q.x, q.y]) })) : [] }),
   ringBereiche:JSON.parse(JSON.stringify(RING_BEREICHE)),
+  modus:() => modus, auswahl:() => auswahl, bearbeitbar:() => bearbeitbar(), frageOffen:() => !$('frage').hidden,
+  // Bildkoordinaten → Bildschirm (für Klick/Touch in den Tests)
+  bildschirm:(x, y) => { const f = bildRahmen(); return f ? { x:f.left + (x - f.vb.x) * f.k, y:f.top + (y - f.vb.y) * f.k, k:f.k } : null; },
+  markierung:() => { const r = $('editorAuswahl'); if (r.hidden) return null; const b = r.getBoundingClientRect(); return { x1:b.left, y1:b.top, x2:b.right, y2:b.bottom, farbe:getComputedStyle(r).borderTopColor, griffe:r.querySelectorAll('.griff').length }; },
   bereiche:JSON.parse(JSON.stringify(BEREICHE)),
   breiten:BREITEN.slice()
 });
