@@ -191,7 +191,8 @@
   #game {
     position: fixed; top: 0; left: 0;
     /* --game-w/--game-h setzt das Skript in der Home-Bildschirm-App auf die volle
-       Bildschirmgröße, falls iOS den Viewport über der Home-Leiste enden lässt. */
+       Bildschirmgröße, falls iOS den Viewport über der Home-Leiste enden lässt.
+       --game-h nur mit HOEHEN_AUSGLEICH_HOME_APP bzw. ?strecken=1 (siehe fitGameToScreen). */
     width: 100vw; width: var(--game-w, 100vw);
     height: 100vh; height: 100dvh; height: var(--game-h, 100dvh);
     background: #000;
@@ -3492,6 +3493,16 @@
   // Home-Bildschirm-App auf iPad/iPhone: iOS lässt den Viewport im Querformat
   // teils über der Home-Leiste enden, dann bleibt unten ein Streifen frei.
   // Dort das Spiel auf die volle Bildschirmgröße ziehen.
+  //
+  // Höhen-Ausgleich in der Home-App: standardmäßig AUS. Grund: iPadOS 26 meldet in der
+  // Home-App (viewport-fit=cover + black-translucent) eine zu kleine innerHeight (iPad Pro 11":
+  // 802 statt 834 pt) und zeichnet die unteren 32 pt auch nicht – das gestreckte Spiel wurde
+  // dort abgeschnitten (Touch-Stick, Analyse vom 13.11.2026). Ohne Ausgleich ist #game so hoch
+  // wie innerHeight; behebt Apple den Fehler, füllt das Spiel ohne Änderung wieder den Bildschirm.
+  // Wieder einschalten: hier true setzen. Nur für einen Seitenaufruf: Adresse mit ?strecken=1
+  // (wird nicht gespeichert). Der Breiten-Ausgleich (--game-w) ist davon nicht betroffen.
+  var HOEHEN_AUSGLEICH_HOME_APP = false;
+  var hoehenAusgleich = HOEHEN_AUSGLEICH_HOME_APP || /(?:^|[?&])strecken=1(?:&|$)/.test(location.search.slice(1));
   function fitGameToScreen() {
     var st = document.documentElement.style;
     st.removeProperty('--game-w');
@@ -3503,7 +3514,7 @@
     var w = landscape ? Math.max(a, b) : Math.min(a, b);
     var h = landscape ? Math.min(a, b) : Math.max(a, b);
     // Nur vergrößern, und nur wenn die Abweichung nach Home-Leiste aussieht.
-    if (h > window.innerHeight && h - window.innerHeight <= 80) st.setProperty('--game-h', h + 'px');
+    if (hoehenAusgleich && h > window.innerHeight && h - window.innerHeight <= 80) st.setProperty('--game-h', h + 'px');
     if (w > window.innerWidth && w - window.innerWidth <= 80) st.setProperty('--game-w', w + 'px');
   }
   fitGameToScreen();

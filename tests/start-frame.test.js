@@ -105,9 +105,12 @@ after(async () => {
 
 // touchPoints: per CDP gesetztes navigator.maxTouchPoints (Playwright emuliert sonst 1, echte iPads melden 5).
 async function newPage(deviceName, opts = {}) {
-  const dev = deviceName ? { ...devices[deviceName] } : { viewport: { width: 1180, height: 820 } };
+  const dev = deviceName ? { ...devices[deviceName] } : { viewport: opts.viewport || { width: 1180, height: 820 } };
+  if (opts.screen) dev.screen = opts.screen;
   const context = await browser.newContext({ ...dev, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   const page = await context.newPage();
+  // Home-Bildschirm-App nachstellen (wie in der Analyse vom 13.11.2026): navigator.standalone = true.
+  if (opts.standalone) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'standalone', { get: () => true, configurable: true }));
   const log = { errors: [], dialogs: [] };
   page.on('pageerror', (e) => log.errors.push(String(e)));
   page.on('dialog', (d) => { log.dialogs.push(d.message()); d.accept(); });
@@ -534,5 +537,61 @@ describe('Messhilfe ?fps=1', () => {
     assert.deepEqual(s, { text: '', visible: false });
     assert.deepEqual(log.errors, []);
     await context.close();
+  });
+});
+
+// Spielrahmen-Höhe in der Home-App (Lösung L2): Höhen-Ausgleich standardmäßig aus, per ?strecken=1 nur
+// für einen Aufruf an; Breiten-Ausgleich unverändert. Nachstellung wie in der Analyse: iPad Pro 11" quer,
+// Ansicht 1194 × 802, Bildschirm 1194 × 834.
+describe('Spielrahmen-Höhe in der Home-App', () => {
+  const SCREEN = { width: 1194, height: 834 };
+  async function measureGame(opts) {
+    const { context, page, log } = await newPage(null, { screen: SCREEN, ...opts });
+    await startByEnter(page);
+    const r = await page.evaluate(() => {
+      const st = document.documentElement.style;
+      const g = document.getElementById('game').getBoundingClientRect();
+      return { w: g.width, h: g.height, gameW: st.getPropertyValue('--game-w'), gameH: st.getPropertyValue('--game-h'),
+        inner: [innerWidth, innerHeight], screen: [screen.width, screen.height], standalone: navigator.standalone === true };
+    });
+    assert.deepEqual(r.screen, [SCREEN.width, SCREEN.height], 'Bildschirmgröße emuliert');
+    assert.deepEqual(log.errors, []);
+    await context.close();
+    return r;
+  }
+
+  test('a) Standard: #game so hoch wie innerHeight (802 px), --game-h nicht gesetzt', async () => {
+    const r = await measureGame({ standalone: true, viewport: { width: 1194, height: 802 } });
+    assert.equal(r.standalone, true);
+    assert.deepEqual(r.inner, [1194, 802]);
+    assert.equal(r.gameH, '', '--game-h nicht gesetzt');
+    assert.equal(r.h, 802);
+    assert.equal(r.w, 1194);
+  });
+
+  test('b) mit ?strecken=1: #game 834 px hoch, --game-h = 834px', async () => {
+    const r = await measureGame({ standalone: true, viewport: { width: 1194, height: 802 }, query: '?strecken=1' });
+    assert.equal(r.gameH, '834px');
+    assert.equal(r.h, 834);
+    assert.equal(r.gameW, '', 'Breite passt bereits, kein --game-w');
+  });
+
+  test('c) Breiten-Ausgleich unverändert: kleinere innerWidth → --game-w = Bildschirmbreite', async () => {
+    const r = await measureGame({ standalone: true, viewport: { width: 1150, height: 802 } });
+    assert.deepEqual(r.inner, [1150, 802]);
+    assert.equal(r.gameW, '1194px');
+    assert.equal(r.w, 1194);
+    assert.equal(r.gameH, '', 'Höhe bleibt ohne Ausgleich');
+    assert.equal(r.h, 802);
+  });
+
+  test('d) ohne Home-App-Modus: weder --game-w noch --game-h, auch mit ?strecken=1', async () => {
+    for (const query of ['', '?strecken=1']) {
+      const r = await measureGame({ viewport: { width: 1150, height: 802 }, query });
+      assert.equal(r.standalone, false);
+      assert.equal(r.gameW, '', `--game-w nicht gesetzt (${query || 'ohne Parameter'})`);
+      assert.equal(r.gameH, '', `--game-h nicht gesetzt (${query || 'ohne Parameter'})`);
+      assert.deepEqual([r.w, r.h], [1150, 802]);
+    }
   });
 });
