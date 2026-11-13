@@ -576,7 +576,7 @@ und bietet es als Datei zum Sichern an, z. B. für Affinity.
 
 **Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen; PNG-Zustand und -Maße).
 
-### Logo-Editor (Stufe 1: Projekt + Schrift)
+### Logo-Editor (Stufe 1: Projekt + Schrift, Stufe 2: Ring)
 
 Oben auf der Logo-Seite. Darunter liegen die Karten „Arbeitsdatei (SVG)“ und „Im Spiel (PNG)“ mit allen bisherigen
 Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüssel und Anfragen unverändert).
@@ -589,10 +589,18 @@ Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüs
   8 Richtungen (Kante = Verlauf mit 55 % Helligkeit), Umriss 0–10 px mit Farbe, Schatten/Leuchten mit Weichheit 0–30
   px. px gelten bei Schriftgröße 100. Wechselt man auf eine Schrift ohne die eingestellte Stärke/Kursiv, wird der
   nächste vorhandene Wert genommen (bei Gleichstand der schwerere) und kurz gemeldet. Text immer „Aether“.
-- **Reiter „Ring“** (Platzhalter): Schalter „Ring hinten“/„Ring vorne“. Der Ring kommt unverändert aus den Gruppen
-  `ring-hinten`/`ring-vorne` der zuletzt geladenen Arbeitsdatei (bereinigt wie die Anzeige), Mitte auf der Mitte der
-  Schrift; der Maßstab folgt aus der Höhe der Gruppe `schrift` der Datei im Verhältnis zu Jost 500. Ohne gespeicherte
-  Arbeitsdatei läuft das Projekt ohne Ring mit Hinweis. Ring bearbeiten folgt in Stufe 2.
+- **Reiter „Ring“:** Schalter „Ring hinten“/„Ring vorne“ und der Ring per Regler. Der Ring wird nach der Rechnung
+  des Spiels erzeugt (`game/src/Logo.cpp` im Repo aether, Stand b151e26, nach JavaScript übertragen: gleiche Formeln,
+  gleicher Zufallsgenerator XorShift32, Rechnung in float wie im Spiel, Formen mit 6–8 Ecken und hellerer Facette,
+  Farben, hintere Brocken zuerst). Mit den Standardwerten entsteht genau der Ring des bisherigen Spiel-Logos
+  (`art/logo/logo.svg`: alle 150 Brocken auf 0,001 px gleich), Mitte auf der Mitte der Schrift, Schriftgröße 100.
+  Die Arbeitsdatei wird dafür nicht mehr gebraucht. Regler (Startwerte = Spielwerte): Neigung (−45…45°, Schritt
+  0,005 rad; 15,5°), Breite (Halbachse 80–300 px; 178), Höhe (Halbachse 5–120 px; 30), Anzahl Brocken (10–400;
+  150), Brocken-Größe kleinster/größter Radius (0,2–15 bzw. 0,5–20 px; 1,1–7,5; der andere Regler folgt, damit
+  kleinster ≤ größter), Lage des Kopfs (0–360°; 129° vorne links), Schweif-Länge (29–360°; 335°), Dichte am Kopf
+  (Exponent der Verteilung 1–5; 2,3), Zufallswert (1 … 4 294 967 295, Textfeld, Übernahme mit Enter/Verlassen) mit
+  „Neu würfeln“ und „Wie im Spiel (zurücksetzen)“ (alle Ring-Regler auf die Spielwerte, ein Schritt). Die Streuung
+  quer zum Ring (0,085 → 0,03) hat keinen Regler.
 - **Reiter „Ausgabe“:** „PNG sichern“ (transparent, nur sichtbare Ebenen, 1024/2048/4096 px) und „SVG sichern“
   (Schrift als Pfade, kein `<text>`, keine Schriftdatei; Gruppen `ring-hinten`, `schatten` bzw. `leuchten`, `tiefe`,
   `schrift`, `umriss`, `ring-vorne` je nach Inhalt; Verlauf als `linearGradient`, Weichheit als `feGaussianBlur`).
@@ -604,8 +612,9 @@ Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüs
   oder `kern`, WOFF entpackt mit `DecompressionStream`). Keine fremde Bibliothek; alle Schriften sind statisch je
   Stärke, also stimmt die Stärke exakt.
 - **Projekt:** automatisch in `localStorage` `aether.logoProjekt` (klein, sofort gespeichert, offline und nach Neustart
-  da). Die Projektdatei ist JSON `{ "format": "aether-logo-projekt", "version": 1, "text", "gespeichert",
-  "einstellungen" }`. Beim Laden: kaputte, fremde Datei oder andere Version → Meldung, Projekt unverändert; unbekannte
+  da). Die Projektdatei ist JSON `{ "format": "aether-logo-projekt", "version": 2, "text", "gespeichert",
+  "einstellungen" }`; `einstellungen.ring` enthält die Ring-Regler. Projekte der Version 1 (ohne Ring) werden weiter
+  geladen, der Ring hat dann die Spielwerte. Beim Laden: kaputte, fremde Datei oder andere Version → Meldung, Projekt unverändert; unbekannte
   Schrift → Jost mit Meldung; Werte außerhalb der Bereiche werden begrenzt. Laden ist ein Schritt im Verlauf.
   Der Verlauf hält 100 Schritte (nur im Speicher der Seite); ein Zug am Regler ist ein Schritt. Kein Token in
   Projekt, Speicher oder Cache.
@@ -797,6 +806,11 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   Desktop, 320 px), Karten aufklappbar. Gegenproben (müssen rot werden):
   `AETHER_GEGENPROBE=kursiv|text|kaputt|verlauf|fremd|token node --test tests/logo-editor.test.js`.
   `logo.test.js` und `logo-png.test.js` starten die Karten mit `window.AETHER_TEST_KARTEN_OFFEN = true` offen.
+- `tests/logo-ring.test.js` – Logo-Editor Stufe 2 (Ring): Standardwerte ergeben die Referenz-Brocken des Spiels
+  (eigene, im Test festgehaltene Werte: Lage, Umriss, Farben, 49 hinten/101 vorne, Ausdehnung 375 × 137 px), jeder
+  Regler ändert den Ring, „Wie im Spiel“, Zufallswert/„Neu würfeln“, Anzahl 10–400, Projekt Version 2 (Rundlauf) und
+  Version 1 (lädt mit Spielwerten), SVG/PNG mit Ring, Neuladen, offline, 4 API-Anfragen, kein Token, Leistung.
+  Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=referenz|version1 node --test tests/logo-ring.test.js`.
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,

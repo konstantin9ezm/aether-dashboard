@@ -189,7 +189,8 @@ async function regler(page, id, wert) {
 }
 async function schrift(page, id) { await page.selectOption('#sSchrift', id); await bereit(page); }
 const tab = async (page, name) => { await page.click('#tab' + name); };
-function gruppen(svg) { return [...svg.matchAll(/<g id="([^"]+)"/g)].map((m) => m[1]); }
+// Ebenen-Gruppen (Stufe 2: ohne die Gruppen der einzelnen Brocken in den Ring-Ebenen)
+function gruppen(svg) { return [...svg.matchAll(/<g id="([^"]+)"/g)].map((m) => m[1]).filter((id) => !/^(brocken|eigen)-\d+$/.test(id)); }
 function pfadVon(svg, id) { const m = new RegExp(`<g id="${id}"[^>]*><path d="([^"]+)"`).exec(svg); return m && m[1]; }
 const STIL = { 100: 'Thin', 200: 'ExtraLight', 300: 'Light', 500: 'Medium', 600: 'SemiBold', 700: 'Bold', 800: 'ExtraBold', 900: 'Black' };
 const SCHRIFTEN = [
@@ -204,7 +205,9 @@ const SCHRIFTEN = [
 ];
 // Datei je Schrift/Stärke/Stil (unabhängig vom Katalog in logo.html)
 const dateiFuer = (id, w, k) => id === 'orbitron' ? `fonts/orbitron/Orbitron-${w === 400 ? 'Regular' : STIL[w]}.ttf` : id === 'audiowide' ? 'fonts/audiowide/Audiowide-Regular.ttf' : `fonts/${id}/${id}-latin-${w}-${k ? 'italic' : 'normal'}.woff`;
-const START = { schrift: 'jost', staerke: 500, kursiv: false, abstand: 0, farbe1: '#8C7CF0', farbe2: '#C4BBFF', tiefe: 0, richtung: 'so', umriss: 0, umrissFarbe: '#1B1838', effekt: 'schatten', weich: 0, ringHinten: true, ringVorne: true };
+const START = { schrift: 'jost', staerke: 500, kursiv: false, abstand: 0, farbe1: '#8C7CF0', farbe2: '#C4BBFF', tiefe: 0, richtung: 'so', umriss: 0, umrissFarbe: '#1B1838', effekt: 'schatten', weich: 0, ringHinten: true, ringVorne: true,
+  // Stufe 2: Ring-Einstellungen mit den Spielwerten aus game/src/Logo.cpp
+  ring: { neigung: 0.27, breite: 1.78, hoehe: 0.3, anzahl: 150, groesseMin: 0.011, groesseMax: 0.075, kopf: 2.25, schweif: 5.85, dichte: 2.3, zufall: 0x9E3779B9 } };
 
 // ---------------------------------------------------------------------------
 describe('Logo-Editor: Schriften', () => {
@@ -385,20 +388,18 @@ describe('Logo-Editor: SVG und PNG aus einer Beschreibung', () => {
     await tab(page, 'Schrift');
     await page.click('#sEffekt [data-effekt="aus"]'); await bereit(page);
     assert.deepEqual(gruppen(await svgText(page)), ['tiefe', 'schrift', 'umriss']);
-    // Ring aus der Arbeitsdatei: bereinigt (kein onclick, kein script), Gradient der Datei übernommen, Vorfahren-Transformation erhalten
+    // Stufe 2: Ring nach der Rechnung des Spiels (nicht mehr aus der Arbeitsdatei): Brocken als Polygone ohne
+    // Transformation, nichts aus der Arbeitsdatei übernommen oder ausgeführt
     await tab(page, 'Ring');
     await page.click('label[data-ring="hinten"]'); await page.click('label[data-ring="vorne"]'); await bereit(page);
     svg = await svgText(page);
     pruefe(svg, 'mit Ring');
-    assert.match(svg, /<linearGradient id="ringfarbe"/);
-    assert.match(svg, /<g id="ring-hinten" transform="scale\([0-9.]+\) translate\(-200 -100\)"><g [^>]*transform="translate\(10 0\)"><g><rect x="10"/, 'Ringmitte auf Schriftmitte, Transformation der Datei');
+    assert.doesNotMatch(svg, /ringfarbe|<rect/, 'nichts aus der Arbeitsdatei');
+    assert.match(svg, /<g id="ring-hinten"><g id="brocken-0"><polygon fill="#[0-9A-F]{6}" points="[-\d.,\s]+"\/><polygon fill="#[0-9A-F]{6}" points="[-\d.,\s]+"\/><\/g>/, 'Ring als Polygone, Ringmitte auf Schriftmitte ohne Transformation');
     assert.equal(await E(page, () => window.__pwned), undefined, 'nichts aus der Arbeitsdatei ausgeführt');
-    // Maßstab: Höhe der Schrift-Gruppe der Datei (60) ↔ Jost 500 bei Größe 100
+    // Maßstab: Schriftgröße 100 – Ausdehnung des Rings wie ringExtent() des Spiels (375 × 137 px um die Mitte)
     const r = await E(page, () => window.AetherLogoEditor.ring());
-    const jost = (await erwarteterPfad('fonts/jost/jost-latin-500-normal.woff')).font;
-    const bb = NODE.segBox(NODE.SchriftLader.textKonturen(jost, 'Aether', 100, 0).konturen.map(NODE.segmente));
-    assert.ok(Math.abs(r.k - (bb.y2 - bb.y1) / 60) < 0.02, `Maßstab ${r.k}`);
-    assert.deepEqual(Object.values(r.box).map(Math.round), [20, 60, 380, 140], 'Ring-Box aus der Datei');
+    assert.deepEqual(Object.values(r.box).map(Math.round), [-187, -68, 187, 68], 'Ring-Box bei Schriftgröße 100');
     assert.deepEqual(echteFehler(log), []);
     await context.close();
   });
@@ -518,7 +519,7 @@ describe('Logo-Editor: Rückgängig, Projekt, Speicher', () => {
     assert.equal(f.type, 'application/json');
     const o = JSON.parse(f.text);
     assert.deepEqual(Object.keys(o), ['format', 'version', 'text', 'gespeichert', 'einstellungen']);
-    assert.deepEqual([o.format, o.version, o.text], ['aether-logo-projekt', 1, 'Aether']);
+    assert.deepEqual([o.format, o.version, o.text], ['aether-logo-projekt', 2, 'Aether']);
     assert.deepEqual(o.einstellungen, gesichert);
     assert.ok(!f.text.includes(TOKEN) && !/github_pat_|token/i.test(f.text), 'kein Token in der Projektdatei');
     // ändern, dann die Datei laden → Zustand exakt zurück (ein Schritt, rückgängig machbar)
@@ -539,8 +540,9 @@ describe('Logo-Editor: Rückgängig, Projekt, Speicher', () => {
       ['fremd.json', JSON.stringify({ name: 'etwas anderes', einstellungen: { schrift: 'orbitron' } }), 'Das ist keine Logo-Projektdatei – das aktuelle Projekt bleibt unverändert.'],
       ['liste.json', '[1,2,3]', 'Das ist keine Logo-Projektdatei – das aktuelle Projekt bleibt unverändert.'],
       ['bild.png', PNG, 'Die Projektdatei ist beschädigt – das aktuelle Projekt bleibt unverändert.'],
-      ['v2.json', JSON.stringify({ ...o, version: 2 }), 'Projektdatei-Version 2 wird nicht unterstützt – das aktuelle Projekt bleibt unverändert.'],
-      ['ohne.json', JSON.stringify({ format: 'aether-logo-projekt', version: 1 }), 'Die Projektdatei ist beschädigt – das aktuelle Projekt bleibt unverändert.']
+      ['v3.json', JSON.stringify({ ...o, version: 3 }), 'Projektdatei-Version 3 wird nicht unterstützt – das aktuelle Projekt bleibt unverändert.'],
+      ['ohne.json', JSON.stringify({ format: 'aether-logo-projekt', version: 1 }), 'Die Projektdatei ist beschädigt – das aktuelle Projekt bleibt unverändert.'],
+      ['ohne2.json', JSON.stringify({ format: 'aether-logo-projekt', version: 2 }), 'Die Projektdatei ist beschädigt – das aktuelle Projekt bleibt unverändert.']
     ];
     const v0 = await E(page, () => window.AetherLogoEditor.verlauf());
     for (const [name, inhalt, text] of faelle) {
@@ -561,17 +563,16 @@ describe('Logo-Editor: Rückgängig, Projekt, Speicher', () => {
     await context.close();
   });
 
-  test('Speicherung nach Neuladen (localStorage „aether.logoProjekt“), ohne Token; ohne Arbeitsdatei läuft das Projekt ohne Ring mit Hinweis', async () => {
+  test('Speicherung nach Neuladen (localStorage „aether.logoProjekt“), ohne Token; ohne Arbeitsdatei läuft das Projekt mit erzeugtem Ring', async () => {
     const { context, page, log } = await newPage({ withToken: false });
     await openLogo(page);
-    // ohne Token und ohne gespeicherte Arbeitsdatei: kein Ring, Hinweis, Schalter aus
-    assert.equal((await E(page, () => window.AetherLogoEditor.ring())).stand, 'keine');
-    assert.deepEqual(gruppen(await svgText(page)), ['schatten', 'schrift']);
+    // Stufe 2: ohne Token und ohne gespeicherte Arbeitsdatei trotzdem Ring (erzeugt), Schalter an, kein Hinweis „folgt in Stufe 2“
+    assert.equal((await E(page, () => window.AetherLogoEditor.ring())).stand, 'bereit');
+    assert.deepEqual(gruppen(await svgText(page)), ['ring-hinten', 'schatten', 'schrift', 'ring-vorne']);
     await tab(page, 'Ring');
-    assert.equal((await page.textContent('#ringHinweis')).trim(), 'Keine Arbeitsdatei gespeichert – das Projekt läuft ohne Ring. Einmal online (mit Token) öffnen, dann kommt der Ring aus art/logo/logo.svg.');
-    assert.equal(await page.isDisabled('#rHinten'), true);
-    assert.equal(await page.isDisabled('#rVorne'), true);
-    assert.match(await page.textContent('#panelRing'), /Ring bearbeiten folgt in Stufe 2\./);
+    assert.equal(await page.isDisabled('#rHinten'), false);
+    assert.equal(await page.isDisabled('#rVorne'), false);
+    assert.doesNotMatch(await page.textContent('#panelRing'), /folgt in Stufe 2/);
     await tab(page, 'Schrift');
     await schrift(page, 'space-grotesk');
     await page.click('#sStaerke [data-w="600"]'); await regler(page, 'sUmriss', 1.5);
@@ -582,7 +583,7 @@ describe('Logo-Editor: Rückgängig, Projekt, Speicher', () => {
     assert.equal(await page.inputValue('#sSchrift'), 'space-grotesk');
     assert.equal(await page.getAttribute('#sStaerke [data-w="600"]', 'aria-pressed'), 'true');
     const gespeichert = JSON.parse(await E(page, () => localStorage.getItem('aether.logoProjekt')));
-    assert.deepEqual([gespeichert.format, gespeichert.version], ['aether-logo-projekt', 1]);
+    assert.deepEqual([gespeichert.format, gespeichert.version], ['aether-logo-projekt', 2]);
     assert.deepEqual(gespeichert.einstellungen, z);
     // kaputter Speicher → Startzustand, keine Fehlermeldung
     await E(page, () => localStorage.setItem('aether.logoProjekt', '{kaputt'));

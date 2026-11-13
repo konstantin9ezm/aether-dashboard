@@ -14,9 +14,9 @@
   Die zuletzt geladene Fassung (SVG-Text, Commit, Ladezeitpunkt, ohne Token) liegt auf dem Gerät (localStorage,
   Schlüssel „aether.logo“) für den Offline-Fall. Das SVG wird nie ins Dokument eingefügt: Es wird bereinigt
   (script, foreignObject, on*-Attribute, externe href/src entfernt) und nur als Bild (img aus Blob-URL) gezeigt.
-  Oben der Logo-Editor (Stufe 1: Projekt + Schrift): Schrift aus fonts/ (eigener Ursprung, offline in der App-Hülle),
-  als Pfade gezeichnet; Bühne, PNG und SVG aus einer Beschreibung; Projekt in localStorage „aether.logoProjekt“
-  (nur Einstellungen, nie das Token). Die Karten „Arbeitsdatei (SVG)“ und „Im Spiel (PNG)“ sind darunter aufklappbar.
+  Oben der Logo-Editor (Stufe 1: Projekt + Schrift, Stufe 2: Ring): Schrift aus fonts/ (eigener Ursprung, offline in
+  der App-Hülle), als Pfade gezeichnet; Ring nach der Rechnung des Spiels (game/src/Logo.cpp) per Regler erzeugt;
+  Bühne, PNG und SVG aus einer Beschreibung; Projekt in localStorage „aether.logoProjekt“ (nur Einstellungen, nie das Token). Die Karten „Arbeitsdatei (SVG)“ und „Im Spiel (PNG)“ sind darunter aufklappbar.
 -->
 <style>
 :root{
@@ -148,6 +148,12 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
 .farbe input[type="color"]{ width:44px; height:44px; padding:2px; border-radius:10px; border:1px solid var(--line); background:var(--field); flex:none; cursor:pointer; }
 .farbe .hex{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:16px; width:7.5em; min-height:44px; padding:6px 8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
 .farbe .hex[aria-invalid="true"]{ border-color:var(--danger); }
+/* Ring-Reiter */
+.zeile{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.zeile .zahl{ flex:1 1 8em; min-width:0; }
+.zahl{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:16px; min-height:44px; padding:6px 8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.zahl[aria-invalid="true"]{ border-color:var(--danger); }
+.ring-knopf{ margin-top:14px; }
 /* Aufklappbare Karten (Arbeitsdatei, Im Spiel) */
 .karte h2 .klapp{ all:unset; box-sizing:border-box; display:flex; align-items:center; gap:6px; width:100%; min-height:44px; cursor:pointer; flex-wrap:wrap; font-weight:600; color:var(--text); }
 .karte h2 .klapp::before{ content:"›"; display:inline-block; width:1em; text-align:center; transition:transform .15s; }
@@ -250,13 +256,58 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
     </div>
 
     <div role="tabpanel" class="panel" id="panelRing" aria-labelledby="tabRing" hidden>
-      <div class="hinweis" id="ringHinweis" role="status" hidden></div>
       <div class="ebenen">
         <label class="check" data-ring="hinten"><input type="checkbox" id="rHinten"><span>Ring hinten</span></label>
         <label class="check" data-ring="vorne"><input type="checkbox" id="rVorne"><span>Ring vorne</span></label>
       </div>
-      <p class="note" id="ringQuelle">Der Ring kommt unverändert aus der Arbeitsdatei (Gruppen „ring-hinten“ und „ring-vorne“), Mitte auf der Mitte der Schrift.</p>
-      <p class="note"><b>Ring bearbeiten folgt in Stufe 2.</b></p>
+      <div id="ringRegler">
+        <div class="felder">
+          <div class="feld">
+            <label class="titel" for="rNeigung">Neigung <output id="rNeigungWert" for="rNeigung"></output></label>
+            <input type="range" id="rNeigung" data-ring-regler="neigung">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rBreite">Breite <span class="zusatz">(Halbachse)</span> <output id="rBreiteWert" for="rBreite"></output></label>
+            <input type="range" id="rBreite" data-ring-regler="breite">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rHoehe">Höhe <span class="zusatz">(Halbachse)</span> <output id="rHoeheWert" for="rHoehe"></output></label>
+            <input type="range" id="rHoehe" data-ring-regler="hoehe">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rAnzahl">Anzahl Brocken <output id="rAnzahlWert" for="rAnzahl"></output></label>
+            <input type="range" id="rAnzahl" data-ring-regler="anzahl">
+          </div>
+          <div class="feld">
+            <span class="titel">Brocken-Größe <span class="zusatz">(Radius)</span> <output id="rGroesseWert"></output></span>
+            <label class="titel klein" for="rGroesseMin">kleinster</label>
+            <input type="range" id="rGroesseMin" data-ring-regler="groesseMin">
+            <label class="titel klein" for="rGroesseMax">größter</label>
+            <input type="range" id="rGroesseMax" data-ring-regler="groesseMax">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rKopf">Lage des Kopfs <output id="rKopfWert" for="rKopf"></output></label>
+            <input type="range" id="rKopf" data-ring-regler="kopf">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rSchweif">Schweif-Länge <output id="rSchweifWert" for="rSchweif"></output></label>
+            <input type="range" id="rSchweif" data-ring-regler="schweif">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rDichte">Dichte am Kopf <output id="rDichteWert" for="rDichte"></output></label>
+            <input type="range" id="rDichte" data-ring-regler="dichte">
+          </div>
+          <div class="feld">
+            <label class="titel" for="rZufall">Zufallswert</label>
+            <div class="zeile">
+              <input type="text" id="rZufall" class="zahl" inputmode="numeric" maxlength="10" spellcheck="false" autocomplete="off" autocapitalize="off">
+              <button type="button" id="btnWuerfeln">Neu würfeln</button>
+            </div>
+          </div>
+        </div>
+        <div class="row grow ring-knopf"><button type="button" id="btnWieImSpiel">Wie im Spiel (zurücksetzen)</button></div>
+      </div>
+      <p class="note" id="ringQuelle">Der Ring wird wie im Spiel berechnet (game/src/Logo.cpp): gleiche Formeln, gleicher Zufallsgenerator, Mitte auf der Mitte der Schrift, px bei Schriftgröße 100.</p>
     </div>
 
     <div role="tabpanel" class="panel" id="panelAusgabe" aria-labelledby="tabAusgabe" hidden>
@@ -529,13 +580,11 @@ function uebernehme(f){
   fassung = f; basis = doc; seiten = masse(doc);
   for (const e of EBENEN) vorhanden[e.id] = !!gruppe(doc, e.id);
   ebenenZeigen(); quelleZeigen(); zeigeBild(); knoepfe();
-  ringVorbereiten(); // Logo-Editor: Ring aus dieser Fassung
 }
 function ohneLogo(text){
   fassung = null; basis = null; $('logoBild').hidden = true;
   $('leer').hidden = false; $('leer').textContent = text;
   ebenenZeigen(); quelleZeigen(); knoepfe();
-  ringVorbereiten(); // Logo-Editor: ohne Arbeitsdatei kein Ring
 }
 // Gespeicherte Fassung zeigen (offline oder nach einem Fehler); false, wenn keine (brauchbare) da ist.
 function zeigeGespeichert(){
@@ -753,12 +802,12 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal'
 
 
 /* =====================================================================================================
-   Logo-Editor Stufe 1 (Projekt + Schrift)
-   Ein Zeichenweg: svgAufbau() macht aus dem Projektzustand und den Schrift-Umrissen EIN SVG. Die Bühne zeigt
+   Logo-Editor Stufe 1 (Projekt + Schrift) und Stufe 2 (Ring)
+   Ein Zeichenweg: svgAufbau() macht aus dem Projektzustand, den Schrift-Umrissen und dem Ring EIN SVG. Die Bühne zeigt
    genau diesen Text (img aus Blob-URL), „SVG sichern“ gibt ihn weiter, „PNG sichern“ zeichnet ihn (nur mit
    Pixelmaßen in width/height) auf ein Canvas. Schrift nur als Pfade, kein <text>, keine Schriftdatei im SVG.
-   Projekt: localStorage „aether.logoProjekt“ (nur Einstellungen, nie das Token). Ring: unverändert aus der
-   zuletzt geladenen Arbeitsdatei (Gruppen ring-hinten/ring-vorne von „basis“), Bearbeiten folgt in Stufe 2.
+   Projekt: localStorage „aether.logoProjekt“ (nur Einstellungen, nie das Token). Ring: nach der Rechnung des Spiels
+   (RingRechnung, aus game/src/Logo.cpp) aus den Ring-Reglern erzeugt; unabhängig von der Arbeitsdatei.
    ===================================================================================================== */
 /* ---------- Schrift-Umrisse: eigener kleiner Lader (TTF/WOFF 1.0, TrueType-Umrisse) ---------- */
 // Liest nur, was „Aether“ als Pfad braucht: cmap (Format 4/12), head, hhea, hmtx, maxp, loca, glyf (einfache und
@@ -1016,8 +1065,115 @@ const SchriftLader = (() => {
   return { lade, textKonturen };
 })();
 
+/* ---------- Ring wie im Spiel: Rechnung aus game/src/Logo.cpp (Repo aether, Stand b151e26) ---------- */
+// Gleiche Formeln, gleicher Zufallsgenerator (XorShift32), gleiche Rechengenauigkeit (float: Math.fround nach jedem
+// Schritt), gleiche Formen (6–8 Ecken, hellere Facette), Farben und Reihenfolge (hintere zuerst, nach sin sortiert).
+// Maße in Vielfachen der Schriftgröße S; Bildschirmkoordinaten (y nach unten), Ringmitte (cx, cy).
+const RingRechnung = (() => {
+  const f = Math.fround;
+  const TAU = f(6.2831853);
+  const STREU_KOPF = f(0.085), STREU_ENDE = f(0.03);      // kRingSpreadHead / kRingSpreadTail (kein Regler)
+  const STREU_D = f(STREU_ENDE - STREU_KOPF);
+  // Spielwerte (Logo.h): Neigung kTilt (rad), Halbachsen kRingA/kRingB (× S), kRingChunks, kChunkMin/kChunkMax (× S),
+  // Kopf kRingHead (rad), Schweif kRingSweep (rad), Dichte: Exponent 2,3 in u = 1 − (1 − Zufall)^(1/2,3), kRingSeed
+  const SPIEL = Object.freeze({
+    neigung:0.27, breite:1.78, hoehe:0.3, anzahl:150, groesseMin:0.011, groesseMax:0.075,
+    kopf:2.25, schweif:5.85, dichte:2.3, zufall:0x9E3779B9
+  });
+  // LogoRng: XorShift32, unit() = obere 24 Bit / 2^24
+  function zufall(seed){
+    let s = seed >>> 0;
+    return () => {
+      s = (s ^ (s << 13)) >>> 0;
+      s = (s ^ (s >>> 17)) >>> 0;
+      s = (s ^ (s << 5)) >>> 0;
+      return f((s >>> 8) / 16777216);
+    };
+  }
+  // ringChunks(): je Brocken Lage auf der Bahn (angle, across), Größe, Drehung, Helligkeit, Umriss-Startwert;
+  // danach hintere zuerst (nach sin(angle)). nr = Platz in dieser Reihenfolge (= „brocken-<nr>“ im SVG des Spiels).
+  // Der Größen-Zufall q wird mitgeführt, damit die Brocken-Größe (min/max) skaliert, ohne neu zu verteilen.
+  function brocken(p){
+    const r = zufall(p.zufall), ex = f(1 / f(p.dichte)), kopf = f(p.kopf), schweif = f(p.schweif);
+    const out = [];
+    for (let i = 0; i < p.anzahl; i++){
+      const u = f(1 - f(Math.pow(f(1 - r()), ex)));
+      const angle = f(kopf - f(u * schweif));
+      const spread = f(STREU_KOPF + f(STREU_D * u));
+      const a = r(), b = r();
+      const across = f(f(f(a + b) - 1) * spread);
+      const big = f(Math.pow(f(1 - u), f(1.6)));             // groß am Kopf, klein am Ende
+      const q = f(f(0.45) + f(f(0.55) * r()));
+      out.push({ i, angle, across, big, q, spin:f(r() * TAU), shade:r(), seed:(0x1234567 + Math.imul(i, 2654435761 | 0)) >>> 0, sin:f(Math.sin(angle)) });
+    }
+    out.sort((x, y) => x.sin - y.sin || x.i - y.i);
+    out.forEach((c, k) => { c.nr = k; c.vorne = c.sin > 0; });
+    return out;
+  }
+  // c.radius des Spiels (× S): min + (max − min) · big · q
+  const radius = (c, p) => f(f(p.groesseMin) + f(f(f(f(p.groesseMax) - f(p.groesseMin)) * c.big) * c.q));
+  // ringPoint(): Punkt auf der Ellipse, quer versetzt, dann geneigt
+  function punkt(p, S, angle, across, cx, cy){
+    const ca = f(Math.cos(angle)), sa = f(Math.sin(angle));
+    const x = f(f(f(p.breite) + across) * ca), y = f(f(f(p.hoehe) + across) * sa);
+    const ct = f(Math.cos(f(p.neigung))), st = f(Math.sin(f(p.neigung)));
+    return { x:f(cx + f(S * f(f(x * ct) + f(y * st)))), y:f(cy + f(S * f(f(-x * st) + f(y * ct)))) };
+  }
+  // Ring-Koordinaten (ungeneigt, in Halbachsen: (1, 0) = rechter Scheitel) ↔ Bild (Mitte (cx, cy))
+  function ausRing(p, S, X, Y, cx, cy){
+    const x = X * p.breite, y = Y * p.hoehe, ct = Math.cos(p.neigung), st = Math.sin(p.neigung);
+    return { x:cx + S * (x * ct + y * st), y:cy + S * (-x * st + y * ct) };
+  }
+  function inRing(p, S, px, py, cx, cy){
+    const sx = (px - cx) / S, sy = (py - cy) / S, ct = Math.cos(p.neigung), st = Math.sin(p.neigung);
+    return { X:(sx * ct - sy * st) / p.breite, Y:(sx * st + sy * ct) / p.hoehe };
+  }
+  // Ring-Koordinaten eines Brockens auf der Bahn (ohne Versatz)
+  function bahn(c, p){
+    return { X:f(f(f(p.breite) + c.across) * f(Math.cos(c.angle))) / p.breite, Y:f(f(f(p.hoehe) + c.across) * f(Math.sin(c.angle))) / p.hoehe };
+  }
+  // chunkShape(): unregelmäßiges Vieleck (6–8 Ecken) um m mit Radius rPx (unter 0,6 → 0,6), Facette zur Lichtseite
+  // (oben links) aus Mitte und zwei Umrissecken; hinten dunkler, vorne heller. dreh (rad): starre Drehung um m.
+  const byte = v => { v = v < 0 ? 0 : (v > 1 ? 1 : v); return Math.floor(f(f(v * 255) + 0.5)); };
+  const hex = (r, g, b) => '#' + [r, g, b].map(v => byte(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+  function form(m, rPx, spin, seed, shade, vorne, dreh){
+    let r = f(rPx); if (r < f(0.6)) r = f(0.6);
+    const g = zufall((seed | 1) >>> 0), n = 6 + Math.floor(f(g() * 3)), pts = [];
+    for (let k = 0; k < n; k++){
+      const a = f(spin + f(f(TAU * f(k + f(f(0.35) * f(g() - f(0.5))))) / n));
+      const rr = f(r * f(f(0.72) + f(f(0.38) * g())));
+      pts.push({ x:f(m.x + f(rr * f(Math.cos(a)))), y:f(m.y + f(f(rr * f(0.86)) * f(Math.sin(a)))) });
+    }
+    if (dreh){
+      const c = Math.cos(dreh), s = Math.sin(dreh);
+      for (const q of pts){ const dx = q.x - m.x, dy = q.y - m.y; q.x = m.x + dx * c - dy * s; q.y = m.y + dx * s + dy * c; }
+    }
+    const base = f(f(vorne ? 0.5 : 0.36) + f(f(0.16) * shade));
+    const hi = Math.min(1, f(base + f(0.24)));
+    return {
+      pts, facet:[Math.floor(n * 5 / 8) % n, Math.floor(n * 6 / 8) % n],
+      fill:hex(f(base * f(0.92)), f(base * f(0.86)), f(base * f(1.08))),
+      facetFill:hex(f(hi * f(0.95)), f(hi * f(0.92)), f(hi * f(1.05)))
+    };
+  }
+  // ringExtent(): halbe Ausdehnung um die Mitte (× S) für die gewählten Werte
+  function ausdehnung(p){
+    const ct = Math.cos(p.neigung), st = Math.sin(p.neigung);
+    const a = p.breite + STREU_KOPF + p.groesseMax, b = p.hoehe + STREU_KOPF + p.groesseMax;
+    return { w:Math.sqrt(a * a * ct * ct + b * b * st * st), h:Math.sqrt(a * a * st * st + b * b * ct * ct) };
+  }
+  // Zahl wie im SVG des Spiels (%.3f ohne Nullen am Ende)
+  function zahl(v){
+    let s = v.toFixed(3);
+    s = s.replace(/0+$/, '').replace(/\.$/, '');
+    return s === '-0' ? '0' : s;
+  }
+  return { SPIEL, zufall, brocken, radius, punkt, ausRing, inRing, bahn, form, ausdehnung, zahl };
+})();
+// Ende RingRechnung
+
 const PROJEKT_KEY = 'aether.logoProjekt';          // selbst gewählt
-const PROJEKT_FORMAT = 'aether-logo-projekt', PROJEKT_VERSION = 1;
+const PROJEKT_FORMAT = 'aether-logo-projekt', PROJEKT_VERSION = 2;   // Version 1 (ohne Ring) wird weiter geladen
 const LOGO_TEXT = 'Aether', GROESSE = 100;         // Schriftgröße 100 = Maßstab für alle px-Angaben
 const ALLE_STAERKEN = [100, 200, 300, 400, 500, 600, 700, 800, 900];
 const fsDatei = id => (w, k) => 'fonts/' + id + '/' + id + '-latin-' + w + '-' + (k ? 'italic' : 'normal') + '.woff';
@@ -1049,6 +1205,20 @@ const BEREICHE = {
   weich:{ min:0, max:30, schritt:1 }
 };
 const EFFEKTE = ['aus', 'schatten', 'leuchten'];
+// Ring-Regler (selbst gewählt: Bereiche und Schrittweiten; Startwerte = Spielwerte). Winkel in rad, Maße × Schriftgröße.
+const RING_BEREICHE = {
+  neigung:{ min:-0.785, max:0.785, schritt:0.005 },
+  breite:{ min:0.8, max:3, schritt:0.01 },
+  hoehe:{ min:0.05, max:1.2, schritt:0.01 },
+  anzahl:{ min:10, max:400, schritt:1 },
+  groesseMin:{ min:0.002, max:0.15, schritt:0.001 },
+  groesseMax:{ min:0.005, max:0.2, schritt:0.001 },
+  kopf:{ min:0, max:6.28, schritt:0.01 },
+  schweif:{ min:0.5, max:6.28, schritt:0.01 },
+  dichte:{ min:1, max:5, schritt:0.1 }
+};
+const ZUFALL_MAX = 4294967295;   // Zufallswert: 1 … 2^32 − 1 (XorShift32; 0 ergäbe nur Nullen)
+const RING_KEYS = Object.keys(RING_BEREICHE).concat(['zufall']);
 // Startzustand = heutiges Logo, soweit möglich (Jost 500, Verlauf wie im Spiel, leichter dunkler Schatten)
 const START = Object.freeze({
   schrift:'jost', staerke:500, kursiv:false, abstand:0,
@@ -1056,7 +1226,8 @@ const START = Object.freeze({
   tiefe:0, richtung:'so',
   umriss:0, umrissFarbe:'#1B1838',
   effekt:'schatten', weich:0,
-  ringHinten:true, ringVorne:true
+  ringHinten:true, ringVorne:true,
+  ring:Object.freeze({ ...RingRechnung.SPIEL })
 });
 const SCHATTEN = { dx:2.5, dy:3, deckkraft:0.35 };  // wie der Schatten des heutigen Logos (selbst gewählt: aus der Annäherung im Screen-Editor)
 const MAX_VERLAUF = 100;                             // Schritte für Rückgängig (selbst gewählt)
@@ -1067,6 +1238,21 @@ function rasterZahl(v, b, std){
   if (typeof v !== 'number' || !Number.isFinite(v)) return std;
   const k = Math.round((Math.min(b.max, Math.max(b.min, v)) - b.min) / b.schritt);
   return Math.round((b.min + k * b.schritt) * 100) / 100;
+}
+function ringZahl(v, b, std){
+  if (typeof v !== 'number' || !Number.isFinite(v)) return std;
+  const k = Math.round((Math.min(b.max, Math.max(b.min, v)) - b.min) / b.schritt);
+  return Math.round((b.min + k * b.schritt) * 10000) / 10000;
+}
+const zufallOk = v => Number.isInteger(v) && v >= 1 && v <= ZUFALL_MAX;
+// Ring-Einstellungen prüfen; kleinster Brocken höchstens so groß wie der größte
+function ringNormal(o){
+  o = (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  const r = {};
+  for (const k of Object.keys(RING_BEREICHE)) r[k] = ringZahl(o[k], RING_BEREICHE[k], START.ring[k]);
+  if (r.groesseMin > r.groesseMax) r.groesseMin = r.groesseMax;
+  r.zufall = zufallOk(o.zufall) ? o.zufall : START.ring.zufall;
+  return r;
 }
 function naechsteStaerke(s, w){
   let best = s.staerken[0];
@@ -1102,19 +1288,20 @@ function normalisiere(o){
   z.weich = rasterZahl(o.weich, BEREICHE.weich, START.weich);
   z.ringHinten = o.ringHinten !== false;
   z.ringVorne = o.ringVorne !== false;
+  z.ring = ringNormal(o.ring);   // fehlt in Version 1: Spielwerte
   h.push(...anpassen(z));
   return { z, hinweise:h };
 }
 // Projektdatei/Speicher: nur Format, Version, Zeitpunkt und Einstellungen – nie das Token
 function projektObjekt(z){
-  return { format:PROJEKT_FORMAT, version:PROJEKT_VERSION, text:LOGO_TEXT, gespeichert:new Date().toISOString(), einstellungen:{ ...z } };
+  return { format:PROJEKT_FORMAT, version:PROJEKT_VERSION, text:LOGO_TEXT, gespeichert:new Date().toISOString(), einstellungen:JSON.parse(JSON.stringify(z)) };
 }
 // Datei/Speicher prüfen: { z, hinweise } oder { fehler:'kaputt'|'fremd'|'version' }
 function pruefeProjekt(text){
   let o;
   try { o = JSON.parse(text); } catch (e) { return { fehler:'kaputt' }; }
   if (!o || typeof o !== 'object' || Array.isArray(o) || o.format !== PROJEKT_FORMAT) return { fehler:'fremd' };
-  if (o.version !== PROJEKT_VERSION) return { fehler:'version', version:o.version };
+  if (o.version !== 1 && o.version !== PROJEKT_VERSION) return { fehler:'version', version:o.version };
   if (!o.einstellungen || typeof o.einstellungen !== 'object' || Array.isArray(o.einstellungen)) return { fehler:'kaputt' };
   return normalisiere(o.einstellungen);
 }
@@ -1127,7 +1314,7 @@ function projektSpeichern(){
 }
 
 /* ---------- Verlauf (Rückgängig/Wiederholen) ---------- */
-let zustand = projektLesen() || { ...START };
+let zustand = projektLesen() || JSON.parse(JSON.stringify(START));
 let verlauf = [JSON.stringify(zustand)], vpos = 0;
 // Einen Schritt merken (nach Loslassen des Reglers, Antippen, Laden) – Zwischenwerte beim Ziehen nicht
 function merke(){
@@ -1144,7 +1331,7 @@ function setze(neu, schritt){
   if (schritt) merke();
   projektSpeichern(); bedienungZeigen(); planeZeichnen();
 }
-function aendere(f, schritt){ const z = { ...zustand }; f(z); setze(z, schritt); }
+function aendere(f, schritt){ const z = JSON.parse(JSON.stringify(zustand)); f(z); setze(z, schritt); }
 function springe(p){
   if (p < 0 || p >= verlauf.length) return;
   vpos = p; zustand = JSON.parse(verlauf[vpos]);
@@ -1266,14 +1453,9 @@ function svgAufbau(z, font, ring){
   const dSeiten = hatTiefe ? tiefeSeitenD(segs, D) : '', dHinten = hatTiefe ? pfadD(schiebeSeg(segs, D.x, D.y)) : '';
   const koerper = hatTiefe ? vereinige(bb, schiebeBox(bb, D.x, D.y)) : bb;
   const boxen = [erweitere(bb, hatUmriss ? z.umriss / 2 : 0), koerper];
-  // Ring (unverändert aus der Arbeitsdatei, Mitte auf (0,0), Maßstab k)
-  const mitRing = { hinten:!!(ring && ring.hinten && z.ringHinten), vorne:!!(ring && ring.vorne && z.ringVorne) };
-  let ringTf = '';
-  if (ring && (mitRing.hinten || mitRing.vorne)){
-    const rb = ring.box, rcx = (rb.x1 + rb.x2) / 2, rcy = (rb.y1 + rb.y2) / 2, k = ring.k;
-    ringTf = 'scale(' + r2(k * 10000) / 10000 + ') translate(' + r2(-rcx) + ' ' + r2(-rcy) + ')';
-    boxen.push({ x1:(rb.x1 - rcx) * k, y1:(rb.y1 - rcy) * k, x2:(rb.x2 - rcx) * k, y2:(rb.y2 - rcy) * k });
-  }
+  // Ring nach der Rechnung des Spiels, Mitte auf (0,0) = Mitte der Schrift
+  const mitRing = { hinten:!!(ring && z.ringHinten), vorne:!!(ring && z.ringVorne) };
+  if (ring && (mitRing.hinten || mitRing.vorne)) boxen.push(ring.box);
   let sigma = 0;
   if (z.effekt === 'schatten'){ sigma = z.weich / 2; boxen.push(erweitere(schiebeBox(koerper, SCHATTEN.dx, SCHATTEN.dy), 3 * sigma)); }
   if (z.effekt === 'leuchten'){ sigma = 2 + z.weich / 2; boxen.push(erweitere(koerper, 1.5 + 3 * sigma)); }
@@ -1292,104 +1474,53 @@ function svgAufbau(z, font, ring){
 
   const ebenen = [], teile = [];
   const ebene = (id, attr, inhalt) => { ebenen.push(id); teile.push('<g id="' + id + '"' + attr + '>' + inhalt + '</g>'); };
-  if (mitRing.hinten) ebene('ring-hinten', ' transform="' + ringTf + '"', ring.hinten);
+  if (mitRing.hinten) ebene('ring-hinten', '', ring.hinten);
   if (z.effekt === 'schatten') ebene('schatten', ' opacity="' + SCHATTEN.deckkraft + '"' + filt, '<g transform="translate(' + SCHATTEN.dx + ' ' + SCHATTEN.dy + ')">' + koerperPfade('#000000') + '</g>');
   if (z.effekt === 'leuchten') ebene('leuchten', ' opacity="0.9"' + filt, koerperPfade(z.farbe2).replace(/"\/>/g, '" stroke="' + z.farbe2 + '" stroke-width="3" stroke-linejoin="round"/>'));
   if (hatTiefe) ebene('tiefe', '', '<path d="' + dSeiten + '" fill="url(#aeth-kante)"/><path d="' + dHinten + '" fill="url(#aeth-kante)"/>');
   ebene('schrift', '', '<path d="' + dText + '" fill="url(#aeth-verlauf)"/>');
   if (hatUmriss) ebene('umriss', '', '<path d="' + dText + '" fill="none" stroke="' + z.umrissFarbe + '" stroke-width="' + z.umriss + '" stroke-linejoin="round"/>');
-  if (mitRing.vorne) ebene('ring-vorne', ' transform="' + ringTf + '"', ring.vorne);
+  if (mitRing.vorne) ebene('ring-vorne', '', ring.vorne);
 
   const s = SCHRIFT[z.schrift];
   const info = 'Aether-Logo-Projekt: ' + s.name + ' ' + z.staerke + (z.kursiv ? ' kursiv' : ' normal') + ', Schrift als Pfade';
-  const rumpf = '<!-- ' + info + ' --><defs>' + (mitRing.hinten || mitRing.vorne ? ring.defs : '') + defs.join('') + '</defs>' + teile.join('') + '</svg>';
+  const rumpf = '<!-- ' + info + ' --><defs>' + defs.join('') + '</defs>' + teile.join('') + '</svg>';
   return {
     vb, ebenen,
     svg:px => '<svg xmlns="' + SVG_NS + '" viewBox="' + vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h + '" width="' + (px ? px.w : vb.w) + '" height="' + (px ? px.h : vb.h) + '">' + rumpf
   };
 }
 
-/* ---------- Ring aus der Arbeitsdatei ---------- */
-let ring = null, ringStand = 'keine', ringNr = 0;   // keine | laden | bereit | fehlt | fehler
-const serialisiere = n => new XMLSerializer().serializeToString(n);
-// Gruppe ohne eigene id, umhüllt von flachen Kopien ihrer Vorfahren (Transformationen, geerbte Attribute)
-function gruppenText(doc, id){
-  const g = gruppe(doc, id);
-  if (!g) return null;
-  let n = g.cloneNode(true); n.removeAttribute('id');
-  for (let p = g.parentNode; p && p !== doc.documentElement && p.nodeType === 1; p = p.parentNode){
-    const h = p.cloneNode(false); h.removeAttribute('id'); h.appendChild(n); n = h;
+/* ---------- Ring erzeugen (RingRechnung, Einstellungen z.ring) ---------- */
+// Liefert { hinten, vorne (SVG-Inhalt der Gruppen), box (Ausdehnung des Rings wie ringExtent, vereinigt mit allen
+// Brocken), brocken: [{ schluessel, nr, m, r, vorne, pts }] in Zeichenreihenfolge }.
+const ringBasisCache = { schluessel:'', liste:null };
+function ringBasis(p){
+  const k = [p.anzahl, p.zufall, p.kopf, p.schweif, p.dichte].join('|');   // nur diese verteilen neu
+  if (ringBasisCache.schluessel !== k){ ringBasisCache.schluessel = k; ringBasisCache.liste = RingRechnung.brocken(p); }
+  return ringBasisCache.liste;
+}
+function ringAufbau(z){
+  const p = z.ring, S = GROESSE, R = RingRechnung, zahl = R.zahl;
+  const ex = R.ausdehnung(p);
+  const box = { x1:-ex.w * S, y1:-ex.h * S, x2:ex.w * S, y2:ex.h * S };
+  const gruppen = { hinten:[], vorne:[] }, liste = [];
+  const brockenText = (id, m, fo) => '<g id="' + id + '"><polygon fill="' + fo.fill + '" points="' + fo.pts.map(q => zahl(q.x) + ',' + zahl(q.y)).join(' ') + '"/>'
+    + '<polygon fill="' + fo.facetFill + '" points="' + [m, fo.pts[fo.facet[0]], fo.pts[fo.facet[1]]].map(q => zahl(q.x) + ',' + zahl(q.y)).join(' ') + '"/></g>';
+  const dazu = (eintrag, id, fo) => {
+    for (const q of fo.pts){ if (q.x < box.x1) box.x1 = q.x; if (q.x > box.x2) box.x2 = q.x; if (q.y < box.y1) box.y1 = q.y; if (q.y > box.y2) box.y2 = q.y; }
+    eintrag.pts = fo.pts;
+    gruppen[eintrag.vorne ? 'vorne' : 'hinten'].push({ eintrag, text:brockenText(id, eintrag.m, fo) });
+  };
+  for (const c of ringBasis(p)){
+    const m = R.punkt(p, S, c.angle, c.across, 0, 0), r = Math.fround(R.radius(c, p) * S);
+    dazu({ schluessel:'r' + c.nr, nr:c.nr, m, r, vorne:c.vorne }, 'brocken-' + c.nr, R.form(m, r, c.spin, c.seed, c.shade, c.vorne, 0));
   }
-  return serialisiere(n);
-}
-function defsText(doc){
-  const typen = 'defs, style, linearGradient, radialGradient, filter, clipPath, mask, pattern, symbol, marker';
-  // nur die äußersten solcher Elemente (Inhalt von defs nicht doppelt)
-  const oben = e => { for (let p = e.parentNode; p && p.nodeType === 1; p = p.parentNode) if (p.matches(typen)) return false; return true; };
-  return [...doc.documentElement.querySelectorAll(typen)].filter(oben).map(serialisiere).join('');
-}
-function bildAusSvg(svg, w, h){
-  return new Promise((res, rej) => {
-    const url = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' })), img = new Image();
-    img.onload = () => res({ img, url });
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('SVG-Bild')); };
-    if (w){ img.width = w; img.height = h; }
-    img.src = url;
-  });
-}
-// Sichtbare Fläche (Alpha) eines Inhalts in Koordinaten der viewBox; null, wenn nichts zu sehen ist
-async function rasterBox(doc, defs, inhalt){
-  const r = doc.documentElement, vbt = (r.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
-  const m = masse(doc), vb = vbt.length === 4 && vbt.every(Number.isFinite) && vbt[2] > 0 && vbt[3] > 0 ? { x:vbt[0], y:vbt[1], w:vbt[2], h:vbt[3] } : { x:0, y:0, w:m.w, h:m.h };
-  const W = 1024, H = Math.max(1, Math.round(W * vb.h / vb.w));
-  const svg = '<svg xmlns="' + SVG_NS + '" viewBox="' + vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h + '" width="' + W + '" height="' + H + '" preserveAspectRatio="none"><defs>' + defs + '</defs>' + inhalt + '</svg>';
-  const { img, url } = await bildAusSvg(svg, W, H);
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const ctx = cv.getContext('2d', { willReadFrequently:true });
-  ctx.drawImage(img, 0, 0, W, H); URL.revokeObjectURL(url);
-  const d = ctx.getImageData(0, 0, W, H).data;
-  let x1 = W, y1 = H, x2 = -1, y2 = -1;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3] > 8){ if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; }
-  cv.width = cv.height = 0;
-  if (x2 < 0) return null;
-  const sx = vb.w / W, sy = vb.h / H;
-  return { x1:vb.x + x1 * sx, y1:vb.y + y1 * sy, x2:vb.x + (x2 + 1) * sx, y2:vb.y + (y2 + 1) * sy };
-}
-async function ringVorbereiten(){
-  const nr = ++ringNr, doc = basis;
-  if (!doc){ ring = null; ringStand = 'keine'; ringAnzeigen(); planeZeichnen(); return; }
-  ringStand = 'laden'; ringAnzeigen();
-  let neu = null, stand = 'fehler';
-  try {
-    const hinten = gruppenText(doc, 'ring-hinten'), vorne = gruppenText(doc, 'ring-vorne'), defs = defsText(doc);
-    const rb = (hinten || vorne) ? await rasterBox(doc, defs, (hinten || '') + (vorne || '')) : null;
-    if (!rb) stand = 'fehlt';
-    else {
-      // Maßstab: Schrift der Datei (Gruppe „schrift“) ↔ Jost 500 bei Größe 100 – damit der Ring zur Schrift passt wie in der Datei
-      const st = gruppenText(doc, 'schrift'), sb = st ? await rasterBox(doc, defs, st) : null;
-      let k = 1;
-      if (sb && sb.y2 > sb.y1){
-        const jost = await ladeSchrift(SCHRIFT.jost.datei(500, false)), jb = segBox(SchriftLader.textKonturen(jost, LOGO_TEXT, GROESSE, 0).konturen.map(segmente));
-        k = (jb.y2 - jb.y1) / (sb.y2 - sb.y1);
-      }
-      neu = { defs, hinten, vorne, box:rb, k }; stand = 'bereit';
-    }
-  } catch (e) { neu = null; stand = 'fehler'; }
-  if (nr !== ringNr) return;
-  ring = neu; ringStand = stand; ringAnzeigen(); planeZeichnen();
+  for (const k of ['hinten', 'vorne']) for (const g of gruppen[k]) liste.push(g.eintrag);
+  return { hinten:gruppen.hinten.map(g => g.text).join(''), vorne:gruppen.vorne.map(g => g.text).join(''), box, brocken:liste };
 }
 function ringAnzeigen(){
-  const h = $('ringHinweis'), da = { hinten:!!(ring && ring.hinten), vorne:!!(ring && ring.vorne) };
-  for (const [k, id] of [['hinten', 'rHinten'], ['vorne', 'rVorne']]){
-    const cb = $(id), lab = cb.closest('label');
-    cb.disabled = !da[k]; cb.checked = da[k] && zustand['ring' + (k === 'hinten' ? 'Hinten' : 'Vorne')];
-    lab.classList.toggle('fehlt', !da[k]);
-  }
-  let t = '';
-  if (ringStand === 'keine') t = 'Keine Arbeitsdatei gespeichert – das Projekt läuft ohne Ring. Einmal online (mit Token) öffnen, dann kommt der Ring aus ' + DATEI + '.';
-  else if (ringStand === 'fehlt') t = 'Die Arbeitsdatei hat keine Gruppen „ring-hinten“/„ring-vorne“ – das Projekt läuft ohne Ring.';
-  else if (ringStand === 'fehler') t = 'Der Ring ließ sich nicht aus der Arbeitsdatei lesen – das Projekt läuft ohne Ring.';
-  h.textContent = t; h.hidden = !t;
+  for (const [k, id] of [['hinten', 'rHinten'], ['vorne', 'rVorne']]) $(id).checked = zustand['ring' + (k === 'hinten' ? 'Hinten' : 'Vorne')];
 }
 
 /* ---------- Zeichnen (Bühne, PNG-Quelle) ---------- */
@@ -1400,7 +1531,7 @@ function planeZeichnen(){
   requestAnimationFrame(() => { geplant = false; zeichnen(); });
 }
 async function zeichnen(){
-  const nr = ++zeichenNr, z = { ...zustand }, json = JSON.stringify(z), r = ring;
+  const nr = ++zeichenNr, z = { ...zustand }, json = JSON.stringify(z);
   let font;
   try { font = await ladeSchrift(schriftDatei(z)); }
   catch (e) {
@@ -1410,9 +1541,9 @@ async function zeichnen(){
     ausgabeKnoepfe(); return;
   }
   if (nr !== zeichenNr) return;
-  const b = svgAufbau(z, font, r);
+  const r = ringAufbau(z), b = svgAufbau(z, font, r);
   const svg = b.svg(null);
-  aktuell = { ...b, text:svg, json, geladen:false };
+  aktuell = { ...b, text:svg, json, geladen:false, ring:r };
   const a = aktuell, alt = bildUrl, img = $('editorBild');
   bildUrl = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' }));
   img.onload = () => { if (alt) URL.revokeObjectURL(alt); if (aktuell === a) a.geladen = true; };
@@ -1446,6 +1577,8 @@ function ausgabeKnoepfe(){
 /* ---------- Bedienelemente ---------- */
 function regler(id, b){ const e = $(id); e.min = b.min; e.max = b.max; e.step = b.schritt; }
 regler('sAbstand', BEREICHE.abstand); regler('sTiefe', BEREICHE.tiefe); regler('sUmriss', BEREICHE.umriss); regler('sWeich', BEREICHE.weich);
+const RING_REGLER = [...document.querySelectorAll('[data-ring-regler]')];
+for (const e of RING_REGLER) regler(e.id, RING_BEREICHE[e.dataset.ringRegler]);
 for (const s of SCHRIFTEN){ const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; $('sSchrift').appendChild(o); }
 for (const w of ALLE_STAERKEN){
   const b = document.createElement('button'); b.type = 'button'; b.dataset.w = String(w); b.textContent = String(w);
@@ -1485,6 +1618,28 @@ function bedienungZeigen(){
   for (const b of $('sEffekt').children) b.setAttribute('aria-pressed', String(b.dataset.effekt === z.effekt));
   $('sWeich').disabled = z.effekt === 'aus';
   ringAnzeigen();
+  ringReglerZeigen();
+}
+// Ring-Regler: Werte und Anzeige (Grad, px bei Schriftgröße 100)
+const grad = v => v * 180 / Math.PI;
+const dez = (v, n) => v.toLocaleString('de-DE', { minimumFractionDigits:n, maximumFractionDigits:n });
+function kopfLage(a){
+  const s = Math.sin(a), c = Math.cos(a);
+  return [s > 0.2 ? 'vorne' : s < -0.2 ? 'hinten' : '', c > 0.2 ? 'rechts' : c < -0.2 ? 'links' : ''].filter(Boolean).join(' ') || 'seitlich';
+}
+function ringReglerZeigen(){
+  const p = zustand.ring;
+  for (const e of RING_REGLER){ const v = p[e.dataset.ringRegler]; if (Number(e.value) !== v) e.value = String(v); }
+  $('rNeigungWert').textContent = dez(grad(p.neigung), 1) + '°';
+  $('rBreiteWert').textContent = pxText(p.breite * GROESSE);
+  $('rHoeheWert').textContent = pxText(p.hoehe * GROESSE);
+  $('rAnzahlWert').textContent = String(p.anzahl);
+  $('rGroesseWert').textContent = dez(p.groesseMin * GROESSE, 1) + '–' + dez(p.groesseMax * GROESSE, 1) + ' px';
+  $('rKopfWert').textContent = Math.round(grad(p.kopf)) + '° · ' + kopfLage(p.kopf);
+  $('rSchweifWert').textContent = Math.round(grad(p.schweif)) + '°';
+  $('rDichteWert').textContent = dez(p.dichte, 1);
+  const zf = $('rZufall');
+  if (document.activeElement !== zf){ zf.value = String(p.zufall); zf.removeAttribute('aria-invalid'); }
 }
 $('sSchrift').addEventListener('change', () => {
   const z = { ...zustand, schrift:$('sSchrift').value }, h = anpassen(z);
@@ -1522,6 +1677,36 @@ for (const [farbId, hexId, key] of [['sFarbe1', 'sFarbe1Hex', 'farbe1'], ['sFarb
   });
 }
 for (const [id, key] of [['rHinten', 'ringHinten'], ['rVorne', 'ringVorne']]) $(id).addEventListener('change', () => aendere(z => { z[key] = $(id).checked; }, true));
+// Ring-Einstellungen ändern: werte = Teilobjekt von z.ring; kleinster ≤ größter Brocken (der andere Regler folgt)
+function ringWerte(werte){
+  const r = { ...zustand.ring, ...werte };
+  if ('groesseMin' in werte && r.groesseMin > r.groesseMax) r.groesseMax = r.groesseMin;
+  if ('groesseMax' in werte && r.groesseMax < r.groesseMin) r.groesseMin = r.groesseMax;
+  return ringNormal(r);
+}
+function ringAendern(werte, schritt){ aendere(z => { z.ring = ringWerte(werte); }, schritt); }
+// Regler: Ziehen zeigt live (ohne Schritt), Loslassen ist EIN Schritt
+for (const e of RING_REGLER){
+  const key = e.dataset.ringRegler, wert = () => ({ [key]:ringZahl(Number(e.value), RING_BEREICHE[key], zustand.ring[key]) });
+  e.addEventListener('input', () => ringAendern(wert(), false));
+  e.addEventListener('change', () => ringAendern(wert(), true));
+}
+// Zufallswert: Textfeld (Backspace löscht nur Zeichen), übernommen bei Enter/Verlassen; ungültig → alter Wert
+const zufallWert = () => { const t = $('rZufall').value.trim(); return /^\d{1,10}$/.test(t) && zufallOk(Number(t)) ? Number(t) : null; };
+$('rZufall').addEventListener('input', () => { $('rZufall').toggleAttribute('aria-invalid', zufallWert() === null && $('rZufall').value.trim() !== ''); });
+$('rZufall').addEventListener('change', () => {
+  const v = zufallWert();
+  if (v === null || v === zustand.ring.zufall){ $('rZufall').value = String(zustand.ring.zufall); $('rZufall').removeAttribute('aria-invalid'); return; }
+  ringAendern({ zufall:v }, true);
+});
+$('rZufall').addEventListener('keydown', e => { if (e.key === 'Enter') $('rZufall').blur(); });
+function neuerZufall(){
+  const a = new Uint32Array(1);
+  do crypto.getRandomValues(a); while (!a[0] || a[0] === zustand.ring.zufall);
+  return a[0];
+}
+$('btnWuerfeln').addEventListener('click', () => ringAendern({ zufall:neuerZufall() }, true));
+$('btnWieImSpiel').addEventListener('click', () => ringAendern({ ...RingRechnung.SPIEL }, true));
 $('btnUndo').addEventListener('click', rueckgaengig);
 $('btnRedo').addEventListener('click', wiederholen);
 
@@ -1607,7 +1792,9 @@ window.AetherLogoEditor = Object.freeze({
   pngBereit:() => ePngAktuell(),
   pngSvg:() => ePng.svg,
   verlauf:() => ({ pos:vpos, laenge:verlauf.length, max:MAX_VERLAUF }),
-  ring:() => ({ stand:ringStand, k:ring ? ring.k : null, box:ring ? { ...ring.box } : null }),
+  ring:() => ({ stand:'bereit', einstellungen:{ ...zustand.ring }, spiel:{ ...RingRechnung.SPIEL }, box:aktuell && aktuell.ring ? { ...aktuell.ring.box } : null,
+    brocken:aktuell && aktuell.ring ? aktuell.ring.brocken.map(b => ({ schluessel:b.schluessel, nr:b.nr, x:b.m.x, y:b.m.y, r:b.r, vorne:b.vorne })) : [] }),
+  ringBereiche:JSON.parse(JSON.stringify(RING_BEREICHE)),
   bereiche:JSON.parse(JSON.stringify(BEREICHE)),
   breiten:BREITEN.slice()
 });
