@@ -3,7 +3,7 @@
   "private": true,
   "description": "Statische Web-App zum Starten der Aether-Web-Builds auf iPad und iPhone",
   "scripts": {
-    "test": "node --test tests/e2e.test.js tests/project.test.js tests/host.test.js tests/start-frame.test.js tests/webgpu-check.test.js tests/screen-editor.test.js tests/logo.test.js tests/logo-png.test.js tests/logo-editor.test.js tests/screen-logo.test.js tests/gemeinsam.test.js",
+    "test": "node --test tests/e2e.test.js tests/project.test.js tests/host.test.js tests/start-frame.test.js tests/webgpu-check.test.js tests/screen-editor.test.js tests/logo.test.js tests/logo-png.test.js tests/logo-editor.test.js tests/logo-ring.test.js tests/screen-logo.test.js tests/gemeinsam.test.js",
     "icons": "node tools/make-icons.js"
   },
   "devDependencies": {
