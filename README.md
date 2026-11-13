@@ -356,6 +356,9 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
      in **einer** Liste, sortiert nach Merge- bzw. Commit-Zeit (neueste zuerst). Dashboard-Einträge haben das
      Abzeichen „DB“ (türkis) und die Metazeile „Dashboard · PR #n  Datum, Uhrzeit  Hash“; Antippen öffnet den PR in
      `aether-dashboard` (neuer Tab). aether-Einträge sehen aus wie bisher.
+   - *Nachladen*: Die aether-Einträge erscheinen, sobald sie da sind; die Dashboard-PRs werden danach eingemischt
+     (bis dahin unter den Chips „Dashboard-PRs werden geladen …“, im Filter „Spiel“ ohne Hinweis), Filter und
+     aufgeklapptes „Ältere anzeigen“ bleiben dabei erhalten; liegen sie im 60-s-Cache, erscheint die Liste in einem Schritt.
    - *Token*: Die Anfrage geht zuerst mit dem Token an `api.github.com`. Lehnt GitHub ab (401/403/404, z. B. weil das
      fine-grained Token nur `aether` freigibt), folgt genau einmal dieselbe Anfrage **ohne** Token; danach (bis zum
      Leeren des Speicher-Caches) gleich ohne. Das Token geht an keinen anderen Host, im Cache liegt nur die PR-Liste.
