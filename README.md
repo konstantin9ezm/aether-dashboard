@@ -472,7 +472,35 @@ Die Logo-Box zeigt das echte Spiel-Logo `game/assets/ui/logo.png` (eine API-Anfr
 gleiches Token wie im Logo-Werkzeug, offline dessen gespeicherte Fassung `aether.logoPng`), mittig mit erhaltenem
 Seitenverhältnis so groß wie die Box es zulässt, auch in Vergleich und Bild-Export; ohne Bild (kein Token, Fehler,
 offline ohne gespeicherte Fassung) bleibt die Annäherung, mit dem Hinweis „Logo-Bild nicht geladen – Annäherung“
-im Bedienfeld. Das Bild kommt nie in die gespeicherten Screens.
+im Bedienfeld. Das Spiel-Logo kommt nie in die gespeicherten Screens. Jeder Screen kann stattdessen ein eigenes PNG
+zeigen (siehe „Logo dieses Screens“); Box, Lage und Ziehen bleiben dabei gleich.
+
+**Logo dieses Screens**
+
+- Abschnitt im Bedienfeld direkt unter „Screen“: kleines Vorschaubild (dunkler Hintergrund, Seitenverhältnis
+  erhalten), daneben Name und Maße – beim Standard „Spiel-Logo (Standard)“ / `game/assets/ui/logo.png`, bei eigenem
+  PNG Dateiname / „eigenes PNG · B × H px · KB“. Knöpfe **„PNG laden …“** (Dateiauswahl vom Gerät, nur PNG; auf
+  iPad/iPhone auch aus der Dateien-App) und **„Spiel-Logo verwenden“** (zurück zum Standard, ausgegraut beim
+  Standard). Tippflächen ≥ 44 px, hochkant ohne waagerechtes Scrollen.
+- Prüfung beim Laden: PNG-Signatur, erster Block `IHDR`, Breite/Höhe 1 … **4096 px** je Seite, Datei höchstens
+  **5 MB**, Bild muss sich öffnen lassen. Sonst eine Meldung unter den Knöpfen (z. B. „Keine PNG-Datei – Screen
+  unverändert“, „Datei zu groß (6 MB, höchstens 5 MB) – …“, „Bild zu groß (5000 × 100 px, höchstens 4096 px je
+  Seite) – …“); der Screen bleibt unverändert.
+- Das Bild passt sich mittig mit erhaltenem Seitenverhältnis in die Logo-Box ein (wie im Spiel) – auf der Bühne,
+  im Vergleich und in „Als Bild sichern“, jeweils mit dem Logo des gezeigten Screens.
+- **Speicher:** Die PNG-Bytes liegen unverändert in IndexedDB (Datenbank `aether.screenEditor.logos`, Ablage
+  `logos`, Schlüssel = Verweis-ID), nicht in `localStorage`. Im Screen steht nur
+  `logo: { art:'eigen', id, name, w, h, bytes }`; ohne `logo` gilt das Spiel-Logo. Ältere Screens ohne Angabe laden
+  unverändert als Standard, eine unbrauchbare Angabe wird zum Standard. Fehlt ein Bild auf dem Gerät, zeigt der
+  Screen das Spiel-Logo mit dem Hinweis „Eigenes Logo-Bild fehlt auf diesem Gerät – Spiel-Logo“.
+- **Neu** = Standard, **Kopie** übernimmt den Verweis (beide Screens teilen sich das Bild). Nach Löschen, Ersetzen,
+  „Spiel-Logo verwenden“ und „Alles ersetzen“ gibt der Editor Bilder frei, auf die kein Screen mehr verweist (beim
+  Start nur, wenn gespeicherte Screens gelesen wurden). Ein eigenes PNG funktioniert offline.
+- **Export/Import:** „Als Text kopieren“ nimmt das Bild bewusst nicht mit (der Text ist für den Chat gedacht; ein
+  Logo als Base64 wäre schnell Hunderte KB). Screens mit eigenem PNG bekommen
+  `logo: { art:'eigen', datei, breite, hoehe, bytes }`, der Dialog sagt deutlich, dass die Bilder auf dem Gerät
+  bleiben. Beim Einfügen zeigen solche Screens das Spiel-Logo, mit Hinweis in der Meldung; vorhandene Screens behalten
+  ihr Logo.
 
 *Stand im Spiel (Repo aether, nur gelesen):* Das Spiel rechnet heute mit 65,9° senkrecht und **fester Höhe**
 (`GlesPreviewRenderer.cpp`: `xScale = yScale · Höhe / Breite`), ein iPad sieht dort also weniger als 16:9; der
@@ -503,7 +531,7 @@ Regel C ist ein eigener Auftrag im Repo aether.
 Jost (reduziert auf „Aether“) steht unter der SIL Open Font License 1.1 (`vendor/Jost-OFL.txt`).
 
 **Testschnittstelle:** `window.AetherScreenEditor` (nur lesen: Formate, `sicht`, Kamera, Zustand, Rahmen,
-Eckpunkte) für die automatischen Tests.
+Eckpunkte, Stand des Spiel-Logos und der eigenen Logos, Grenzen für PNG) für die automatischen Tests.
 
 ## Logo-Werkzeug
 
@@ -691,6 +719,14 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   „PNG sichern (Original)“ byte-gleich, Hintergrund für beide Vorschauen, Fehler/offline, Box-Maße unverändert,
   Annäherung mit Hinweis, iPhone hochkant. Gegenproben (müssen rot werden): Annäherung statt Bild, Bild auf die Box
   gestreckt, Fehlerfall ohne Rückfall.
+- `tests/screen-logo.test.js` – „Logo dieses Screens“ (erzeugte Test-PNG in eindeutigen Farben: Spiel-Logo Cyan,
+  eigene Magenta/Gelb): Laden mit Vorschaubild, Name, Maßen und Größe; nach Neuladen noch da; zwei Screens getrennt;
+  Kopie übernimmt; „Spiel-Logo verwenden“; Löschen/Zurücksetzen/Ersetzen/„Alles ersetzen“ geben das Bild in IndexedDB
+  frei; ungültige Dateien (kein PNG, zu groß, zu viele Pixel, ohne IHDR, beschädigt) → Meldung, Screen unverändert;
+  Seitenverhältnis 1 : 4 und 20 : 1 (Bühne, Vorschaubild, Vergleich); Vergleich und „Als Bild sichern“ mit dem Logo
+  des jeweiligen Screens, Export/Import; alte Daten ohne Angabe; offline aus dem Service Worker; iPhone hochkant.
+  Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=ein-logo|neuladen|gestreckt|leiche node --test
+  tests/screen-logo.test.js` (ein Logo für alle Screens, Logo nach Neuladen weg, Bild gestreckt, Bildleiche).
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,

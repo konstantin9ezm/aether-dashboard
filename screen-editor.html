@@ -14,7 +14,9 @@
   siehe vendor/Jost-OFL.txt), hier eingebettet. Gespeichert wird nur auf dem Gerät (localStorage).
   Die Logo-Box zeigt das echte Spiel-Logo game/assets/ui/logo.png (Repo aether, gelesen wie im Logo-Werkzeug über die
   GitHub-API mit dem Token des Dashboards, eine Anfrage je Öffnen; offline die vom Logo-Werkzeug gespeicherte
-  Fassung „aether.logoPng“, nur gelesen). Ist kein Bild da, bleibt die Annäherung. Das Bild kommt nie in die Screens.
+  Fassung „aether.logoPng“, nur gelesen). Ist kein Bild da, bleibt die Annäherung. Das Spiel-Logo kommt nie in die Screens.
+  Jeder Screen kann stattdessen ein eigenes PNG vom Gerät nutzen: Das Bild liegt in IndexedDB
+  („aether.screenEditor.logos“), im Screen steht nur ein Verweis mit Metadaten (screen.logo).
 -->
 <style>
 @font-face{
@@ -236,6 +238,14 @@ body.vorschau .legende{ display:none; }
 #vergleich[hidden]{ display:none; }
 #vergleich figure{ margin:0; flex:none; min-width:0; }
 #vergleich canvas{ display:block; width:100%; height:auto; border-radius:4px; outline:1px solid rgba(196,187,255,.25); }
+/* Logo dieses Screens */
+.logo-screen{ display:flex; gap:10px; align-items:center; margin-bottom:8px; min-width:0; }
+.logo-screen .vorschaubild{ flex:none; width:96px; height:56px; border-radius:8px; background:var(--stage); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; overflow:hidden; padding:4px; }
+.logo-screen .vorschaubild img, .logo-screen .vorschaubild svg{ display:block; width:100%; height:100%; object-fit:contain; object-position:50% 50%; }
+.logo-screen .angaben{ flex:1 1 auto; min-width:0; }
+.logo-screen .logo-name{ font-size:15px; font-weight:500; overflow-wrap:anywhere; }
+.logo-screen .logo-masse{ font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+#logoScreen .row button{ min-height:44px; }
 #vergleich figcaption{ font-size:12px; line-height:16px; color:#c9c4ee; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
 </head>
@@ -318,6 +328,21 @@ body.vorschau .legende{ display:none; }
       <div class="row"><button id="btnSterne" type="button">Anderer Sternenhimmel</button></div>
     </section>
 
+    <section id="logoScreen">
+      <h2>Logo dieses Screens</h2>
+      <div class="logo-screen">
+        <div class="vorschaubild" id="logoVorschau" aria-hidden="true"></div>
+        <div class="angaben"><div class="logo-name" id="logoName"></div><div class="logo-masse" id="logoMasse"></div></div>
+      </div>
+      <div class="row grow">
+        <button type="button" id="btnLogoLaden">PNG laden …</button>
+        <button type="button" id="btnLogoStandard">Spiel-Logo verwenden</button>
+      </div>
+      <input type="file" id="logoDatei" accept="image/png,.png" hidden>
+      <p class="note" id="logoMeldung" role="status" hidden></p>
+      <p class="note">Das Logo wird mit diesem Screen gespeichert und passt sich unverzerrt in die Logo-Box ein – wie im Spiel.</p>
+    </section>
+
     <section>
       <h2>Ebenen</h2>
       <div class="liste" id="listeOben"></div>
@@ -390,7 +415,7 @@ body.vorschau .legende{ display:none; }
       </div></div>
       <p class="note" id="anordnungNote">Nebeneinander nur in breiten Fenstern (quer, ab 1000 px Breite); sonst automatisch untereinander.</p>
       <div class="row"><button type="button" id="btnVorschau" class="primary">Vorschau ohne Hilfen</button></div>
-      <p class="note">Logo und Menübox sind angenähert (Logo-Schrift Jost Medium wie im Spiel, Ring vereinfacht, Menübox in Systemschrift). Ihre Größe richtet sich nach dem 16:9-Bereich: Maßstab = Höhe des 16:9-Bereichs in Punkten / 400, höchstens 1,6, damit sie auf allen Geräten gleich groß wirken; Lage mittig im 16:9-Bereich. Kamera: 65,9° Sichtfeld senkrecht für 16:9 (wie im Spiel), die anderen Formate nach Regel C. Das Spiel rechnet heute noch mit fester Bildhöhe und dem Maßstab aus dem ganzen Bild; das wird in einem eigenen Schritt angepasst.</p>
+      <p class="note" id="notizLogoMenue">Das Logo ist echt (Spiel-Logo oder das eigene PNG dieses Screens), die Menübox ist angenähert (Systemschrift). Ihre Größe richtet sich nach dem 16:9-Bereich: Maßstab = Höhe des 16:9-Bereichs in Punkten / 400, höchstens 1,6, damit sie auf allen Geräten gleich groß wirken; Lage mittig im 16:9-Bereich. Kamera: 65,9° Sichtfeld senkrecht für 16:9 (wie im Spiel), die anderen Formate nach Regel C. Das Spiel rechnet heute noch mit fester Bildhöhe und dem Maßstab aus dem ganzen Bild; das wird in einem eigenen Schritt angepasst.</p>
     </section>
 
     <section>
@@ -495,11 +520,16 @@ function normalisiere(st){
     if (!s.lage || !s.lage.logo || !s.lage.menue) s.lage = neueLage();
     if (s.zeigeLogo === undefined) s.zeigeLogo = true;
     if (s.zeigeMenue === undefined) s.zeigeMenue = true;
+    // Logo dieses Screens: fehlt die Angabe (ältere Daten) oder ist sie unbrauchbar, gilt das Spiel-Logo (Standard)
+    if (s.logo !== undefined && !logoVerweisOk(s.logo)) delete s.logo;
     for (const a of s.asteroiden){ if (!Number.isFinite(a.roll)) a.roll = 0; a.aus = !!a.aus; }
   }
   return st;
 }
-let state = normalisiere(ladeLokal() || startZustand());
+// Verweis auf ein eigenes Logo-PNG in IndexedDB (nur Metadaten; das Bild selbst liegt nicht in den Screen-Daten)
+function logoVerweisOk(l){ return !!l && l.art === 'eigen' && typeof l.id === 'string' && /^lg-[a-z0-9]{6,40}$/.test(l.id) && Number.isFinite(l.w) && Number.isFinite(l.h) && Number.isFinite(l.bytes); }
+const ausSpeicher = ladeLokal();
+let state = normalisiere(ausSpeicher || startZustand());
 let selectedId = null, undo = [], platzieren = false, placeDepth = 80, anzahl = 12;
 let zeigeUmrisse = true, zeigeRahmen = true, zeigeKarte = true, vorschau = false, layoutEdit = false, modus = 'schieben';
 const screen = () => state.screens.find(s => s.id === state.aktiv) || state.screens[0];
@@ -618,16 +648,27 @@ const LOGO_SVG = '<svg viewBox="0 0 375 137" preserveAspectRatio="xMidYMid meet"
 // mit einem kleinen Hinweis im Bedienfeld. Das Bild liegt nur im Speicher der Seite, nie in den Screen-Daten.
 const LOGO_PNG = { owner:'konstantin9ezm', repo:'aether', ref:'main', datei:'game/assets/ui/logo.png', api:'https://api.github.com' };
 let logoBild = null, logoStand = 'laden'; // 'laden' | 'bild' | 'annaeherung'
+// Bild, das die Logo-Box des aktiven Screens zeigt: das eigene PNG des Screens oder das Spiel-Logo (Standard);
+// null = Annäherung (LOGO_SVG)
+function aktivesLogo(){
+  const l = screen().logo;
+  if (l){ const e = eigeneBilder.get(l.id); if (e && e.img) return e.img; }
+  return logoBild;
+}
 function logoAnzeigen(){
-  if (logoBild){
+  const bild = aktivesLogo();
+  if (bild){
     const img = document.createElement('img');
-    img.className = 'logoPng'; img.alt = ''; img.draggable = false; img.src = logoBild.src;
+    img.className = 'logoPng'; img.alt = ''; img.draggable = false; img.src = bild.src;
     logoEl.replaceChildren(img);
   } else {
     logoEl.innerHTML = LOGO_SVG;
   }
   // Kleiner Hinweis im Bedienfeld (nicht auf der Bühne: dort steht außer Logo und Menü kein Text)
-  $('logoHinweis').hidden = logoStand !== 'annaeherung';
+  const l = screen().logo, fehlt = !!l && eigeneStand === 'fertig' && !eigeneBilder.has(l.id);
+  $('logoHinweis').hidden = !fehlt && (!!l || logoStand !== 'annaeherung');
+  $('logoHinweis').textContent = fehlt ? 'Eigenes Logo-Bild fehlt auf diesem Gerät – Spiel-Logo' : 'Logo-Bild nicht geladen – Annäherung';
+  logoPanel();
   vergleichPlanen();
 }
 function logoBildAus(blob){
@@ -659,6 +700,131 @@ async function logoLaden(){
   }
   logoBild = img; logoStand = img ? 'bild' : 'annaeherung';
   logoAnzeigen();
+}
+
+/* ---------- Eigenes Logo je Screen (PNG vom Gerät, gespeichert in IndexedDB) ---------- */
+// Grenzen: Datei höchstens 5 MB, Bild höchstens 4096 px je Seite (das echte Logo hat 1874 × 681 px). Die Bytes
+// liegen unverändert in IndexedDB (Datenbank „aether.screenEditor.logos“, Ablage „logos“, Schlüssel = Verweis-ID);
+// im Screen steht nur { art:'eigen', id, name, w, h, bytes }. Kopien teilen sich das Bild; nicht mehr verwendete
+// Bilder gibt aufraeumen() frei.
+const LOGO_MAX_BYTES = 5 * 1024 * 1024, LOGO_MAX_PX = 4096;
+const LOGO_DB = 'aether.screenEditor.logos', LOGO_ABLAGE = 'logos';
+const eigeneBilder = new Map();       // id → { img } (geladen, Objekt-URL in img.src)
+const eigeneNeu = new Set();          // IDs, die gerade gespeichert werden (noch ohne Verweis): nie aufräumen
+let eigeneStand = 'laden';            // 'laden' | 'fertig'
+let logoDbP = null;
+function logoDb(){
+  if (!logoDbP){
+    logoDbP = new Promise((ok, nein) => {
+      let r;
+      try { r = indexedDB.open(LOGO_DB, 1); } catch (e) { nein(e); return; }
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(LOGO_ABLAGE)) r.result.createObjectStore(LOGO_ABLAGE, { keyPath:'id' }); };
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => nein(r.error || new Error('IndexedDB'));
+      r.onblocked = () => nein(new Error('IndexedDB blockiert'));
+    });
+    logoDbP.catch(() => { logoDbP = null; });
+  }
+  return logoDbP;
+}
+function logoAblage(modus, tu){
+  return logoDb().then(db => new Promise((ok, nein) => {
+    const t = db.transaction(LOGO_ABLAGE, modus), r = tu(t.objectStore(LOGO_ABLAGE));
+    let erg;
+    if (r) r.onsuccess = () => { erg = r.result; };
+    t.oncomplete = () => ok(erg);
+    t.onerror = () => nein(t.error || new Error('IndexedDB'));
+    t.onabort = () => nein(t.error || new Error('IndexedDB abgebrochen'));
+  }));
+}
+const benutzteLogos = () => new Set(state.screens.filter(s => s.logo).map(s => s.logo.id));
+// Gibt Bilder frei, auf die kein Screen mehr verweist (Speicher der Seite und IndexedDB). Hintereinander, nie parallel.
+let aufraeumKette = Promise.resolve();
+function aufraeumen(){
+  aufraeumKette = aufraeumKette.then(async () => {
+    const benutzt = benutzteLogos();
+    for (const [id, e] of eigeneBilder) if (!benutzt.has(id) && !eigeneNeu.has(id)){ try { URL.revokeObjectURL(e.img.src); } catch (x) {} eigeneBilder.delete(id); }
+    const ids = await logoAblage('readonly', st => st.getAllKeys());
+    const weg = (ids || []).filter(id => !benutzt.has(id) && !eigeneNeu.has(id));
+    if (weg.length) await logoAblage('readwrite', st => { weg.forEach(id => st.delete(id)); return null; });
+  }).catch(() => {});
+  return aufraeumKette;
+}
+// Lädt die Bilder aller Screens aus IndexedDB (einmal beim Start, offline genauso)
+async function eigeneLaden(){
+  for (const id of benutzteLogos()){
+    if (eigeneBilder.has(id)) continue;
+    try {
+      const rec = await logoAblage('readonly', st => st.get(id));
+      if (rec && rec.png) eigeneBilder.set(id, { img:await logoBildAus(new Blob([rec.png], { type:'image/png' })) });
+    } catch (e) {}
+  }
+  eigeneStand = 'fertig';
+  logoAnzeigen();
+  // Beim Start nur aufräumen, wenn gespeicherte Screens gelesen wurden (sonst nichts löschen)
+  if (ausSpeicher) await aufraeumen();
+}
+// Prüft die Datei: PNG-Signatur, erster Block IHDR (13 Byte), Breite und Höhe 1 … LOGO_MAX_PX, Größe ≤ LOGO_MAX_BYTES.
+// Rückgabe { buf, w, h } oder Fehler mit dem Meldungstext.
+const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+const mb = n => (n / 1048576).toLocaleString('de-DE', { maximumFractionDigits:1 }) + ' MB';
+const kbText = n => Math.max(1, Math.round(n / 1024)) + ' KB';
+async function pruefePng(datei){
+  if (!datei) throw new Error('Keine Datei gewählt');
+  if (datei.size > LOGO_MAX_BYTES) throw new Error('Datei zu groß (' + mb(datei.size) + ', höchstens ' + mb(LOGO_MAX_BYTES) + ') – Screen unverändert');
+  if (datei.size < 33) throw new Error('Keine PNG-Datei – Screen unverändert');
+  const buf = await datei.arrayBuffer(), u8 = new Uint8Array(buf), dv = new DataView(buf);
+  if (!PNG_SIG.every((b, i) => u8[i] === b)) throw new Error('Keine PNG-Datei – Screen unverändert');
+  if (dv.getUint32(8) !== 13 || String.fromCharCode(u8[12], u8[13], u8[14], u8[15]) !== 'IHDR') throw new Error('PNG beschädigt (Kopfblock IHDR fehlt) – Screen unverändert');
+  const w = dv.getUint32(16), h = dv.getUint32(20);
+  if (!w || !h) throw new Error('PNG beschädigt (Maße 0) – Screen unverändert');
+  if (w > LOGO_MAX_PX || h > LOGO_MAX_PX) throw new Error('Bild zu groß (' + w + ' × ' + h + ' px, höchstens ' + LOGO_MAX_PX + ' px je Seite) – Screen unverändert');
+  return { buf, w, h };
+}
+function logoMeldung(t){ const el = $('logoMeldung'); el.textContent = t || ''; el.hidden = !t; }
+let logoLaedt = false;
+async function eigenesLogoLaden(datei){
+  if (logoLaedt) return;
+  logoLaedt = true; logoMeldung(''); logoPanel();
+  const zielId = screen().id;
+  let p = null, img = null, id = null;
+  try {
+    p = await pruefePng(datei);
+    try { img = await logoBildAus(new Blob([p.buf], { type:'image/png' })); } catch (e) { throw new Error('Das PNG ließ sich nicht öffnen (Datei beschädigt?) – Screen unverändert'); }
+    id = 'lg-' + uid() + uid();
+    eigeneNeu.add(id);
+    try { await logoAblage('readwrite', st => st.put({ id, png:p.buf, gespeichertUm:Date.now() })); }
+    catch (e) { throw new Error('Bild ließ sich auf diesem Gerät nicht speichern (Speicher voll oder gesperrt) – Screen unverändert'); }
+    const ziel = state.screens.find(s => s.id === zielId);
+    if (!ziel) throw new Error('Screen gibt es nicht mehr');
+    eigeneBilder.set(id, { img });
+    ziel.logo = { art:'eigen', id, name:String(datei.name || 'logo.png').slice(0, 80), w:p.w, h:p.h, bytes:p.buf.byteLength };
+    speichere(); logoAnzeigen();
+    meldung('Logo für „' + (ziel.name || 'Ohne Namen') + '“ geladen');
+  } catch (e) {
+    if (img && !(id && eigeneBilder.has(id))){ try { URL.revokeObjectURL(img.src); } catch (x) {} }
+    logoMeldung(e.message || 'PNG ließ sich nicht laden – Screen unverändert');
+    meldung(e.message || 'PNG ließ sich nicht laden');
+  } finally {
+    if (id) eigeneNeu.delete(id);
+    logoLaedt = false; logoPanel();
+    aufraeumen();
+  }
+}
+// Abschnitt „Logo dieses Screens“: Vorschaubild, Name, Maße und Größe; „Spiel-Logo verwenden“ nur bei eigenem PNG
+function logoPanel(){
+  const l = screen().logo, bild = aktivesLogo(), v = $('logoVorschau');
+  if (bild){ const img = document.createElement('img'); img.alt = ''; img.draggable = false; img.src = bild.src; v.replaceChildren(img); }
+  else v.innerHTML = LOGO_SVG;
+  if (l){
+    $('logoName').textContent = l.name;
+    $('logoMasse').textContent = 'eigenes PNG · ' + l.w + ' × ' + l.h + ' px · ' + kbText(l.bytes);
+  } else {
+    $('logoName').textContent = 'Spiel-Logo (Standard)';
+    $('logoMasse').textContent = 'game/assets/ui/logo.png';
+  }
+  $('btnLogoStandard').disabled = !l;
+  $('btnLogoLaden').disabled = logoLaedt;
 }
 
 /* ---------- Layout ---------- */
@@ -939,12 +1105,13 @@ function rundRechteck(ctx, x, y, w, h, r){
   ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
-// Logo in das Rechteck eingepasst: das echte Bild (mittig, Seitenverhältnis erhalten), sonst die Annäherung wie
+// Logo in das Rechteck eingepasst: das Bild des Screens (eigenes PNG oder Spiel-Logo; mittig, Seitenverhältnis erhalten), sonst die Annäherung wie
 // LOGO_SVG (viewBox 375 × 137)
 function zeichneLogo(ctx, x, y, w, h){
-  if (logoBild){
-    const iw = logoBild.naturalWidth, ih = logoBild.naturalHeight, f = Math.min(w / iw, h / ih), dw = iw * f, dh = ih * f;
-    ctx.drawImage(logoBild, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  const bild = aktivesLogo();
+  if (bild){
+    const iw = bild.naturalWidth, ih = bild.naturalHeight, f = Math.min(w / iw, h / ih), dw = iw * f, dh = ih * f;
+    ctx.drawImage(bild, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
     return;
   }
   const k = Math.min(w / 375, h / 137);
@@ -1292,7 +1459,7 @@ $('btnNurSel').addEventListener('click', () => { const a = sel(); if (!a) return
 $('layoutEdit').addEventListener('change', e => { layoutEdit = e.target.checked; positioniere(); });
 $('btnLayoutReset').addEventListener('click', () => { merke(); screen().lage = neueLage(); positioniere(); speichere(); });
 
-function wechsleScreen(id){ state.aktiv = id; selectedId = null; undo = []; syncSzene(); layout(); panel(); speichere(); }
+function wechsleScreen(id){ state.aktiv = id; selectedId = null; undo = []; logoMeldung(''); syncSzene(); layout(); panel(); logoAnzeigen(); speichere(); aufraeumen(); }
 $('screenSel').addEventListener('change', e => wechsleScreen(e.target.value));
 $('screenName').addEventListener('input', e => { screen().name = e.target.value; const o = $('screenSel').selectedOptions[0]; if (o) o.textContent = e.target.value || 'Ohne Namen'; speichere(); });
 $('btnNeu').addEventListener('click', () => { const s = neuerScreen('Screen ' + (state.screens.length + 1)); state.screens.push(s); wechsleScreen(s.id); });
@@ -1307,6 +1474,9 @@ $('btnScreenWeg').addEventListener('click', () => {
     state.screens = state.screens.filter(s => s.id !== state.aktiv); wechsleScreen(state.screens[0].id);
   });
 });
+$('btnLogoLaden').addEventListener('click', () => { const f = $('logoDatei'); f.value = ''; f.click(); });
+$('logoDatei').addEventListener('change', e => { const d = e.target.files && e.target.files[0]; e.target.value = ''; if (d) eigenesLogoLaden(d); });
+$('btnLogoStandard').addEventListener('click', () => { const sc = screen(); if (!sc.logo) return; delete sc.logo; logoMeldung(''); speichere(); logoAnzeigen(); aufraeumen(); meldung('Spiel-Logo für „' + (sc.name || 'Ohne Namen') + '“'); });
 document.querySelectorAll('#ansicht button').forEach(b => b.addEventListener('click', () => { ansicht = b.dataset.g; layout(); panel(); }));
 $('btnSterne').addEventListener('click', () => { screen().sterne = Math.floor(Math.random() * 1e6); syncSzene(); speichere(); });
 $('umrisse').addEventListener('change', e => { zeigeUmrisse = e.target.checked; positioniere(); });
@@ -1405,9 +1575,11 @@ function exportText(){
     kamera:{ position:[0,0,0], blickrichtung:[0,0,-1], oben:[0,1,0], sichtfeldGrad:FOV, sichtfeldAchse:'senkrecht, für das 16:9-Bild (Spiel: verticalFovRadians = 1,15)' },
     formate: Object.keys(FORMATE).map(k => { const v = sicht(k); return { schluessel:k, name:FORMATE[k].name, breite:FORMATE[k].w, hoehe:FORMATE[k].h, sichtfeldSenkrechtGrad:r2(v.fovV), sichtfeldWaagerechtGrad:r2(v.fovH) }; }),
     logoUndMenuebox:'Maßstab = Höhe des 16:9-Bereichs in Punkten / 400, höchstens 1,6; Lage = Mitte des 16:9-Bereichs + Verschiebung × Maßstab',
+    logo:'Screens ohne Angabe „logo“ nutzen das Spiel-Logo game/assets/ui/logo.png. „logo“ mit art „eigen“ = eigenes PNG, das nur auf dem Gerät liegt und NICHT in diesem Text steht (nur Dateiname, Maße und Größe in Pixeln bzw. Byte). Beim Einfügen gilt für solche Screens das Spiel-Logo.',
     hinweis:'radius ist ungefähr. form (1–8) und farbe sind Varianten dieses Editors; die Zuordnung zu den Spiel-Asteroiden passiert beim Einbau. Drehung als Euler-Winkel in der Reihenfolge YXZ (drehen um Y, kippen um X, rollen um Z). Ausblenden im Editor wird nicht exportiert.',
     screens: state.screens.map(s => ({
       name:s.name, sternenSeed:s.sterne,
+      ...(s.logo ? { logo:{ art:'eigen', datei:s.logo.name, breite:s.logo.w, hoehe:s.logo.h, bytes:s.logo.bytes } } : {}),
       lage:{ logo:[r1(s.lage.logo.x), r1(s.lage.logo.y)], menue:[r1(s.lage.menue.x), r1(s.lage.menue.y)] },
       asteroiden: s.asteroiden.map(a => ({ position:[r2(a.x), r2(a.y), r2(a.z)], radius:r2(a.r), form:a.form, drehungGrad:{ kippen:r1(a.kipp), drehen:r1(a.dreh), rollen:r1(a.roll || 0) }, farbe:a.farbe }))
     }))
@@ -1437,10 +1609,12 @@ function importiere(text){
       }))
     };
   });
-  return { screens, version:ver };
+  const eigene = o.screens.filter(s => s && s.logo && s.logo.art === 'eigen').length;
+  return { screens, version:ver, eigene };
 }
 function importHinweis(r){
-  return r.version < 3 ? ' (aus Version ' + r.version + ' übernommen: Hauptformat jetzt 16:9 · PC & Switch 2, Asteroiden und Lage unverändert)' : '';
+  return (r.version < 3 ? ' (aus Version ' + r.version + ' übernommen: Hauptformat jetzt 16:9 · PC & Switch 2, Asteroiden und Lage unverändert)' : '')
+    + (r.eigene ? ' – eigene Logo-Bilder sind nicht im Text: ' + (r.eigene === 1 ? 'dieser Screen zeigt' : 'diese ' + r.eigene + ' Screens zeigen') + ' das Spiel-Logo' : '');
 }
 async function kopiere(text){
   try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
@@ -1448,7 +1622,8 @@ async function kopiere(text){
 }
 $('btnText').addEventListener('click', () => {
   const t = exportText();
-  dialog({ titel:'Alle Screens als Text', text:'Diesen Text kannst du kopieren und in den Chat einfügen.', area:t, nurLesen:true,
+  const eigene = state.screens.filter(s => s.logo).length;
+  dialog({ titel:'Alle Screens als Text', text:'Diesen Text kannst du kopieren und in den Chat einfügen.' + (eigene ? ' Eigene Logo-Bilder (' + eigene + ' Screen' + (eigene === 1 ? '' : 's') + ') stehen nicht im Text, nur Dateiname und Maße – sie bleiben auf diesem Gerät.' : ''), area:t, nurLesen:true,
     knoepfe:[ { label:'Schließen' }, { label:'Kopieren', art:'primary', aktion:() => { kopiere(t).then(ok => meldung(ok ? 'Kopiert' : 'Kopieren ging nicht: Text markieren und kopieren')); return false; } } ] });
 });
 $('btnImport').addEventListener('click', () => {
@@ -1470,10 +1645,11 @@ function speichere(){
 
 /* ---------- Start ---------- */
 layoutBereit = true;
-modusAnzeige(); anordnen(); untenAnzeigen(); syncSzene(); layout(); panel();
+modusAnzeige(); anordnen(); untenAnzeigen(); syncSzene(); layout(); panel(); logoAnzeigen();
 // Logo-Schrift laden, dann Vergleich neu (Canvas kennt die Schrift erst danach)
 try { document.fonts.load('500 100px "Jost Aether"').then(() => vergleichPlanen()).catch(() => {}); } catch (e) {}
 logoLaden();
+eigeneLaden();
 
 // Schnittstelle für die automatischen Tests (nur lesen)
 window.AetherScreenEditor = Object.freeze({
@@ -1481,6 +1657,8 @@ window.AetherScreenEditor = Object.freeze({
   kamera:() => ({ fov:camera.fov, aspect:camera.aspect }),
   zustand:() => JSON.parse(JSON.stringify(state)),
   logoBild:() => logoStand,
+  eigeneLogos:() => eigeneStand,
+  logoGrenzen:() => ({ bytes:LOGO_MAX_BYTES, px:LOGO_MAX_PX }),
   elemente:k => JSON.parse(JSON.stringify(elemente(k))),
   rahmen:() => [...document.querySelectorAll('#rahmenBox .rahmen')].map(e => { const r = e.getBoundingClientRect(); return { k:e.dataset.k, x0:r.left, x1:r.right, y0:r.top, y1:r.bottom }; }),
   // Eckpunkte aller Asteroiden in Welt-Koordinaten (für die Prüfung, wo sie im Bild liegen)
