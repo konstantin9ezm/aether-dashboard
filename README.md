@@ -468,6 +468,11 @@ aller vier Formate (16:9 kräftig orange, iPhone violett, iPad grün, 21:9 blau)
 gedimmt, weil es nur manche Geräte zeigen. Logo und Menübox richten sich nach dem 16:9-Bereich: Maßstab = Höhe des
 16:9-Bereichs in Punkten / 400, höchstens 1,6, Lage mittig im 16:9-Bereich. Das Logo nutzt die reduzierte Schrift
 Jost Medium aus dem Spiel (eingebettet), die Menübox die Systemschrift.
+Die Logo-Box zeigt das echte Spiel-Logo `game/assets/ui/logo.png` (eine API-Anfrage je Öffnen, gleicher Weg und
+gleiches Token wie im Logo-Werkzeug, offline dessen gespeicherte Fassung `aether.logoPng`), mittig mit erhaltenem
+Seitenverhältnis so groß wie die Box es zulässt, auch in Vergleich und Bild-Export; ohne Bild (kein Token, Fehler,
+offline ohne gespeicherte Fassung) bleibt die Annäherung, mit dem Hinweis „Logo-Bild nicht geladen – Annäherung“
+im Bedienfeld. Das Bild kommt nie in die gespeicherten Screens.
 
 *Stand im Spiel (Repo aether, nur gelesen):* Das Spiel rechnet heute mit 65,9° senkrecht und **fester Höhe**
 (`GlesPreviewRenderer.cpp`: `xScale = yScale · Höhe / Breite`), ein iPad sieht dort also weniger als 16:9; der
@@ -536,7 +541,12 @@ und bietet es als Datei zum Sichern an, z. B. für Affinity.
   innerhalb der Geste aufgeht, liegt die PNG-Quelle in der gewählten Größe vorab geladen bereit und wird beim
   Antippen synchron gezeichnet.
 
-**Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen).
+- **Im Spiel (PNG):** Unter der Karte „Arbeitsdatei (SVG)“ zeigt die Karte „Im Spiel (PNG)“ das Logo, wie das
+  Startmenü es zeigt (`game/assets/ui/logo.png`, zwei weitere Anfragen: Datei roh und letzter Commit; Quellzeile mit
+  Commit-Link, Maßen und Größe; „PNG sichern (Original)“ gibt die Datei byte-gleich weiter; offline die gespeicherte
+  Fassung `aether.logoPng`; Fehler erscheinen nur in dieser Karte, die SVG-Karte arbeitet unabhängig weiter).
+
+**Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen; PNG-Zustand und -Maße).
 
 ## WebGPU-Check
 
@@ -676,6 +686,11 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   Token in keinem Speicher und keinem Cache; Layout 320–1400 px mit und ohne Logo. Gegenproben (müssen rot werden):
   SVG per `innerHTML` ins Dokument (Script läuft), PNG mit allen Ebenen trotz ausgeschalteter Ebene, `logo.html` nicht
   in der App-Hülle.
+- `tests/logo-png.test.js` – Spiel-Logo `game/assets/ui/logo.png` (erzeugte Test-PNG, `tests/test-png.js`) im
+  Logo-Werkzeug und im Screen-Editor: Bild, Quellzeile, Seitenverhältnis (gemessen an den Bildpixeln, auch hochkant),
+  „PNG sichern (Original)“ byte-gleich, Hintergrund für beide Vorschauen, Fehler/offline, Box-Maße unverändert,
+  Annäherung mit Hinweis, iPhone hochkant. Gegenproben (müssen rot werden): Annäherung statt Bild, Bild auf die Box
+  gestreckt, Fehlerfall ohne Rückfall.
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,

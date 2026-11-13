@@ -225,10 +225,15 @@ describe('Tools-Karte', () => {
 // Screen-Editor: Dateien, Netz, Speichern
 // ---------------------------------------------------------------------------
 describe('Screen-Editor: Dateien und Netz', () => {
-  test('keine externen Adressen, kein Token, keine GitHub-API; three.js r128 im Repo mit Lizenz; Hülle und Workflow', () => {
+  test('keine externen Adressen außer der GitHub-API fürs Logo-Bild, Token nur gelesen; three.js r128 im Repo mit Lizenz; Hülle und Workflow', () => {
     const html = fs.readFileSync(path.join(ROOT, PAGE), 'utf8');
-    assert.doesNotMatch(html, /https?:\/\//i, 'keine absoluten Adressen (CDN, Schriften, APIs)');
-    assert.doesNotMatch(html, /api\.github|githubToken|github_pat_|Authorization|aether\.githubToken/i, 'kein Token, keine GitHub-API');
+    // Einzige absolute Adresse: die GitHub-API für game/assets/ui/logo.png (wie im Logo-Werkzeug); kein CDN, keine Schriften
+    assert.deepEqual([...html.matchAll(/https?:\/\/[^\s'"<>)]+/gi)].map((m) => m[0]), ['https://api.github.com'], 'nur die GitHub-API');
+    assert.doesNotMatch(html, /github_pat_|Authorization/i, 'kein Token im Text, Header nur in gemeinsam.js');
+    // Token: genau eine Stelle, nur gelesen, nie geschrieben
+    assert.deepEqual([...html.matchAll(/aether\.githubToken/g)].length, 1, 'Token-Schlüssel genau einmal');
+    assert.match(html, /localStorage\.getItem\('aether\.githubToken'\)/, 'Token nur gelesen');
+    assert.doesNotMatch(html, /setItem\(\s*'aether\.(githubToken|logoPng)'/, 'Token und Logo-Speicher werden hier nie geschrieben');
     assert.doesNotMatch(html, /window\.claude|\.use\('db'\)|downloads\.save/, 'keine Teile für das Claude-Konto');
     assert.doesNotMatch(html, /fetch\(|XMLHttpRequest|sendBeacon|WebSocket|<link[^>]+stylesheet/i, 'nichts nachladen');
     const scripts = [...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);

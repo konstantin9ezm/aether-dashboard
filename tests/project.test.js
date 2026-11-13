@@ -401,6 +401,20 @@ async function waitProjectLoaded(page) {
     .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); })
     && !document.querySelector('#timelineList[data-dash="loading"]'));
 }
+// Anfragen der Projektansicht beim ersten Öffnen (Stand f8aa148, vor dem Logo-PNG), sortiert
+const ERWARTETE_PROJEKT_ANFRAGEN = [
+  `/repos/konstantin9ezm/aether-dashboard/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`,
+  `/repos/konstantin9ezm/aether/actions/runs/9001/jobs?filter=latest&per_page=100`,
+  `/repos/konstantin9ezm/aether/actions/workflows/42/runs?branch=main&per_page=1&exclude_pull_requests=true`,
+  `/repos/konstantin9ezm/aether/actions/workflows/42/runs?branch=main&status=completed&per_page=5&exclude_pull_requests=true`,
+  `/repos/konstantin9ezm/aether/actions/workflows?per_page=100`,
+  `/repos/konstantin9ezm/aether/commits?sha=main&per_page=50`,
+  `/repos/konstantin9ezm/aether/contents/.github/workflows/build.yml?ref=${CI_SHA}`,
+  `/repos/konstantin9ezm/aether/contents/ROADMAP.md?ref=main`,
+  `/repos/konstantin9ezm/aether/contents/builds/aaaaaaa?ref=web-build`,
+  `/repos/konstantin9ezm/aether/contents/index.json?ref=web-build`,
+  `/repos/konstantin9ezm/aether/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`
+];
 async function waitCiTime(page) {
   await page.waitForSelector('#ciTime[data-state]');
 }
@@ -580,6 +594,18 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   assert.ok(reload.includes(`${BASE}/commits`) && reload.includes(`${BASE}/contents/ROADMAP.md`) && reload.some((p) => p.endsWith('/runs')), 'Aktualisieren lädt neu');
   assert.ok(reload.includes(`${DASH_BASE}/pulls`), 'Aktualisieren lädt auch die Dashboard-PRs neu');
   assert.ok(!reload.includes(`${BASE}/actions/workflows`), 'Workflow-ID bleibt länger im Cache');
+  await context.close();
+});
+
+test('Projektansicht: Anzahl und Ziele der API-Anfragen unverändert, kein Logo-Bild (game/assets/ui/logo.png) geladen', async () => {
+  mock.reset();
+  const { context, page, log } = await newPage(null);
+  await openProject(page);
+  await waitCiTime(page);
+  const liste = mock.requests.map((r) => r.path + r.query).sort();
+  // Stand vor dem Logo-PNG (Dashboard PR #25): dieselben 11 Anfragen
+  assert.deepEqual(liste, ERWARTETE_PROJEKT_ANFRAGEN);
+  assert.ok(!log.urls.some((u) => /logo\.(png|svg)/.test(u)), 'weder logo.png noch logo.svg');
   await context.close();
 });
 
