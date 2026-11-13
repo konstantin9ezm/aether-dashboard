@@ -241,7 +241,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 **Ablauf beim Start**
 
 1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
-   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) die Logo-Seite (`logo.html`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`), die Logo-Seite (`logo.html`) samt Schriften (`fonts/`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -576,6 +576,30 @@ und bietet es als Datei zum Sichern an, z. B. für Affinity.
 
 **Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen; PNG-Zustand und -Maße).
 
+## Schriften (Logo-Editor)
+
+Acht Schriften für den Logo-Editor auf der Logo-Seite. Sie liegen im Repo unter `fonts/<name>/` (je Ordner der
+Lizenztext `OFL.txt` aus der Quelle, Prüfsummen aller Dateien in `fonts/SHA256SUMS`), werden nur vom eigenen
+Ursprung geladen (kein Google-Fonts-CDN, keine fremden Server) und liegen für den Offline-Start in der App-Hülle
+(`sw.js`, Cache `aether-shell-v1`). Zusammen 72 Schriftdateien, ca. 1,4 MB. Alle sind statische Dateien je Stärke
+und Stil (keine variablen Schriften), damit die gewählte Stärke in den Pfaden exakt stimmt.
+
+| Name | Lizenz | Quelle | Version | Stärken | Kursiv | Reserved Font Name |
+|---|---|---|---|---|---|---|
+| Jost | SIL OFL 1.1 | npm `@fontsource/jost@5.3.0` (Teilsatz „latin“, WOFF) | 3.710 (Fontsource v20, 2025-09-10) | 100–900 | ja | nein |
+| Exo 2 | SIL OFL 1.1 | npm `@fontsource/exo-2@5.3.0` (Teilsatz „latin“, WOFF) | 2.010 (Fontsource v26, 2025-09-02) | 100–900 | ja | nein |
+| Orbitron | SIL OFL 1.1 | `googlefonts/orbitron-vf` @ `f164828` (`fonts/ttf/`, unverändert, TTF) | 2.001 | 400–900 | nein | ja („Orbitron“) |
+| Rajdhani | SIL OFL 1.1 | npm `@fontsource/rajdhani@5.3.0` (Teilsatz „latin“, WOFF) | 1.201 (Fontsource v17, 2025-09-16) | 300–700 | nein | nein |
+| Saira | SIL OFL 1.1 | npm `@fontsource/saira@5.3.0` (Teilsatz „latin“, WOFF) | 1.101 (Fontsource v23, 2025-11-18) | 100–900 | ja | nein |
+| Space Grotesk | SIL OFL 1.1 | npm `@fontsource/space-grotesk@5.3.0` (Teilsatz „latin“, WOFF) | 2.000 (Fontsource v22, 2025-09-05) | 300–700 | nein | nein |
+| Michroma | SIL OFL 1.1 | npm `@fontsource/michroma@5.3.0` (Teilsatz „latin“, WOFF) | 1.100 (Fontsource v21, 2025-09-05) | 400 | nein | nein |
+| Audiowide | SIL OFL 1.1 | `google/fonts` @ `29b4ec6` (`ofl/audiowide/`, unverändert, TTF) | 1.003 | 400 | nein | ja („Audiowide“) |
+
+Die Fontsource-Pakete 5.3.0 sind vom 19.07.2026. Orbitron und Audiowide haben einen Reserved Font Name; von ihnen
+liegen nur die unveränderten Originaldateien im Repo (kein Teilsatz). Orbitron ist bei Google Fonts nur als
+variable Datei verfügbar; die statischen Originale stammen aus dem Quell-Repo, das Google Fonts dafür angibt
+(`ofl/orbitron/METADATA.pb`). Der Teilsatz „latin“ enthält die Buchstaben von „Aether“ (geprüft in den Tests).
+
 ## WebGPU-Check
 
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
@@ -743,6 +767,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
-`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
+`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.
