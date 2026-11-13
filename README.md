@@ -351,6 +351,19 @@ Vier Teile, jeder lädt und meldet Fehler für sich (fällt einer aus, funktioni
 2. **Zeitleiste** – gemergte PRs (`pulls?state=closed&base=main`) und Commits auf `main` (`commits?sha=main`),
    neueste zuerst, mit Titel, PR-Nummer, Datum/Uhrzeit und kurzem Hash. Merge- und Squash-Commits erscheinen als
    PR-Eintrag; Commits, die nur im PR-Branch lagen, werden ausgeblendet. Antippen öffnet den PR (bzw. Commit) auf GitHub.
+   - *Dashboard-PRs*: Dazu kommen die gemergten PRs dieses Repos (`aether-dashboard`, öffentlich) aus
+     `pulls?state=closed&base=main` – eine zusätzliche Anfrage, gleicher 60-s-Cache, Zeitlimit 15 s. Beide Repos stehen
+     in **einer** Liste, sortiert nach Merge- bzw. Commit-Zeit (neueste zuerst). Dashboard-Einträge haben das
+     Abzeichen „DB“ (türkis) und die Metazeile „Dashboard · PR #n  Datum, Uhrzeit  Hash“; Antippen öffnet den PR in
+     `aether-dashboard` (neuer Tab). aether-Einträge sehen aus wie bisher.
+   - *Token*: Die Anfrage geht zuerst mit dem Token an `api.github.com`. Lehnt GitHub ab (401/403/404, z. B. weil das
+     fine-grained Token nur `aether` freigibt), folgt genau einmal dieselbe Anfrage **ohne** Token; danach (bis zum
+     Leeren des Speicher-Caches) gleich ohne. Das Token geht an keinen anderen Host, im Cache liegt nur die PR-Liste.
+   - *Filter*: Chips „Alle | Spiel | Dashboard“ unter der Überschrift (Standard „Alle“, wird nicht gespeichert).
+     „Spiel“ = Repo `aether` (PRs und Commits), „Dashboard“ = Repo `aether-dashboard`. „Ältere anzeigen (n)“ zählt
+     und lädt die gerade gefilterte Liste.
+   - *Fehler beim Dashboard-Repo*: Die aether-Einträge erscheinen trotzdem, darüber die Zeile „Dashboard-PRs nicht
+     verfügbar“. Offline zeigt die Projektansicht wie bisher nur ihren Hinweis.
 3. **Fortschritt** – `ROADMAP.md` aus dem Hauptverzeichnis von `main` (`contents/ROADMAP.md?ref=main`).
    Gelesen werden Abschnitte `## Name` und Punkte `- [x] Text` / `- [ ] Text`, optional mit `(PR #123)`.
    HTML-Kommentare werden ignoriert. Pro Abschnitt gibt es einen Balken erledigt/gesamt, PR-Verweise sind antippbar:

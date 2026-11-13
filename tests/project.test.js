@@ -16,6 +16,8 @@ const OWNER = 'konstantin9ezm';
 const REPO = 'aether';
 const BASE = `/repos/${OWNER}/${REPO}`;
 const GH = `https://github.com/${OWNER}/${REPO}`;
+const DASH_BASE = `/repos/${OWNER}/aether-dashboard`;
+const GH_DASH = `https://github.com/${OWNER}/aether-dashboard`;
 
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -215,7 +217,9 @@ const mock = {
   reset() {
     Object.assign(this, { mode: 'ok', run: 'success', actions: 'ok', roadmap: 'normal', requests: [],
       ciRuns: CI_RUNS(), ciJobs: CI_JOBS_DEFAULT(), ciYaml: CI_YAML_DEFAULT, ci: 'ok',
-      wfId: 42, latest: undefined, ciJobsByRun: {}, ciJobsFail: [] });
+      wfId: 42, latest: undefined, ciJobsByRun: {}, ciJobsFail: [],
+      // Dashboard-Repo (öffentlich): standardmäßig ohne gemergte PRs, damit die übrigen Tests unverändert bleiben.
+      dashPulls: [], dash: 'ok', dashDeny: null });
   }
 };
 mock.reset();
@@ -253,6 +257,18 @@ async function githubApi(route) {
   if (mock.mode === 'offline') return route.abort('internetdisconnected');
   if (mock.mode === 'ratelimit') {
     return route.fulfill({ status: 403, headers: { ...CORS, ...rate(0), 'content-type': 'application/json' }, body: JSON.stringify({ message: 'API rate limit exceeded for user.' }) });
+  }
+  if (url.pathname === `${DASH_BASE}/pulls`) {
+    // Öffentliches Repo: ohne Token lesbar. Mit Token: 401 bei falschem/widerrufenem Token, sonst ggf. mock.dashDeny.
+    assert.equal(url.searchParams.get('state'), 'closed');
+    assert.equal(url.searchParams.get('base'), 'main');
+    if (mock.dash === 'error') return json(route, 500, { message: 'Server Error' });
+    if (mock.dash === 'abort') return route.abort('connectionreset');
+    if (headers.authorization) {
+      if (headers.authorization !== `Bearer ${TOKEN}` || mock.mode === 'revoked') return json(route, 401, { message: 'Bad credentials' });
+      if (mock.dashDeny) return json(route, mock.dashDeny, { message: mock.dashDeny === 404 ? 'Not Found' : 'Resource not accessible by personal access token' });
+    } else if (mock.dash === 'anonError') return json(route, 500, { message: 'Server Error' });
+    return json(route, 200, mock.dashPulls);
   }
   if (headers.authorization !== `Bearer ${TOKEN}` || mock.mode === 'revoked') return json(route, 401, { message: 'Bad credentials' });
 
@@ -537,9 +553,10 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   await openProject(page);
   // index.json + Dateiliste des neuesten Builds (Spielansicht, beim Start) + die vier Teile der Projektansicht
   // + 3 für die CI-Laufzeit (abgeschlossene Läufe, Jobs des letzten Laufs, build.yml an dessen Commit)
+  // + 1 für die gemergten PRs des Dashboard-Repos (Zeitleiste)
   await waitCiTime(page);
   const first = mock.requests.length;
-  assert.ok(first >= 9 && first <= 10, `Anfragen beim ersten Laden: ${first}`);
+  assert.ok(first >= 10 && first <= 11, `Anfragen beim ersten Laden: ${first}`);
   await page.click('#tabPlay');
   await page.waitForSelector('#buildsView:not([hidden])');
   const afterPlay = mock.requests.length;
@@ -550,6 +567,7 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   await page.waitForFunction(() => !document.getElementById('projReload').disabled);
   const reload = mock.requests.slice(afterPlay).map((r) => r.path);
   assert.ok(reload.includes(`${BASE}/commits`) && reload.includes(`${BASE}/contents/ROADMAP.md`) && reload.some((p) => p.endsWith('/runs')), 'Aktualisieren lädt neu');
+  assert.ok(reload.includes(`${DASH_BASE}/pulls`), 'Aktualisieren lädt auch die Dashboard-PRs neu');
   assert.ok(!reload.includes(`${BASE}/actions/workflows`), 'Workflow-ID bleibt länger im Cache');
   await context.close();
 });
@@ -1651,10 +1669,10 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     await waitCiTime(page);
     assert.equal(await ciLine(page), `CI: 23,6 min (Re-run, Versuch 2) · ${JOB} › ${STEP} ${BLOCK}`);
     assert.equal(await page.getAttribute('#ciTime .ci-pct', 'data-level'), 'ok', '43 % bleibt grün');
-    // Anfragen der Projektansicht beim ersten Laden unverändert (9: Workflows, letzter Lauf, 5 abgeschlossene, Jobs,
-    // build.yml, PRs, Commits, ROADMAP.md, einmalig Jobs des älteren Re-runs #99) – ohne die Spielansicht davor.
+    // Anfragen der Projektansicht beim ersten Laden (10: Workflows, letzter Lauf, 5 abgeschlossene, Jobs,
+    // build.yml, PRs, Commits, ROADMAP.md, einmalig Jobs des älteren Re-runs #99, PRs des Dashboard-Repos) – ohne die Spielansicht davor.
     const projReq = mock.requests.filter((r) => !/\/contents\/(index\.json|builds\/)/.test(r.path));
-    assert.equal(projReq.length, 9, projReq.map((r) => r.path).join('\n'));
+    assert.equal(projReq.length, 10, projReq.map((r) => r.path).join('\n'));
 
     // Lage jedes Zeichens eines Textes (ohne Leerzeichen) – unabhängig davon, wie das DOM aufgebaut ist.
     const measure = (rootSel, want) => page.evaluate(([rootSel, want]) => {
@@ -1748,6 +1766,259 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     await page.waitForSelector('#tokenView:not([hidden])');
     await checkView('Token-Bildschirm', false);
     await assertNoLeak(log, page);
+    await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zeitleiste mit Dashboard-PRs (Repo aether-dashboard) und Filter „Alle | Spiel | Dashboard“
+// ---------------------------------------------------------------------------
+describe('Zeitleiste mit Dashboard-PRs', () => {
+  const dpr = (number, title, merged_at, merge_commit_sha) => ({
+    number, title, merged_at, merge_commit_sha, state: 'closed', base: { ref: 'main' }, html_url: `${GH_DASH}/pull/${number}`
+  });
+  // Zeiten liegen zwischen den aether-Einträgen, damit nur eine echte Sortierung über beide Repos passt.
+  const DASH_PULLS = [
+    dpr(9, 'Dashboard: Filter', '2026-11-04T19:30:00Z', sha('3')),
+    dpr(10, 'Dashboard: Zeitleiste', '2026-11-05T12:00:00Z', sha('2')),
+    dpr(8, 'Verworfen', null, sha('5')),
+    dpr(7, 'Dashboard: Grundgerüst', '2026-10-31T08:00:00Z', sha('4'))
+  ];
+  // Erwartete Reihenfolge (Merge- bzw. Commit-Zeit absteigend):
+  const ORDER_ALL = ['DB#10', 'commit', 'PR#3', 'DB#9', 'PR#2', 'commit', 'DB#7', 'PR#1'];
+  const items = (page) => page.$$eval('#timeline a', (as) => as.map((a) => ({
+    repo: a.dataset.repo, kind: a.dataset.kind, href: a.href, target: a.target, rel: a.rel,
+    badge: a.querySelector('.ic').textContent, badgeBg: getComputedStyle(a.querySelector('.ic')).backgroundColor,
+    badgeFg: getComputedStyle(a.querySelector('.ic')).color,
+    num: a.querySelector('.num').textContent, text: a.textContent.replace(/\s+/g, ' ').trim()
+  })));
+  const short = (e) => (e.repo === 'dashboard' ? 'DB' : e.kind === 'pr' ? 'PR' : 'commit') + (e.kind === 'pr' ? '#' + /#(\d+)/.exec(e.num)[1] : '');
+  const chips = (page) => page.$$eval('#timelineFilter button', (bs) => bs.map((b) => `${b.textContent}=${b.getAttribute('aria-pressed')}`));
+  const dashReq = () => mock.requests.filter((r) => r.path === `${DASH_BASE}/pulls`);
+
+  test('gemischt nach Merge-Zeit sortiert, Abzeichen „DB“, Metazeile, Links ins richtige Repo', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    const tl = await items(page);
+    assert.deepEqual(tl.map(short), ORDER_ALL, 'eine Liste, nach Zeit absteigend über beide Repos');
+    const db10 = tl[0];
+    assert.equal(db10.badge, 'DB');
+    assert.equal(db10.badgeBg, 'rgb(14, 58, 62)', 'Hintergrund #0E3A3E');
+    assert.equal(db10.badgeFg, 'rgb(94, 214, 196)', 'Schrift #5ED6C4');
+    assert.equal(db10.num, 'Dashboard · PR #10');
+    assert.match(db10.text, /Dashboard: Zeitleiste.*Dashboard · PR #10.*05\.11\.2026, 13:00 Uhr.*2222222/);
+    assert.equal(db10.href, `${GH_DASH}/pull/10`);
+    assert.equal(tl[3].href, `${GH_DASH}/pull/9`);
+    assert.equal(tl[6].href, `${GH_DASH}/pull/7`);
+    // aether-Einträge unverändert
+    const pr3 = tl[2];
+    assert.equal(pr3.badge, 'PR');
+    assert.equal(pr3.num, 'PR #3');
+    assert.equal(pr3.href, `${GH}/pull/3`);
+    assert.equal(pr3.badgeBg, 'rgb(42, 31, 74)', 'aether-Abzeichen wie bisher');
+    for (const e of tl) { assert.equal(e.target, '_blank'); assert.equal(e.rel, 'noopener noreferrer'); }
+    assert.doesNotMatch(await text(page, '#timelineBody'), /Verworfen/, 'nicht gemergte Dashboard-PRs ausgeblendet');
+    assert.equal(await page.$('#timelineDashNote'), null, 'kein Hinweis, wenn alles da ist');
+    // Antippen öffnet den Dashboard-PR auf GitHub.
+    const [req] = await Promise.all([
+      context.waitForEvent('request', (r) => r.url() === `${GH_DASH}/pull/10`),
+      page.click(`#timeline a[href="${GH_DASH}/pull/10"]`)
+    ]);
+    assert.ok(req);
+    // Genau eine zusätzliche Anfrage, mit Token (kein Rückfall nötig).
+    assert.equal(dashReq().length, 1);
+    assert.equal(dashReq()[0].auth, `Bearer ${TOKEN}`);
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('Filter Alle / Spiel / Dashboard, Standard „Alle“, Tastatur, nicht gespeichert', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    // Chips zwischen Überschrift und Liste
+    const order = await page.evaluate(() => [...document.getElementById('timelineCard').querySelectorAll('#tlTitle, #timelineFilter, #timeline')].map((e) => e.id));
+    assert.deepEqual(order, ['tlTitle', 'timelineFilter', 'timeline']);
+    assert.deepEqual(await chips(page), ['Alle=true', 'Spiel=false', 'Dashboard=false']);
+    await page.click('#timelineFilter button:has-text("Spiel")');
+    assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=true', 'Dashboard=false']);
+    assert.deepEqual((await items(page)).map(short), ['commit', 'PR#3', 'PR#2', 'commit', 'PR#1']);
+    await page.click('#timelineFilter button:has-text("Dashboard")');
+    assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=false', 'Dashboard=true']);
+    assert.deepEqual((await items(page)).map(short), ['DB#10', 'DB#9', 'DB#7']);
+    // Tastatur: Fokus auf „Alle“ und Leertaste
+    await page.focus('#timelineFilter button[data-filter="alle"]');
+    await page.keyboard.press('Space');
+    assert.deepEqual(await chips(page), ['Alle=true', 'Spiel=false', 'Dashboard=false']);
+    assert.deepEqual((await items(page)).map(short), ORDER_ALL);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.filter), 'spiel', 'per Tab erreichbar');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await chips(page), ['Alle=false', 'Spiel=true', 'Dashboard=false']);
+    // Keine Speicherung: nach dem Neuladen der Seite wieder „Alle“, kein neuer Speicher-Schlüssel.
+    const keys = await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]);
+    assert.deepEqual(keys[1], []);
+    assert.ok(keys[0].every((k) => !/filter|zeitleiste|timeline/i.test(k)), keys[0].join(','));
+    await page.reload();
+    await page.click('#tabProject');
+    await waitProjectLoaded(page);
+    assert.deepEqual(await chips(page), ['Alle=true', 'Spiel=false', 'Dashboard=false']);
+    await assertTouchFriendly(page, 'mit Chips');
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('„Ältere anzeigen (n)“ zählt und lädt die gefilterte Liste', async () => {
+    mock.reset();
+    // 20 Dashboard-PRs (älter als alle aether-Einträge) + 5 aether-Einträge
+    mock.dashPulls = Array.from({ length: 20 }, (_, i) => dpr(100 + i, `Dashboard-PR ${100 + i}`, `2026-10-${String(1 + i).padStart(2, '0')}T08:00:00Z`, sha('6')));
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    assert.equal((await page.$$('#timeline a')).length, 15);
+    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (10)', 'Alle: 25 Einträge');
+    await page.click('#timelineFilter button:has-text("Spiel")');
+    assert.equal((await page.$$('#timeline a')).length, 5);
+    assert.equal(await page.$('#timelineMore'), null, 'Spiel: 5 Einträge, kein Knopf');
+    await page.click('#timelineFilter button:has-text("Dashboard")');
+    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (5)', 'Dashboard: 20 Einträge');
+    await page.click('#timelineMore');
+    const tl = await items(page);
+    assert.equal(tl.length, 20);
+    assert.ok(tl.every((e) => e.repo === 'dashboard'), 'nachgeladen werden nur Dashboard-Einträge');
+    assert.equal(tl[19].num, 'Dashboard · PR #100', 'ältester zuletzt');
+    assert.equal(await page.$('#timelineMore'), null);
+    await page.click('#timelineFilter button:has-text("Alle")');
+    assert.equal((await page.$$('#timeline a')).length, 15);
+    await page.click('#timelineMore');
+    assert.equal((await page.$$('#timeline a')).length, 25);
+    await context.close();
+  });
+
+  for (const mode of ['error', 'abort', 'tokenThenAnonError']) {
+    test(`Fehler nur beim Dashboard-Repo (${mode}): aether-Einträge bleiben, Hinweiszeile`, async () => {
+      mock.reset();
+      mock.dashPulls = DASH_PULLS;
+      if (mode === 'tokenThenAnonError') { mock.dashDeny = 403; mock.dash = 'anonError'; } else mock.dash = mode;
+      const { context, page, log } = await newPage(null);
+      await openProject(page);
+      const tl = await items(page);
+      assert.deepEqual(tl.map(short), ['commit', 'PR#3', 'PR#2', 'commit', 'PR#1']);
+      assert.equal(await text(page, '#timelineDashNote'), 'Dashboard-PRs nicht verfügbar');
+      assert.equal(await page.$('#timelineBody .msg'), null, 'keine Fehlerkarte');
+      assert.ok(await page.isHidden('#projOffline'), 'kein Offline-Hinweis');
+      await page.click('#timelineFilter button:has-text("Dashboard")');
+      assert.equal(await text(page, '#timelineList'), 'Keine Dashboard-PRs.');
+      // Wieder verfügbar: Aktualisieren zeigt die Dashboard-PRs, der Hinweis verschwindet.
+      mock.dash = 'ok'; mock.dashDeny = null;
+      await page.click('#projReload');
+      await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+      assert.equal(await page.$('#timelineDashNote'), null);
+      assert.ok((await items(page)).length >= 3);
+      log.errors = log.errors.filter((e) => !/connectionreset/i.test(e));
+      await assertNoLeak(log, page);
+      await context.close();
+    });
+  }
+
+  for (const status of [401, 403, 404]) {
+    test(`Rückfall ohne Token, wenn GitHub das Token fürs Dashboard-Repo ablehnt (${status})`, async () => {
+      mock.reset();
+      mock.dashPulls = DASH_PULLS;
+      mock.dashDeny = status;
+      const { context, page, log } = await newPage(null);
+      await openProject(page);
+      assert.deepEqual((await items(page)).map(short), ORDER_ALL);
+      assert.equal(await page.$('#timelineDashNote'), null);
+      assert.deepEqual(dashReq().map((r) => r.auth), [`Bearer ${TOKEN}`, null], 'erst mit Token, dann genau einmal ohne');
+      // aether-Anfragen weiter mit Token
+      assert.ok(mock.requests.filter((r) => r.path !== `${DASH_BASE}/pulls`).every((r) => r.auth === `Bearer ${TOKEN}`));
+      // Aktualisieren: gleich ohne Token (Merker), keine erneute abgelehnte Anfrage.
+      const before = dashReq().length;
+      await page.click('#projReload');
+      await page.waitForFunction(() => !document.getElementById('projReload').disabled);
+      assert.deepEqual(dashReq().slice(before).map((r) => r.auth), [null]);
+      await assertNoLeak(log, page);
+      await context.close();
+    });
+  }
+
+  test('Token in keinem Speicher und keinem Cache, nur an api.github.com', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    mock.dashDeny = 403;
+    const { context, page, log } = await newPage(null);
+    await openProject(page);
+    await page.waitForSelector('#timeline a[data-repo="dashboard"]');
+    const found = await page.evaluate(async (t) => {
+      const hits = [];
+      for (const k of Object.keys(localStorage)) if (k !== 'aether.githubToken' && String(localStorage.getItem(k)).includes(t)) hits.push('localStorage:' + k);
+      for (const k of Object.keys(sessionStorage)) if (String(sessionStorage.getItem(k)).includes(t)) hits.push('sessionStorage:' + k);
+      if (self.caches) {
+        for (const name of await caches.keys()) {
+          const c = await caches.open(name);
+          for (const req of await c.keys()) {
+            if (req.url.includes(t) || (req.headers.get('authorization') || '').includes(t)) hits.push('cache-key:' + name);
+            const res = await c.match(req);
+            if (res && (await res.text()).includes(t)) hits.push('cache-body:' + name + ':' + req.url);
+          }
+        }
+      }
+      if (indexedDB.databases) { const dbs = await indexedDB.databases(); if (dbs.length) hits.push('indexedDB:' + dbs.map((d) => d.name).join(',')); }
+      return hits;
+    }, TOKEN);
+    assert.deepEqual(found, []);
+    assert.equal(await page.evaluate(() => localStorage.getItem('aether.githubToken')) !== null, true, 'Token-Speicherort unverändert');
+    // Alle Anfragen mit Token gehen an api.github.com (sonst nur die eigene Seite).
+    const hosts = [...new Set(log.urls.map((u) => new URL(u).host))];
+    assert.ok(hosts.every((h) => h === 'api.github.com' || h.startsWith('localhost')), hosts.join(','));
+    await assertNoLeak(log, page);
+    await context.close();
+  });
+
+  test('offline: Hinweis der Projektansicht wie bisher, kein dauerhaftes „Lade …“', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    await context.setOffline(true);
+    mock.mode = 'offline';
+    await page.click('#projReload');
+    await page.waitForSelector('#projOffline:not([hidden])');
+    assert.match(await page.textContent('#projOffline'), /Offline – Projektansicht nicht verfügbar/);
+    assert.ok(await page.isHidden('#timelineCard'), 'Zeitleiste ausgeblendet');
+    assert.equal(await page.$('#timelineBody .loadline'), null, 'kein „Lade …“');
+    await context.setOffline(false);
+    mock.mode = 'ok';
+    await context.close();
+  });
+
+  test('Layout mit Chips: kein waagerechtes Scrollen 320–1400 px, Chips ≥ 44 × 44 und umbrechend', async () => {
+    mock.reset();
+    mock.dashPulls = DASH_PULLS;
+    const { context, page } = await newPage(null);
+    await openProject(page);
+    for (let w = 320; w <= 1400; w += 20) {
+      await page.setViewportSize({ width: w, height: 900 });
+      const m = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        chips: [...document.querySelectorAll('#timelineFilter button')].map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height, r.right]; }),
+        bar: document.getElementById('timelineFilter').getBoundingClientRect().right,
+        items: [...document.querySelectorAll('#timeline a')].map((a) => a.getBoundingClientRect().right)
+      }));
+      assert.ok(m.overflow <= 0, `${w}px: waagerechtes Scrollen ${m.overflow}px`);
+      for (const [cw, ch, right] of m.chips) {
+        assert.ok(cw >= 44 && ch >= 44, `${w}px: Chip ${cw}×${ch}`);
+        assert.ok(right <= m.bar + 0.5, `${w}px: Chip ragt aus der Leiste`);
+      }
+      for (const r of m.items) assert.ok(r <= w, `${w}px: Eintrag ragt über den Rand`);
+    }
+    // Umbruch: Flex-Leiste mit flex-wrap
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('timelineFilter')).flexWrap), 'wrap');
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.screenshot({ path: path.join(OUT, 'zeitleiste-320.png'), fullPage: false });
     await context.close();
   });
 });

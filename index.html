@@ -503,6 +503,16 @@
   .tl .ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
   .tl .ic.pr { background: #2a1f4a; color: var(--accent-2); }
   .tl .ic.commit { background: #1d2540; color: var(--accent); }
+  .tl .ic.db { background: #0E3A3E; color: #5ED6C4; }
+  .tl-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+  .tl-filter button {
+    min-height: 44px; min-width: 44px; padding: 0 16px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel-2); color: inherit;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; touch-action: manipulation;
+  }
+  .tl-filter button[aria-pressed="true"] { background: #2a1f4a; border-color: var(--accent-2); color: var(--accent-2); }
+  .tl-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tl-note { margin: 0 0 10px; font-size: 13px; }
   .tl .body { min-width: 0; }
   .tl .title { font-weight: 600; overflow-wrap: anywhere; }
   .tl .meta { color: var(--muted); font-size: 13px; display: flex; gap: 2px 10px; flex-wrap: wrap; }
@@ -2178,6 +2188,8 @@
   var BUILD_WORKFLOW = 'Build';
   var GH_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
   var GH_DASHBOARD_WEB = 'https://github.com/' + encodeURIComponent(REPO_OWNER) + '/aether-dashboard';
+  // Öffentliches Dashboard-Repo für die Zeitleiste (gemergte PRs). Anfragen gehen nur an api.github.com.
+  var DASH_REPO_PATH = '/repos/' + encodeURIComponent(REPO_OWNER) + '/aether-dashboard';
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
@@ -2185,8 +2197,12 @@
   var projCache = {};
   var projGen = 0;
   var pollTimer = null;
+  // Nur ein Merker (kein Token): Das Dashboard-Repo ließ sich mit dem Token nicht lesen, ohne aber schon.
+  var dashOhneToken = false;
+  // Filter der Zeitleiste: 'alle' | 'spiel' | 'dashboard'. Nicht gespeichert, beim Neuladen der Seite wieder „Alle“.
+  var tlFilter = 'alle';
 
-  function clearProjectCache() { projCache = {}; }
+  function clearProjectCache() { projCache = {}; dashOhneToken = false; }
 
   // Kurzzeit-Cache im Speicher. Laufende Anfragen werden geteilt, Fehler nicht gemerkt.
   // Jede Anfrage hat ein Zeitlimit; eine hängende Anfrage wird danach nicht mehr geteilt.
@@ -2836,8 +2852,18 @@
   }
 
   // --- 2. Zeitleiste -----------------------------------------------------------
+  // Gemergte PRs aus aether (mit Commits auf main, wie bisher) und aus aether-dashboard (nur PRs) in einer Liste.
+  // Fehler beim Dashboard-Repo: aether-Einträge trotzdem zeigen, dazu die Zeile „Dashboard-PRs nicht verfügbar“.
   async function fetchTimeline(force) {
     needToken();
+    var r = await Promise.all([
+      fetchAetherTimeline(force),
+      fetchDashboardPulls(force).then(function (list) { return list; }, function () { return null; })
+    ]);
+    return { items: mergeTimeline(r[0], r[1] || []), dashError: r[1] === null };
+  }
+
+  async function fetchAetherTimeline(force) {
     return cached('timeline', PROJECT_TTL, force, async function () {
       var r = await Promise.all([
         api(REPO_PATH + '/pulls?state=closed&base=' + MAIN + '&sort=updated&direction=desc&per_page=50', { perm: 'Pull requests: Read-only' }).then(function (x) { return x.json(); }),
@@ -2846,6 +2872,57 @@
       ]);
       return buildTimeline(Array.isArray(r[0]) ? r[0] : [], Array.isArray(r[1]) ? r[1] : []);
     });
+  }
+
+  // Eine Anfrage: zuerst mit Token; lehnt GitHub ab (401/403/404), einmal ohne Token (das Repo ist öffentlich).
+  // Jede Anfrage hat über cached() ihr eigenes Zeitlimit. Im Cache liegt nur die fertige PR-Liste, nie das Token.
+  function dashPullsPath() {
+    return DASH_REPO_PATH + '/pulls?state=closed&base=' + MAIN + '&sort=updated&direction=desc&per_page=50';
+  }
+  async function fetchDashboardPulls(force) {
+    if (!dashOhneToken) {
+      try {
+        return await cached('timelineDash', PROJECT_TTL, force, async function () {
+          var res = await api(dashPullsPath(), { perm: 'Pull requests: Read-only' });
+          return buildDashboardPulls(await res.json());
+        });
+      } catch (e) {
+        if (!(e instanceof AppError) || ['auth', 'forbidden', 'notfound'].indexOf(e.kind) < 0) throw e;
+        dashOhneToken = true;
+        force = true;
+      }
+    }
+    return cached('timelineDashOhneToken', PROJECT_TTL, force, async function () {
+      var res = await api(dashPullsPath(), { ohneToken: true });
+      return buildDashboardPulls(await res.json());
+    });
+  }
+
+  function buildDashboardPulls(pulls) {
+    var out = [], seen = {};
+    (Array.isArray(pulls) ? pulls : []).forEach(function (p) {
+      var n = p && validNum(p.number);
+      if (!n || !p.merged_at || seen[n]) return;
+      seen[n] = true;
+      out.push({ kind: 'pr', repo: 'dashboard', number: n, title: String(p.title || '').trim() || '(ohne Titel)',
+        date: p.merged_at, sha: String(p.merge_commit_sha || ''), url: dashboardPrUrl(n) });
+    });
+    return out;
+  }
+
+  // Beide Listen nach Zeit absteigend; bei gleicher Zeit zuerst aether, sonst Reihenfolge der Quelle.
+  function mergeTimeline(aether, dash) {
+    var all = aether.map(function (e) { return Object.assign({ repo: 'aether' }, e); }).concat(dash);
+    return all.map(function (e, i) { return { e: e, i: i, t: Date.parse(e.date) }; }).sort(function (x, y) {
+      var a = isNaN(x.t) ? -Infinity : x.t, b = isNaN(y.t) ? -Infinity : y.t;
+      return a !== b ? b - a : x.i - y.i;
+    }).map(function (x) { return x.e; });
+  }
+
+  function filterTimeline(items, f) {
+    if (f === 'spiel') return items.filter(function (e) { return e.repo !== 'dashboard'; });
+    if (f === 'dashboard') return items.filter(function (e) { return e.repo === 'dashboard'; });
+    return items;
   }
 
   // PRs und Commits zusammenführen. Commits, die nur über den zweiten Elternteil
@@ -2900,23 +2977,61 @@
     }).map(function (x) { return x.e; });
   }
 
-  function renderTimeline(box, items) {
+  var TL_FILTERS = [{ id: 'alle', label: 'Alle' }, { id: 'spiel', label: 'Spiel' }, { id: 'dashboard', label: 'Dashboard' }];
+
+  function renderTimeline(box, data) {
     box.textContent = '';
     $('tlTitle').textContent = 'Zeitleiste';
-    if (!items.length) { box.appendChild(el('p', 'muted', 'Noch keine Einträge auf ' + MAIN + '.')); return; }
+    var all = data.items;
+    var bar = el('div', 'tl-filter');
+    bar.id = 'timelineFilter';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Zeitleiste filtern');
+    var list = el('div');
+    list.id = 'timelineList';
+    TL_FILTERS.forEach(function (f) {
+      var b = el('button', null, f.label);
+      b.type = 'button';
+      b.dataset.filter = f.id;
+      b.setAttribute('aria-pressed', String(tlFilter === f.id));
+      b.addEventListener('click', function () {
+        tlFilter = f.id;
+        bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x.dataset.filter === tlFilter)); });
+        renderTimelineList(list, filterTimeline(all, tlFilter));
+      });
+      bar.appendChild(b);
+    });
+    box.appendChild(bar);
+    if (data.dashError) {
+      var note = el('p', 'muted tl-note', 'Dashboard-PRs nicht verfügbar');
+      note.id = 'timelineDashNote';
+      box.appendChild(note);
+    }
+    box.appendChild(list);
+    renderTimelineList(list, filterTimeline(all, tlFilter));
+  }
+
+  function renderTimelineList(box, items) {
+    box.textContent = '';
+    if (!items.length) {
+      box.appendChild(el('p', 'muted', tlFilter === 'dashboard' ? 'Keine Dashboard-PRs.' : 'Noch keine Einträge auf ' + MAIN + '.'));
+      return;
+    }
     var ol = el('ol', 'tl');
     ol.id = 'timeline';
     var addItem = function (e) {
       var li = el('li');
       var a = extLink(e.url);
+      var db = e.repo === 'dashboard';
       a.dataset.kind = e.kind;
-      var ic = el('span', 'ic ' + e.kind, e.kind === 'pr' ? 'PR' : '•');
+      a.dataset.repo = db ? 'dashboard' : 'aether';
+      var ic = el('span', 'ic ' + (db ? 'db' : e.kind), db ? 'DB' : e.kind === 'pr' ? 'PR' : '•');
       ic.setAttribute('aria-hidden', 'true');
       a.appendChild(ic);
       var body = el('div', 'body');
       body.appendChild(el('div', 'title', e.title));
       var meta = el('div', 'meta');
-      meta.appendChild(el('span', 'num', e.kind === 'pr' ? 'PR #' + e.number : 'Commit'));
+      meta.appendChild(el('span', 'num', db ? 'Dashboard · PR #' + e.number : e.kind === 'pr' ? 'PR #' + e.number : 'Commit'));
       var t = fmtBerlin(e.date);
       if (t) meta.appendChild(el('span', 'when', t));
       var sh = shortSha(e.sha);
