@@ -61,6 +61,8 @@
   //   ohneTokenArt  kind des Fehlers, wenn kein Token übergeben wurde
   //   standardToken optional: function () → Token der Seite, wenn opts.token fehlt
   //   beiAntwort    optional: function (res) – wird bei jeder Antwort vor der Fehlerprüfung aufgerufen
+  // opts je Anfrage: token, accept, signal, perm, notFound; ohneToken: true = ohne Authorization-Header
+  // (nur für öffentliche Repos; ohne diese Angabe bleibt alles wie bisher).
   function githubApi(cfg) {
     async function errorFromResponse(res, ctx) {
       var status = res.status;
@@ -105,16 +107,18 @@
 
     async function api(path, opts) {
       opts = opts || {};
-      var useToken = opts.token || (cfg.standardToken ? cfg.standardToken() : null);
-      if (!useToken) throw new AppError(cfg.ohneTokenArt, 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
+      var useToken = opts.ohneToken === true ? null : (opts.token || (cfg.standardToken ? cfg.standardToken() : null));
+      if (!useToken && opts.ohneToken !== true) throw new AppError(cfg.ohneTokenArt, 'Kein Token gespeichert.', 'Bitte zuerst ein Token eingeben.');
+      var headers = {
+        'Accept': opts.accept || 'application/vnd.github+json',
+        'Authorization': 'Bearer ' + useToken
+      };
+      if (!useToken) delete headers['Authorization']; // nur mit opts.ohneToken: Anfrage ohne Token
       var res;
       try {
         res = await fetch(cfg.apiBase + path, {
           method: 'GET',
-          headers: {
-            'Accept': opts.accept || 'application/vnd.github+json',
-            'Authorization': 'Bearer ' + useToken
-          },
+          headers: headers,
           cache: 'no-store',
           credentials: 'omit',
           referrerPolicy: 'no-referrer',
