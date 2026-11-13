@@ -9,6 +9,8 @@
 <!--
   Logo-Werkzeug: zeigt art/logo/logo.svg aus dem Repo aether (Zweig main), gelesen über die GitHub-API mit dem
   Token des Dashboards (nur gelesen, nie gespeichert, nie geloggt), und bietet es als SVG oder PNG zum Sichern an.
+  Darunter das Logo, wie das Spiel es zeigt: game/assets/ui/logo.png (gleicher Weg und gleiches Token; die zuletzt
+  geladene Fassung liegt als Base64 mit Commit und Ladezeitpunkt unter „aether.logoPng“, ohne Token).
   Die zuletzt geladene Fassung (SVG-Text, Commit, Ladezeitpunkt, ohne Token) liegt auf dem Gerät (localStorage,
   Schlüssel „aether.logo“) für den Offline-Fall. Das SVG wird nie ins Dokument eingefügt: Es wird bereinigt
   (script, foreignObject, on*-Attribute, externe href/src entfernt) und nur als Bild (img aus Blob-URL) gezeigt.
@@ -61,8 +63,12 @@ body{
 .buehne[data-bg="dunkel"]{ background:#03040a; }
 .buehne[data-bg="hell"]{ background:#f4f2fb; }
 .buehne[data-bg="kariert"]{ background-color:#ffffff; background-image:conic-gradient(#cfcfd6 25%, transparent 0 50%, #cfcfd6 0 75%, transparent 0); background-size:24px 24px; }
-#logoBild{ display:block; max-width:100%; width:100%; height:auto; max-height:60vh; object-fit:contain; }
-#logoBild[hidden]{ display:none; }
+#logoBild, #pngBild{ display:block; max-width:100%; width:100%; height:auto; max-height:60vh; object-fit:contain; }
+#logoBild[hidden], #pngBild[hidden]{ display:none; }
+/* Linke Spalte: Arbeitsdatei (SVG) und darunter „Im Spiel (PNG)“ */
+.links{ display:flex; flex-direction:column; gap:16px; min-width:0; }
+.karte h2 .zusatz{ font-weight:400; color:var(--muted); }
+.quelle a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; justify-content:center; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
 .leer{ color:#9b98c4; font-size:15px; text-align:center; }
 .leer[hidden]{ display:none; }
 .seg{ display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; width:100%; margin:12px 0 8px; }
@@ -112,8 +118,9 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
   <span class="titel">Logo</span>
 </header>
 <main class="karten" id="karten">
+  <div class="links" id="linkeSpalte">
   <section class="karte" id="logoKarte" aria-labelledby="logoTitel">
-    <h2 id="logoTitel">Spiel-Logo</h2>
+    <h2 id="logoTitel">Arbeitsdatei (SVG)</h2>
     <div class="hinweis" id="hinweis" role="status" hidden></div>
     <div class="buehne" id="buehne" data-bg="dunkel">
       <img id="logoBild" alt="Aether-Logo" hidden>
@@ -126,6 +133,19 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     </div>
     <p class="quelle" id="quelle"></p>
   </section>
+
+  <section class="karte" id="pngKarte" aria-labelledby="pngTitel">
+    <h2 id="pngTitel">Im Spiel (PNG) <span class="zusatz">– so zeigt das Startmenü das Logo</span></h2>
+    <div class="hinweis" id="pngHinweis" role="status" hidden></div>
+    <div class="buehne" id="pngBuehne" data-bg="dunkel">
+      <img id="pngBild" alt="Aether-Logo im Spiel (PNG)" hidden>
+      <p class="leer" id="pngLeer">Lade Logo-Bild …</p>
+    </div>
+    <p class="quelle" id="pngQuelle"></p>
+    <div class="row grow"><button type="button" id="btnPngOriginal" disabled>PNG sichern (Original)</button></div>
+    <p class="note" id="pngNeu">Neues Logo: PNG in game/assets/ui/ ersetzen</p>
+  </section>
+  </div>
 
   <section class="karte" id="ebenenKarte" aria-labelledby="ebenenTitel">
     <h2 id="ebenenTitel">Ebenen</h2>
@@ -161,12 +181,17 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 /* ---------- Konfiguration ---------- */
 const REPO_OWNER = 'konstantin9ezm', REPO_NAME = 'aether', REF = 'main';
 const DATEI = 'art/logo/logo.svg';
+const PNG_DATEI = 'game/assets/ui/logo.png';
+const COMMIT_URL = 'https://github.com/' + REPO_OWNER + '/' + REPO_NAME + '/commit/';
 const API = 'https://api.github.com';
 const REPO_FULL = REPO_OWNER + '/' + REPO_NAME;
 const REPO_PATH = '/repos/' + encodeURIComponent(REPO_OWNER) + '/' + encodeURIComponent(REPO_NAME);
 const TOKEN_KEY = 'aether.githubToken'; // gehört dem Dashboard; hier nur gelesen, nie geschrieben
 // Zuletzt geladene Fassung (selbst gewählter Schlüssel): { svg, commit, geladen } – ohne Token.
 const STORE_KEY = 'aether.logo';
+// Zuletzt geladenes Spiel-Logo (selbst gewählter Schlüssel): { png (Base64), sha (Commit), geladen } – ohne Token.
+// Der Screen-Editor liest denselben Schlüssel (nur lesen) für den Offline-Fall.
+const PNG_KEY = 'aether.logoPng';
 // Ebenen in Anzeige-Reihenfolge (Gruppen-IDs in der Datei)
 const EBENEN = [
   { id:'ring-hinten', name:'Ring hinten' },
@@ -449,9 +474,108 @@ $('btnPng').addEventListener('click', ev => {
   dateiSichern(ev, pngDatei);
 });
 
+/* ---------- Im Spiel (PNG): game/assets/ui/logo.png ---------- */
+// Unabhängig vom SVG: eigene Anfragen (Datei roh + letzter Commit), eigener Speicher, eigene Meldungen. Fehler hier
+// lassen die SVG-Karte unberührt.
+let pngFassung = null;   // { bytes:Uint8Array, sha, geladen, w, h }
+let pngUrl = null, pngStand = 'laden';
+// Breite und Höhe aus dem IHDR-Block; null, wenn es kein PNG ist.
+function pngMasseAus(u8){
+  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (!u8 || u8.length < 24 || SIG.some((b, i) => u8[i] !== b)) return null;
+  if (String.fromCharCode(u8[12], u8[13], u8[14], u8[15]) !== 'IHDR') return null;
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), w = dv.getUint32(16), h = dv.getUint32(20);
+  return w > 0 && h > 0 ? { w, h } : null;
+}
+function zuBase64(u8){ let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+function ausBase64(b){ const bin = atob(b), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+function pngPruefen(bytes, sha, geladen){
+  const m = pngMasseAus(bytes);
+  if (!m) throw new AppError('badpng', 'Logo-Bild ist kein gültiges PNG.', PNG_DATEI + ' lässt sich nicht als PNG lesen.');
+  return { bytes, sha, geladen, w:m.w, h:m.h };
+}
+function pngGespeichert(){
+  try {
+    const o = JSON.parse(localStorage.getItem(PNG_KEY));
+    if (o && typeof o.png === 'string' && /^[0-9a-f]{40}$/i.test(String(o.sha)) && typeof o.geladen === 'string') return pngPruefen(ausBase64(o.png), o.sha, o.geladen);
+  } catch (e) {}
+  return null;
+}
+function pngSpeichern(f){
+  try { localStorage.setItem(PNG_KEY, JSON.stringify({ png:zuBase64(f.bytes), sha:f.sha, geladen:f.geladen })); } catch (e) { /* Speicher voll o. ä. */ }
+}
+async function ladePngOnline(token){
+  const notFound = new AppError('nopng', 'Logo-Bild nicht gefunden.', 'In ' + REPO_FULL + ' (Zweig „' + REF + '“) liegt keine ' + PNG_DATEI + '.');
+  const [bytes, commits] = await withProjTimeout(Promise.all([
+    api(contentsPath(PNG_DATEI), { token, accept:'application/vnd.github.raw+json', notFound }).then(r => r.arrayBuffer()),
+    api(REPO_PATH + '/commits?sha=' + encodeURIComponent(REF) + '&path=' + encodeURIComponent(PNG_DATEI) + '&per_page=1', { token }).then(r => r.json())
+  ]));
+  const sha = Array.isArray(commits) && commits[0] && /^[0-9a-f]{40}$/i.test(String(commits[0].sha)) ? String(commits[0].sha).toLowerCase() : '';
+  if (!sha) throw new AppError('nocommit', 'Commit des Logo-Bilds unbekannt.', 'GitHub liefert keinen Commit für ' + PNG_DATEI + ' im Zweig „' + REF + '“.');
+  return pngPruefen(new Uint8Array(bytes), sha, new Date().toISOString());
+}
+// Größe in KB (1 KB = 1024 Byte, gerundet, mindestens 1)
+const kb = n => Math.max(1, Math.round(n / 1024)) + ' KB';
+function pngZeigen(f){
+  pngFassung = f;
+  const alt = pngUrl, img = $('pngBild');
+  pngUrl = URL.createObjectURL(new Blob([f.bytes], { type:'image/png' }));
+  img.onload = () => { if (alt) URL.revokeObjectURL(alt); };
+  img.src = pngUrl; img.hidden = false; $('pngLeer').hidden = true;
+  const q = $('pngQuelle'); q.textContent = '';
+  q.append('Quelle: ' + PNG_DATEI + ' · Commit ');
+  const a = document.createElement('a');
+  a.href = COMMIT_URL + f.sha; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = shortSha(f.sha);
+  q.append(a, ' · ' + f.w + ' × ' + f.h + ' px · ' + kb(f.bytes.length));
+  $('btnPngOriginal').disabled = false;
+}
+function pngOhne(text){
+  pngFassung = null; $('pngBild').hidden = true; $('pngQuelle').textContent = '';
+  $('pngLeer').hidden = false; $('pngLeer').textContent = text; $('btnPngOriginal').disabled = true;
+}
+function pngHinweis(titel, text, mitTokenLink){
+  const h = $('pngHinweis'); h.textContent = '';
+  if (!titel){ h.hidden = true; return; }
+  const b = document.createElement('b'); b.textContent = titel; h.appendChild(b);
+  if (text){ const d = document.createElement('div'); d.textContent = text; h.appendChild(d); }
+  if (mitTokenLink){ const l = document.createElement('a'); l.href = './'; l.textContent = 'Token eingeben ›'; h.appendChild(l); }
+  h.hidden = false;
+}
+async function startPng(){
+  const token = liesToken();
+  const g = () => { const f = pngGespeichert(); if (f){ pngZeigen(f); return true; } return false; };
+  if (!token){ pngStand = 'notoken'; if (!g()) pngOhne('Noch kein Logo-Bild geladen – einmal online öffnen.'); return; }
+  let fehler = null;
+  if (navigator.onLine === false) fehler = new AppError('network', 'Keine Verbindung zu GitHub.', '');
+  else {
+    try {
+      const f = await ladePngOnline(token);
+      pngZeigen(f); pngSpeichern(f); pngHinweis(null); pngStand = 'online';
+      return;
+    } catch (e) { fehler = e instanceof AppError ? e : new AppError('unknown', 'Unerwarteter Fehler.', String((e && e.message) || e)); }
+  }
+  const offline = fehler.kind === 'network' || fehler.kind === 'timeout', da = g();
+  if (offline){
+    pngStand = da ? 'offline' : 'offline-leer';
+    if (da) pngHinweis('Offline – zuletzt geladene Fassung', '');
+    else { pngHinweis(null); pngOhne('Noch kein Logo-Bild geladen – einmal online öffnen.'); }
+  } else {
+    pngStand = 'fehler';
+    pngHinweis(fehler.title, (fehler.text ? fehler.text + ' ' : '') + (da ? 'Angezeigt wird die zuletzt geladene Fassung.' : ''), fehler.kind === 'auth' || fehler.kind === 'forbidden');
+    if (!da) pngOhne('Kein Logo-Bild verfügbar.');
+  }
+}
+// Originaldatei unverändert (byte-gleich mit game/assets/ui/logo.png), gleicher Weg wie „SVG sichern“
+$('btnPngOriginal').addEventListener('click', ev => {
+  if (!pngFassung) return;
+  const f = pngFassung;
+  dateiSichern(ev, () => ({ datei:new File([f.bytes], 'aether-logo-' + shortSha(f.sha) + '-original.png', { type:'image/png' }) }));
+});
+
 /* ---------- Bedienung ---------- */
 document.querySelectorAll('#hintergrund button').forEach(b => b.addEventListener('click', () => {
   $('buehne').dataset.bg = b.dataset.bg;
+  $('pngBuehne').dataset.bg = b.dataset.bg; // gilt für beide Vorschauen
   document.querySelectorAll('#hintergrund button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
 }));
 document.querySelectorAll('#breite button').forEach(b => b.addEventListener('click', () => {
@@ -468,9 +592,13 @@ window.AetherLogo = Object.freeze({
   angezeigtesSvg:() => angezeigt,
   ebenen:() => EBENEN.map(e => ({ id:e.id, vorhanden:vorhanden[e.id], sichtbar:sichtbar[e.id] })),
   pngBereit:() => png.bereit,
+  // Im Spiel (PNG)
+  pngStand:() => pngStand,
+  pngInfo:() => pngFassung ? { sha:pngFassung.sha, w:pngFassung.w, h:pngFassung.h, bytes:pngFassung.bytes.length } : null,
   breiten:BREITEN.slice()
 });
 start();
+startPng();
 })();
 </script>
 </body>

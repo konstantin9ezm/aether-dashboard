@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
+const { testLogo } = require('./test-png');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(__dirname, 'output');
@@ -48,12 +49,15 @@ function testSvg({ ohne = [] } = {}) {
 }
 const SVG = testSvg();
 const SVG_SHA = crypto.createHash('sha256').update(SVG).digest('hex');
+// Spiel-Logo (game/assets/ui/logo.png) für die zweite Karte; die eigenen Tests dazu stehen in logo-png.test.js.
+const PNG = testLogo();
+const PNG_COMMIT = 'fedcba9876543210fedcba9876543210fedcba98';
 
 // ---------------------------------------------------------------------------
 // Statischer Server (kann „kein Netz“ spielen) und Mock-API
 // ---------------------------------------------------------------------------
 const net = { offline: false };
-const mock = { mode: 'ok', svg: SVG, requests: [] };
+const mock = { mode: 'ok', svg: SVG, png: PNG, requests: [] };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.js': 'text/javascript; charset=utf-8', '.txt': 'text/plain; charset=utf-8' };
 let server, baseUrl, browser;
 
@@ -90,6 +94,12 @@ async function githubApi(route) {
   if (url.pathname === `${BASE}/contents/art/logo/logo.svg` && url.searchParams.get('ref') === 'main') {
     return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/vnd.github.raw+json' }, body: mock.svg });
   }
+  if (url.pathname === `${BASE}/contents/game/assets/ui/logo.png` && url.searchParams.get('ref') === 'main') {
+    return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/vnd.github.raw+json' }, body: mock.png });
+  }
+  if (url.pathname === `${BASE}/commits` && url.searchParams.get('path') === 'game/assets/ui/logo.png' && url.searchParams.get('sha') === 'main') {
+    return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify([{ sha: PNG_COMMIT, commit: { message: 'Logo als PNG' } }]) });
+  }
   // Das Dashboard selbst (für den Service Worker geöffnet) fragt die Build-Liste ab: leer.
   if (url.pathname === `${BASE}/contents/index.json`) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/vnd.github.raw+json' }, body: '[]' });
   if (url.pathname === `${BASE}/commits` && url.searchParams.get('path') === 'art/logo/logo.svg' && url.searchParams.get('sha') === 'main') {
@@ -125,7 +135,7 @@ function shareMock() {
 async function newPage(opts = {}) {
   const { viewport = { width: 1194, height: 834 }, withToken = true, init, device = {} } = opts;
   net.offline = false;
-  mock.mode = 'ok'; mock.svg = SVG; mock.requests = [];
+  mock.mode = 'ok'; mock.svg = SVG; mock.png = PNG; mock.requests = [];
   const context = await browser.newContext({ viewport, ...device, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   const page = await context.newPage();
   const log = { urls: [], errors: [] };
@@ -165,7 +175,7 @@ const ALLE = Object.keys(GRUPPEN);
 
 // ---------------------------------------------------------------------------
 describe('Logo-Werkzeug: Laden und Anzeige', () => {
-  test('zeigt das Logo, Commit und Quellen-Zeile; zwei API-Anfragen mit Token; Kopfzeile', async () => {
+  test('zeigt das Logo, Commit und Quellen-Zeile; zwei API-Anfragen mit Token (dazu zwei für das PNG); Kopfzeile', async () => {
     const { context, page, log } = await newPage({ init: { fn: () => { window.__pwned = undefined; } } });
     await openLogo(page);
     assert.equal(await page.evaluate(() => window.AetherLogo.stand()), 'online');
@@ -178,8 +188,11 @@ describe('Logo-Werkzeug: Laden und Anzeige', () => {
     assert.deepEqual([back.href, back.text], ['./#projekt', '‹ Zum Dashboard']);
     assert.ok(back.r.height >= 44 && back.r.width >= 44);
     assert.equal(await text(page, '.kopf .titel'), 'Logo');
-    // Genau zwei Anfragen an die API, beide mit Token im Header, nie in der Adresse
-    assert.deepEqual(mock.requests.map((r) => r.path).sort(), [`${BASE}/commits`, `${BASE}/contents/art/logo/logo.svg`]);
+    // Genau zwei Anfragen für das SVG, dazu zwei für das PNG der zweiten Karte; alle mit Token im Header, nie in der Adresse
+    await page.waitForFunction(() => window.AetherLogo.pngStand() !== 'laden');
+    assert.deepEqual(mock.requests.filter((r) => !r.query.includes('logo.png') && !r.path.endsWith('logo.png')).map((r) => r.path).sort(), [`${BASE}/commits`, `${BASE}/contents/art/logo/logo.svg`]);
+    assert.deepEqual(mock.requests.map((r) => r.path + (r.path.endsWith('/commits') ? '?' + new URLSearchParams(r.query).get('path') : '')).sort(),
+      [`${BASE}/commits?art/logo/logo.svg`, `${BASE}/commits?game/assets/ui/logo.png`, `${BASE}/contents/art/logo/logo.svg`, `${BASE}/contents/game/assets/ui/logo.png`]);
     assert.ok(mock.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
     assert.ok(!log.urls.some((u) => u.includes(TOKEN)), 'Token nie in einer Adresse');
     assert.equal(mock.requests.find((r) => r.path.endsWith('logo.svg')).accept, 'application/vnd.github.raw+json');
@@ -522,7 +535,7 @@ describe('Logo-Werkzeug: Dateien', () => {
     const html = fs.readFileSync(path.join(ROOT, 'logo.html'), 'utf8');
     assert.deepEqual([...html.matchAll(/<script[^>]*src="([^"]*)"/g)].map((m) => m[1]), ['gemeinsam.js'], 'kein nachgeladenes Skript außer dem lokalen gemeinsam.js');
     assert.doesNotMatch(html, /<link[^>]+stylesheet/i);
-    assert.deepEqual([...html.matchAll(/https?:\/\/[^\s'"<>)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/')), ['https://api.github.com'], 'nur die GitHub-API');
+    assert.deepEqual([...html.matchAll(/https?:\/\/[^\s'"<>)]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/')).sort(), ['https://api.github.com', 'https://github.com/'], 'nur die GitHub-API (und der Commit-Link der PNG-Karte)');
     assert.doesNotMatch(html, /localStorage\.setItem\(\s*TOKEN_KEY/, 'Token wird nie geschrieben');
   });
 });
