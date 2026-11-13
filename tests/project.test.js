@@ -2015,20 +2015,30 @@ describe('Zeitleiste mit Dashboard-PRs', () => {
     mock.dashPulls = DASH_PULLS;
     const { context, page } = await newPage(null);
     await openProject(page);
+    // Nach jeder Größenänderung zwei Frames warten: Die Kopfzeile passt sich erst im resize-Handler (fitHeader) an.
+    const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    // Zweiter Durchgang mit breiterer Schrift wie auf dem CI-Runner (lokal ist oft eine schmalere Standardschrift aktiv).
+    for (const font of [null, 'DejaVu Sans']) {
+    if (font) await page.addStyleTag({ content: `* { font-family: "${font}" !important; }` });
     for (let w = 320; w <= 1400; w += 20) {
       await page.setViewportSize({ width: w, height: 900 });
+      await frame();
       const m = await page.evaluate(() => ({
+        beyond: [...document.querySelectorAll('body *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width && r.right > window.innerWidth + 0.5; })
+          .map((e) => e.id || e.className || e.tagName).slice(0, 6),
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         chips: [...document.querySelectorAll('#timelineFilter button')].map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height, r.right]; }),
         bar: document.getElementById('timelineFilter').getBoundingClientRect().right,
         items: [...document.querySelectorAll('#timeline a')].map((a) => a.getBoundingClientRect().right)
       }));
-      assert.ok(m.overflow <= 0, `${w}px: waagerechtes Scrollen ${m.overflow}px`);
+      assert.ok(m.overflow <= 0, `${w}px (${font || 'Standardschrift'}): waagerechtes Scrollen ${m.overflow}px – ${m.beyond.join(', ')}`);
+      assert.deepEqual(m.beyond, [], `${w}px (${font || 'Standardschrift'}): nichts ragt über den Rand`);
       for (const [cw, ch, right] of m.chips) {
         assert.ok(cw >= 44 && ch >= 44, `${w}px: Chip ${cw}×${ch}`);
         assert.ok(right <= m.bar + 0.5, `${w}px: Chip ragt aus der Leiste`);
       }
       for (const r of m.items) assert.ok(r <= w, `${w}px: Eintrag ragt über den Rand`);
+    }
     }
     // Umbruch: Flex-Leiste mit flex-wrap
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('timelineFilter')).flexWrap), 'wrap');
