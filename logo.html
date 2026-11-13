@@ -14,6 +14,9 @@
   Die zuletzt geladene Fassung (SVG-Text, Commit, Ladezeitpunkt, ohne Token) liegt auf dem Gerät (localStorage,
   Schlüssel „aether.logo“) für den Offline-Fall. Das SVG wird nie ins Dokument eingefügt: Es wird bereinigt
   (script, foreignObject, on*-Attribute, externe href/src entfernt) und nur als Bild (img aus Blob-URL) gezeigt.
+  Oben der Logo-Editor (Stufe 1: Projekt + Schrift): Schrift aus fonts/ (eigener Ursprung, offline in der App-Hülle),
+  als Pfade gezeichnet; Bühne, PNG und SVG aus einer Beschreibung; Projekt in localStorage „aether.logoProjekt“
+  (nur Einstellungen, nie das Token). Die Karten „Arbeitsdatei (SVG)“ und „Im Spiel (PNG)“ sind darunter aufklappbar.
 -->
 <style>
 :root{
@@ -110,6 +113,51 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 }
 #toast.on{ opacity:1; }
 @media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
+/* ---------- Logo-Editor (oben) ---------- */
+.oben{ padding:16px 16px 0; max-width:1400px; margin:0 auto; }
+.editor-kopf{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-bottom:10px; }
+.editor-kopf h2{ margin:0; flex:1 1 auto; }
+.werkzeuge{ display:flex; flex-wrap:wrap; gap:6px; flex:1 1 320px; justify-content:flex-end; min-width:0; }
+.werkzeuge button{ flex:1 1 auto; }
+#editorBild{ display:block; max-width:100%; width:100%; height:auto; max-height:40vh; object-fit:contain; }
+#editorBild[hidden]{ display:none; }
+.reiter{ display:flex; border-bottom:1px solid var(--line); margin:14px 0 12px; gap:2px; }
+.reiter button{ flex:1 1 0; border:none; border-radius:10px 10px 0 0; background:transparent; color:var(--muted); font-weight:500; border-bottom:3px solid transparent; }
+.reiter button[aria-selected="true"]{ color:var(--text); border-bottom-color:var(--sel); background:var(--chip); }
+.panel[hidden]{ display:none; }
+.felder{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px 24px; }
+@media (min-width: 700px){ .felder{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+@media (min-width: 1100px){ .felder{ grid-template-columns:repeat(3, minmax(0,1fr)); } }
+.feld{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+.feld .titel{ font-size:14px; color:var(--muted); display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.feld .titel.klein{ margin-top:6px; }
+.feld .titel output{ color:var(--text); font-variant-numeric:tabular-nums; }
+.feld .zusatz{ font-size:12px; }
+.feld .seg{ margin:0; }
+.feld select{ font:inherit; font-size:16px; min-height:44px; width:100%; padding:6px 10px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.raster{ display:grid; grid-template-columns:repeat(auto-fill, minmax(48px, 1fr)); gap:4px; }
+.raster button{ padding:4px; font-size:14px; min-width:44px; }
+#sStaerke{ grid-template-columns:repeat(5, minmax(44px, 1fr)); }
+#sRichtung{ grid-template-columns:repeat(3, minmax(44px, 1fr)); max-width:240px; }
+#sRichtung [data-r="o"]{ grid-column:3; } /* Windrose: Mitte frei */
+.raster button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* Regler: Ziehen bewegt nur den Regler, nicht die Seite */
+input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--sel); touch-action:none; cursor:pointer; }
+.farben{ display:flex; flex-wrap:wrap; gap:8px; }
+.farbe{ display:flex; gap:6px; align-items:center; }
+.farbe input[type="color"]{ width:44px; height:44px; padding:2px; border-radius:10px; border:1px solid var(--line); background:var(--field); flex:none; cursor:pointer; }
+.farbe .hex{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:16px; width:7.5em; min-height:44px; padding:6px 8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.farbe .hex[aria-invalid="true"]{ border-color:var(--danger); }
+/* Aufklappbare Karten (Arbeitsdatei, Im Spiel) */
+.karte h2 .klapp{ all:unset; box-sizing:border-box; display:flex; align-items:center; gap:6px; width:100%; min-height:44px; cursor:pointer; flex-wrap:wrap; font-weight:600; color:var(--text); }
+.karte h2 .klapp::before{ content:"›"; display:inline-block; width:1em; text-align:center; transition:transform .15s; }
+.karte h2 .klapp[aria-expanded="true"]::before{ transform:rotate(90deg); }
+.karte h2 .klapp:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; border-radius:6px; }
+.karte h2:has(.klapp){ margin-bottom:0; }
+.klapp-inhalt{ margin-top:10px; }
+.klapp-inhalt[hidden], #ebenenKarte[hidden]{ display:none; }
+.karten.svg-zu{ grid-template-columns:minmax(0,1fr) !important; }
+@media (prefers-reduced-motion: reduce){ .karte h2 .klapp::before{ transition:none; } }
 </style>
 </head>
 <body>
@@ -117,25 +165,133 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
   <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Zum Dashboard</a>
   <span class="titel">Logo</span>
 </header>
-<main class="karten" id="karten">
-  <div class="links" id="linkeSpalte">
-  <section class="karte" id="logoKarte" aria-labelledby="logoTitel">
-    <h2 id="logoTitel">Arbeitsdatei (SVG)</h2>
-    <div class="hinweis" id="hinweis" role="status" hidden></div>
-    <div class="buehne" id="buehne" data-bg="dunkel">
-      <img id="logoBild" alt="Aether-Logo" hidden>
-      <p class="leer" id="leer">Lade Logo …</p>
+<div class="oben">
+  <section class="karte" id="editorKarte" aria-labelledby="editorTitel">
+    <div class="editor-kopf">
+      <h2 id="editorTitel">Logo-Projekt</h2>
+      <div class="werkzeuge" role="group" aria-label="Projekt">
+        <button type="button" id="btnUndo" disabled>Rückgängig</button>
+        <button type="button" id="btnRedo" disabled>Wiederholen</button>
+        <button type="button" id="btnProjSichern">Projekt sichern</button>
+        <button type="button" id="btnProjLaden">Projekt laden</button>
+        <input type="file" id="projDatei" accept="application/json,.json" hidden>
+      </div>
+    </div>
+    <div class="buehne" id="editorBuehne" data-bg="dunkel">
+      <img id="editorBild" alt="Logo-Entwurf" hidden>
+      <p class="leer" id="editorLeer">Lade Schrift …</p>
     </div>
     <div class="seg" id="hintergrund" role="group" aria-label="Hintergrund (nur zur Anzeige)">
       <button type="button" data-bg="dunkel" aria-pressed="true">Dunkel</button>
       <button type="button" data-bg="hell" aria-pressed="false">Hell</button>
       <button type="button" data-bg="kariert" aria-pressed="false">Kariert (transparent)</button>
     </div>
+    <p class="note" id="editorMeldung" role="status" aria-live="polite"></p>
+
+    <div class="reiter" role="tablist" aria-label="Logo-Editor">
+      <button type="button" role="tab" id="tabSchrift" aria-controls="panelSchrift" aria-selected="true">Schrift</button>
+      <button type="button" role="tab" id="tabRing" aria-controls="panelRing" aria-selected="false">Ring</button>
+      <button type="button" role="tab" id="tabAusgabe" aria-controls="panelAusgabe" aria-selected="false">Ausgabe</button>
+    </div>
+
+    <div role="tabpanel" class="panel" id="panelSchrift" aria-labelledby="tabSchrift">
+      <div class="felder">
+        <div class="feld">
+          <label class="titel" for="sSchrift">Schriftart</label>
+          <select id="sSchrift"></select>
+        </div>
+        <div class="feld">
+          <span class="titel" id="sStaerkeTitel">Stärke</span>
+          <div class="raster" id="sStaerke" role="group" aria-labelledby="sStaerkeTitel"></div>
+        </div>
+        <div class="feld">
+          <span class="titel" id="sStilTitel">Stil</span>
+          <div class="seg" id="sStil" role="group" aria-labelledby="sStilTitel">
+            <button type="button" data-kursiv="0" aria-pressed="true">Normal</button>
+            <button type="button" data-kursiv="1" aria-pressed="false">Kursiv</button>
+          </div>
+        </div>
+        <div class="feld">
+          <label class="titel" for="sAbstand">Buchstabenabstand <output id="sAbstandWert" for="sAbstand"></output></label>
+          <input type="range" id="sAbstand">
+        </div>
+        <div class="feld">
+          <span class="titel">Farbverlauf <span class="zusatz">links unten → rechts oben</span></span>
+          <div class="farben">
+            <label class="farbe"><input type="color" id="sFarbe1" aria-label="Farbe links unten"><input type="text" id="sFarbe1Hex" class="hex" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Farbe links unten (Hex)"></label>
+            <label class="farbe"><input type="color" id="sFarbe2" aria-label="Farbe rechts oben"><input type="text" id="sFarbe2Hex" class="hex" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Farbe rechts oben (Hex)"></label>
+          </div>
+        </div>
+        <div class="feld">
+          <label class="titel" for="sTiefe">Tiefe (2,5D-Kante) <output id="sTiefeWert" for="sTiefe"></output></label>
+          <input type="range" id="sTiefe">
+          <span class="titel klein" id="sRichtungTitel">Richtung</span>
+          <div class="raster" id="sRichtung" role="group" aria-labelledby="sRichtungTitel"></div>
+        </div>
+        <div class="feld">
+          <label class="titel" for="sUmriss">Umriss <output id="sUmrissWert" for="sUmriss"></output></label>
+          <input type="range" id="sUmriss">
+          <div class="farben">
+            <label class="farbe"><input type="color" id="sUmrissFarbe" aria-label="Farbe des Umrisses"><input type="text" id="sUmrissHex" class="hex" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Farbe des Umrisses (Hex)"></label>
+          </div>
+        </div>
+        <div class="feld">
+          <span class="titel" id="sEffektTitel">Schatten / Leuchten</span>
+          <div class="seg" id="sEffekt" role="group" aria-labelledby="sEffektTitel">
+            <button type="button" data-effekt="aus" aria-pressed="false">Aus</button>
+            <button type="button" data-effekt="schatten" aria-pressed="true">Schatten</button>
+            <button type="button" data-effekt="leuchten" aria-pressed="false">Leuchten</button>
+          </div>
+          <label class="titel klein" for="sWeich">Weichheit <output id="sWeichWert" for="sWeich"></output></label>
+          <input type="range" id="sWeich">
+        </div>
+      </div>
+      <p class="note">Text: „Aether“. Stärken und Kursiv, die die Schrift nicht hat, sind ausgegraut.</p>
+    </div>
+
+    <div role="tabpanel" class="panel" id="panelRing" aria-labelledby="tabRing" hidden>
+      <div class="hinweis" id="ringHinweis" role="status" hidden></div>
+      <div class="ebenen">
+        <label class="check" data-ring="hinten"><input type="checkbox" id="rHinten"><span>Ring hinten</span></label>
+        <label class="check" data-ring="vorne"><input type="checkbox" id="rVorne"><span>Ring vorne</span></label>
+      </div>
+      <p class="note" id="ringQuelle">Der Ring kommt unverändert aus der Arbeitsdatei (Gruppen „ring-hinten“ und „ring-vorne“), Mitte auf der Mitte der Schrift.</p>
+      <p class="note"><b>Ring bearbeiten folgt in Stufe 2.</b></p>
+    </div>
+
+    <div role="tabpanel" class="panel" id="panelAusgabe" aria-labelledby="tabAusgabe" hidden>
+      <p class="sub" id="eBreiteTitel">PNG-Breite</p>
+      <div class="seg" id="eBreite" role="group" aria-labelledby="eBreiteTitel">
+        <button type="button" data-w="1024" aria-pressed="false">1024 px</button>
+        <button type="button" data-w="2048" aria-pressed="true">2048 px</button>
+        <button type="button" data-w="4096" aria-pressed="false">4096 px</button>
+      </div>
+      <div class="row grow">
+        <button type="button" id="btnEditorPng" class="primary" disabled>PNG sichern</button>
+        <button type="button" id="btnEditorSvg" disabled>SVG sichern</button>
+      </div>
+      <p class="note">PNG: transparenter Hintergrund, nur die sichtbaren Ebenen – fürs Spiel. SVG: Schrift als Pfade (ohne Schriftdatei), Ebenen als Gruppen – für Affinity.</p>
+      <p class="note">Sichern öffnet den Teilen-Dialog („In Dateien sichern“, Affinity …)</p>
+    </div>
+  </section>
+</div>
+<main class="karten svg-zu" id="karten">
+  <div class="links" id="linkeSpalte">
+  <section class="karte" id="logoKarte" aria-labelledby="logoTitel">
+    <h2 id="logoTitel"><button type="button" class="klapp" id="klappSvg" aria-expanded="false" aria-controls="logoInhalt ebenenKarte">Arbeitsdatei (SVG)</button></h2>
+    <div class="klapp-inhalt" id="logoInhalt" hidden>
+    <div class="hinweis" id="hinweis" role="status" hidden></div>
+    <div class="buehne" id="buehne" data-bg="dunkel">
+      <img id="logoBild" alt="Aether-Logo" hidden>
+      <p class="leer" id="leer">Lade Logo …</p>
+    </div>
     <p class="quelle" id="quelle"></p>
+    </div>
   </section>
 
   <section class="karte" id="pngKarte" aria-labelledby="pngTitel">
-    <h2 id="pngTitel">Im Spiel (PNG) <span class="zusatz">– so zeigt das Startmenü das Logo</span></h2>
+    <h2 id="pngTitel"><button type="button" class="klapp" id="klappPng" aria-expanded="false" aria-controls="pngInhalt">Im Spiel (PNG) <span class="zusatz">– so zeigt das Startmenü das Logo</span></button></h2>
+    <div class="klapp-inhalt" id="pngInhalt" hidden>
     <div class="hinweis" id="pngHinweis" role="status" hidden></div>
     <div class="buehne" id="pngBuehne" data-bg="dunkel">
       <img id="pngBild" alt="Aether-Logo im Spiel (PNG)" hidden>
@@ -144,10 +300,11 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <p class="quelle" id="pngQuelle"></p>
     <div class="row grow"><button type="button" id="btnPngOriginal" disabled>PNG sichern (Original)</button></div>
     <p class="note" id="pngNeu">Neues Logo: PNG in game/assets/ui/ ersetzen</p>
+    </div>
   </section>
   </div>
 
-  <section class="karte" id="ebenenKarte" aria-labelledby="ebenenTitel">
+  <section class="karte" id="ebenenKarte" aria-labelledby="ebenenTitel" hidden>
     <h2 id="ebenenTitel">Ebenen</h2>
     <div class="ebenen" id="ebenen"></div>
     <p class="note">Ausblenden gilt für die Anzeige und das PNG. Das SVG wird immer unverändert mit allen Ebenen gesichert.</p>
@@ -372,11 +529,13 @@ function uebernehme(f){
   fassung = f; basis = doc; seiten = masse(doc);
   for (const e of EBENEN) vorhanden[e.id] = !!gruppe(doc, e.id);
   ebenenZeigen(); quelleZeigen(); zeigeBild(); knoepfe();
+  ringVorbereiten(); // Logo-Editor: Ring aus dieser Fassung
 }
 function ohneLogo(text){
   fassung = null; basis = null; $('logoBild').hidden = true;
   $('leer').hidden = false; $('leer').textContent = text;
   ebenenZeigen(); quelleZeigen(); knoepfe();
+  ringVorbereiten(); // Logo-Editor: ohne Arbeitsdatei kein Ring
 }
 // Gespeicherte Fassung zeigen (offline oder nach einem Fehler); false, wenn keine (brauchbare) da ist.
 function zeigeGespeichert(){
@@ -425,10 +584,11 @@ async function start(){
 const { mitGeste, meldung, kannTeilen, kannHerunterladen, herunterladen } = G;
 function dialogZeigen(datei, url, mitLink){
   $('mTitel').textContent = datei.name;
-  $('mText').textContent = mitLink ? 'Falls die Datei nicht heruntergeladen wurde, hier sichern.' : 'Lange drücken und sichern.';
+  $('mText').textContent = mitLink ? 'Falls die Datei nicht heruntergeladen wurde, hier sichern.' : /^image\//.test(datei.type) ? 'Lange drücken und sichern.' : 'Link lange drücken und sichern.';
   const box = $('mInhalt'); box.textContent = '';
-  const img = document.createElement('img'); img.src = url; img.alt = datei.name; box.appendChild(img);
-  if (mitLink){ const a = document.createElement('a'); a.href = url; a.download = datei.name; a.textContent = 'Herunterladen'; box.appendChild(a); }
+  const bild = /^image\//.test(datei.type);
+  if (bild){ const img = document.createElement('img'); img.src = url; img.alt = datei.name; box.appendChild(img); }
+  if (mitLink || !bild){ const a = document.createElement('a'); a.href = url; a.download = datei.name; a.textContent = 'Herunterladen'; box.appendChild(a); }
   $('modal').hidden = false; $('mZu').focus();
 }
 $('mZu').addEventListener('click', () => { $('modal').hidden = true; });
@@ -455,16 +615,21 @@ function svgDatei(){
   const bytes = new TextEncoder().encode(fassung.svg);
   return { datei:new File([bytes], 'aether-logo-' + fassung.commit + '.svg', { type:'image/svg+xml' }) };
 }
-function pngDatei(){
-  if (!png.bereit) throw new Error('nicht bereit');
+// Bild synchron auf ein Canvas (transparenter Hintergrund) → PNG-Bytes; auch für den Logo-Editor
+function bildAlsPng(img, w, h){
   const cv = document.createElement('canvas');
-  cv.width = png.w; cv.height = png.h;
+  cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, cv.width, cv.height); // transparenter Hintergrund
-  ctx.drawImage(png.img, 0, 0, cv.width, cv.height);
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
   const url = cv.toDataURL('image/png'), bin = atob(url.slice(url.indexOf(',') + 1)), u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   cv.width = cv.height = 0; // Speicher frei (iOS)
+  return { url, u8 };
+}
+function pngDatei(){
+  if (!png.bereit) throw new Error('nicht bereit');
+  const { url, u8 } = bildAlsPng(png.img, png.w, png.h);
   return { url, datei:new File([u8], 'aether-logo-' + fassung.commit + '-' + png.w + '.png', { type:'image/png' }) };
 }
 $('btnSvg').addEventListener('click', ev => { if (fassung) dateiSichern(ev, svgDatei); });
@@ -576,6 +741,7 @@ $('btnPngOriginal').addEventListener('click', ev => {
 document.querySelectorAll('#hintergrund button').forEach(b => b.addEventListener('click', () => {
   $('buehne').dataset.bg = b.dataset.bg;
   $('pngBuehne').dataset.bg = b.dataset.bg; // gilt für beide Vorschauen
+  $('editorBuehne').dataset.bg = b.dataset.bg; // und für die Bühne des Logo-Editors
   document.querySelectorAll('#hintergrund button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
 }));
 document.querySelectorAll('#breite button').forEach(b => b.addEventListener('click', () => {
@@ -584,6 +750,867 @@ document.querySelectorAll('#breite button').forEach(b => b.addEventListener('cli
   if (basis) vorbereitenPng();
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true; });
+
+
+/* =====================================================================================================
+   Logo-Editor Stufe 1 (Projekt + Schrift)
+   Ein Zeichenweg: svgAufbau() macht aus dem Projektzustand und den Schrift-Umrissen EIN SVG. Die Bühne zeigt
+   genau diesen Text (img aus Blob-URL), „SVG sichern“ gibt ihn weiter, „PNG sichern“ zeichnet ihn (nur mit
+   Pixelmaßen in width/height) auf ein Canvas. Schrift nur als Pfade, kein <text>, keine Schriftdatei im SVG.
+   Projekt: localStorage „aether.logoProjekt“ (nur Einstellungen, nie das Token). Ring: unverändert aus der
+   zuletzt geladenen Arbeitsdatei (Gruppen ring-hinten/ring-vorne von „basis“), Bearbeiten folgt in Stufe 2.
+   ===================================================================================================== */
+/* ---------- Schrift-Umrisse: eigener kleiner Lader (TTF/WOFF 1.0, TrueType-Umrisse) ---------- */
+// Liest nur, was „Aether“ als Pfad braucht: cmap (Format 4/12), head, hhea, hmtx, maxp, loca, glyf (einfache und
+// zusammengesetzte Glyphen), OS/2 (Stärke, Kursiv), name (Version), Kerning aus GPOS (PairPos, auch über Extension)
+// oder der alten kern-Tabelle. Keine variablen Schriften (alle Dateien sind statisch je Stärke), keine CFF-Umrisse.
+// WOFF-Tabellen werden mit DecompressionStream('deflate') entpackt (zlib-Format).
+const SchriftLader = (() => {
+  const tag = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+  async function inflate(u8){
+    const ds = new DecompressionStream('deflate');
+    const buf = await new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  // Tabellen als { tag: DataView }
+  async function tabellen(buf){
+    const dv = new DataView(buf), sig = tag(dv, 0), t = {};
+    if (sig === 'wOFF'){
+      const n = dv.getUint16(12);
+      for (let i = 0; i < n; i++){
+        const o = 44 + i * 20, name = tag(dv, o), off = dv.getUint32(o + 4), comp = dv.getUint32(o + 8), orig = dv.getUint32(o + 12);
+        let u8 = new Uint8Array(buf, off, comp);
+        if (comp < orig) u8 = await inflate(u8);
+        if (u8.length !== orig) throw new Error('WOFF-Tabelle ' + name + ' beschädigt');
+        t[name] = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+      }
+    } else if (sig === '\u0000\u0001\u0000\u0000' || sig === 'true'){
+      const n = dv.getUint16(4);
+      for (let i = 0; i < n; i++){
+        const o = 12 + i * 16;
+        t[tag(dv, o)] = new DataView(buf, dv.getUint32(o + 8), dv.getUint32(o + 12));
+      }
+    } else throw new Error('keine TrueType-/WOFF-Datei (' + JSON.stringify(sig) + ')');
+    for (const n of ['head', 'hhea', 'hmtx', 'maxp', 'cmap', 'loca', 'glyf'])
+      if (!t[n]) throw new Error('Tabelle ' + n + ' fehlt');
+    return t;
+  }
+  function cmapLesen(dv){
+    const n = dv.getUint16(2);
+    let best = null, rang = -1;
+    for (let i = 0; i < n; i++){
+      const pid = dv.getUint16(4 + i * 8), eid = dv.getUint16(6 + i * 8), off = dv.getUint32(8 + i * 8), fmt = dv.getUint16(off);
+      const r = (fmt === 12 ? 2 : fmt === 4 ? 1 : -1) + ((pid === 3 && (eid === 1 || eid === 10)) || pid === 0 ? 0.5 : 0);
+      if ((fmt === 4 || fmt === 12) && r > rang){ rang = r; best = { off, fmt }; }
+    }
+    if (!best) throw new Error('keine passende cmap');
+    const o = best.off;
+    if (best.fmt === 4){
+      const segX2 = dv.getUint16(o + 6), ends = o + 14, starts = ends + segX2 + 2, deltas = starts + segX2, ranges = deltas + segX2;
+      return c => {
+        for (let i = 0; i < segX2 / 2; i++){
+          const end = dv.getUint16(ends + i * 2);
+          if (c > end) continue;
+          const start = dv.getUint16(starts + i * 2);
+          if (c < start) return 0;
+          const delta = dv.getInt16(deltas + i * 2), ro = dv.getUint16(ranges + i * 2);
+          if (!ro) return (c + delta) & 0xffff;
+          const g = dv.getUint16(ranges + i * 2 + ro + (c - start) * 2);
+          return g ? (g + delta) & 0xffff : 0;
+        }
+        return 0;
+      };
+    }
+    const ng = dv.getUint32(o + 12);
+    return c => {
+      for (let i = 0; i < ng; i++){
+        const s = dv.getUint32(o + 16 + i * 12), e = dv.getUint32(o + 20 + i * 12);
+        if (c >= s && c <= e) return dv.getUint32(o + 24 + i * 12) + (c - s);
+      }
+      return 0;
+    };
+  }
+  function nameLesen(dv, id){
+    if (!dv) return '';
+    const n = dv.getUint16(2), str = dv.getUint16(4);
+    let fallback = '';
+    for (let i = 0; i < n; i++){
+      const o = 6 + i * 12, pid = dv.getUint16(o), nid = dv.getUint16(o + 6), len = dv.getUint16(o + 8), off = dv.getUint16(o + 10);
+      if (nid !== id) continue;
+      let s = '';
+      if (pid === 3 || pid === 0){ for (let k = 0; k < len; k += 2) s += String.fromCharCode(dv.getUint16(str + off + k)); return s; }
+      for (let k = 0; k < len; k++) s += String.fromCharCode(dv.getUint8(str + off + k));
+      fallback = s;
+    }
+    return fallback;
+  }
+  // Coverage-Tabelle → Map Glyph → Index
+  function coverage(dv, o){
+    const fmt = dv.getUint16(o), m = new Map();
+    if (fmt === 1){ const n = dv.getUint16(o + 2); for (let i = 0; i < n; i++) m.set(dv.getUint16(o + 4 + i * 2), i); }
+    else if (fmt === 2){
+      const n = dv.getUint16(o + 2);
+      for (let i = 0; i < n; i++){
+        const s = dv.getUint16(o + 4 + i * 6), e = dv.getUint16(o + 6 + i * 6), si = dv.getUint16(o + 8 + i * 6);
+        for (let g = s; g <= e; g++) m.set(g, si + g - s);
+      }
+    }
+    return m;
+  }
+  function classDef(dv, o){
+    const fmt = dv.getUint16(o);
+    if (fmt === 1){
+      const start = dv.getUint16(o + 2), n = dv.getUint16(o + 4);
+      return g => (g >= start && g < start + n) ? dv.getUint16(o + 6 + (g - start) * 2) : 0;
+    }
+    if (fmt === 2){
+      const n = dv.getUint16(o + 2);
+      return g => { for (let i = 0; i < n; i++){ const s = dv.getUint16(o + 4 + i * 6), e = dv.getUint16(o + 6 + i * 6); if (g >= s && g <= e) return dv.getUint16(o + 8 + i * 6); } return 0; };
+    }
+    return () => 0;
+  }
+  const bits = f => { let n = 0; for (let b = f & 0xff; b; b >>= 1) n += b & 1; return n * 2; };
+  // XAdvance aus einem ValueRecord (nur dieser Wert zählt für waagerechten Text)
+  function xAdv(dv, o, f){
+    if (!(f & 4)) return 0;
+    let k = o; if (f & 1) k += 2; if (f & 2) k += 2;
+    return dv.getInt16(k);
+  }
+  // GPOS: alle PairPos-Unterlisten der Lookups des Features „kern“ → Funktion (links, rechts) → Einheiten
+  function gposKern(dv){
+    if (!dv) return null;
+    const fl = dv.getUint16(6), ll = dv.getUint16(8), lookups = new Set();
+    const nf = dv.getUint16(fl);
+    for (let i = 0; i < nf; i++){
+      if (tag(dv, fl + 2 + i * 6) !== 'kern') continue;
+      const fo = fl + dv.getUint16(fl + 6 + i * 6), n = dv.getUint16(fo + 2);
+      for (let k = 0; k < n; k++) lookups.add(dv.getUint16(fo + 4 + k * 2));
+    }
+    const gruppen = [];
+    for (const li of [...lookups].sort((a, b) => a - b)){
+      const lo = ll + dv.getUint16(ll + 2 + li * 2), typ = dv.getUint16(lo), n = dv.getUint16(lo + 4), subs = [];
+      for (let k = 0; k < n; k++){
+        let so = lo + dv.getUint16(lo + 6 + k * 2), t = typ;
+        if (t === 9){ t = dv.getUint16(so + 2); so = so + dv.getUint32(so + 4); }
+        if (t === 2) subs.push(so);
+      }
+      if (subs.length) gruppen.push(subs.map(so => pairPos(dv, so)));
+    }
+    if (!gruppen.length) return null;
+    // Je Lookup gilt die erste Unterliste, die das Paar abdeckt; die Lookups addieren sich.
+    return (a, b) => {
+      let summe = 0;
+      for (const teile of gruppen) for (const t of teile){ const v = t(a, b); if (v !== null){ summe += v; break; } }
+      return summe;
+    };
+  }
+  function pairPos(dv, so){
+    {
+      const fmt = dv.getUint16(so), cov = coverage(dv, so + dv.getUint16(so + 2)), f1 = dv.getUint16(so + 4), f2 = dv.getUint16(so + 6), s1 = bits(f1), s2 = bits(f2);
+      if (fmt === 1){
+        return (a, b) => {
+          const ci = cov.get(a); if (ci === undefined) return null;
+          const ps = so + dv.getUint16(so + 10 + ci * 2), n = dv.getUint16(ps), rec = 2 + s1 + s2;
+          for (let i = 0; i < n; i++){ const r = ps + 2 + i * rec; if (dv.getUint16(r) === b) return xAdv(dv, r + 2, f1); }
+          return null;
+        };
+      }
+      if (fmt === 2){
+        const cd1 = classDef(dv, so + dv.getUint16(so + 8)), cd2 = classDef(dv, so + dv.getUint16(so + 10)), n2 = dv.getUint16(so + 14), rec = s1 + s2;
+        return (a, b) => {
+          if (!cov.has(a)) return null;
+          const r = so + 16 + (cd1(a) * n2 + cd2(b)) * rec;
+          return xAdv(dv, r, f1);
+        };
+      }
+      return () => null;
+    }
+  }
+  function altKern(dv){
+    if (!dv) return null;
+    const n = dv.getUint16(2), m = new Map();
+    let o = 4;
+    for (let i = 0; i < n; i++){
+      const len = dv.getUint16(o + 2), cov = dv.getUint16(o + 4);
+      if ((cov >> 8) === 0 && (cov & 1)){
+        const np = dv.getUint16(o + 6);
+        for (let k = 0; k < np; k++){ const r = o + 14 + k * 6; m.set(dv.getUint16(r) * 65536 + dv.getUint16(r + 2), dv.getInt16(r + 4)); }
+      }
+      o += len;
+    }
+    return (a, b) => m.get(a * 65536 + b) || 0;
+  }
+  async function lade(buf){
+    const t = await tabellen(buf);
+    const head = t.head, upm = head.getUint16(18), longLoca = head.getInt16(50) === 1;
+    const numGlyphs = t.maxp.getUint16(4), numH = t.hhea.getUint16(34);
+    const cmap = cmapLesen(t.cmap);
+    const loca = i => longLoca ? t.loca.getUint32(i * 4) : t.loca.getUint16(i * 2) * 2;
+    const adv = g => t.hmtx.getUint16(Math.min(g, numH - 1) * 4);
+    const glyf = t.glyf;
+    // Umriss einer Glyphe als Konturen: [[{x,y,on}]] in Schrift-Einheiten (y nach oben)
+    function konturen(g, tiefe){
+      if (g >= numGlyphs || (tiefe || 0) > 8) return [];
+      const a = loca(g), b = loca(g + 1);
+      if (b <= a) return [];
+      const nc = glyf.getInt16(a);
+      if (nc >= 0){
+        const ends = []; for (let i = 0; i < nc; i++) ends.push(glyf.getUint16(a + 10 + i * 2));
+        const np = nc ? ends[nc - 1] + 1 : 0;
+        let o = a + 10 + nc * 2; o += 2 + glyf.getUint16(o);
+        const flags = [];
+        while (flags.length < np){ const f = glyf.getUint8(o++); flags.push(f); if (f & 8){ let r = glyf.getUint8(o++); while (r--) flags.push(f); } }
+        const xs = [], ys = [];
+        let v = 0;
+        for (const f of flags){ if (f & 2){ const d = glyf.getUint8(o++); v += (f & 16) ? d : -d; } else if (!(f & 16)){ v += glyf.getInt16(o); o += 2; } xs.push(v); }
+        v = 0;
+        for (const f of flags){ if (f & 4){ const d = glyf.getUint8(o++); v += (f & 32) ? d : -d; } else if (!(f & 32)){ v += glyf.getInt16(o); o += 2; } ys.push(v); }
+        const out = []; let s = 0;
+        for (const e of ends){ const k = []; for (let i = s; i <= e; i++) k.push({ x:xs[i], y:ys[i], on:!!(flags[i] & 1) }); out.push(k); s = e + 1; }
+        return out;
+      }
+      // zusammengesetzte Glyphe
+      let o = a + 10, mehr = true;
+      const out = [];
+      while (mehr){
+        const f = glyf.getUint16(o), gi = glyf.getUint16(o + 2); o += 4;
+        let dx, dy;
+        if (f & 1){ dx = glyf.getInt16(o); dy = glyf.getInt16(o + 2); o += 4; } else { dx = glyf.getInt8(o); dy = glyf.getInt8(o + 1); o += 2; }
+        let m = [1, 0, 0, 1];
+        const f2 = v => v / 16384;
+        if (f & 8){ const s = f2(glyf.getInt16(o)); m = [s, 0, 0, s]; o += 2; }
+        else if (f & 0x40){ m = [f2(glyf.getInt16(o)), 0, 0, f2(glyf.getInt16(o + 2))]; o += 4; }
+        else if (f & 0x80){ m = [f2(glyf.getInt16(o)), f2(glyf.getInt16(o + 2)), f2(glyf.getInt16(o + 4)), f2(glyf.getInt16(o + 6))]; o += 8; }
+        if (!(f & 2)){ dx = 0; dy = 0; } // Punkt-Anker statt Versatz: hier nicht gebraucht
+        for (const k of konturen(gi, (tiefe || 0) + 1)) out.push(k.map(p => ({ x:m[0] * p.x + m[2] * p.y + dx, y:m[1] * p.x + m[3] * p.y + dy, on:p.on })));
+        mehr = !!(f & 0x20);
+      }
+      return out;
+    }
+    const kern = gposKern(t.GPOS) || altKern(t.kern) || (() => 0);
+    const os2 = t['OS/2'];
+    return {
+      upm, numGlyphs,
+      ascender:t.hhea.getInt16(4), descender:t.hhea.getInt16(6),
+      gewicht:os2 ? os2.getUint16(4) : 400,
+      kursiv:!!(os2 && (os2.getUint16(62) & 1)) || !!(head.getUint16(44) & 2),
+      version:nameLesen(t.name, 5), familie:nameLesen(t.name, 1), vollname:nameLesen(t.name, 4),
+      glyphe:c => cmap(c), vorschub:adv, kern, konturen
+    };
+  }
+  // Text → Konturen in Pixel (y nach unten), Grundlinie bei y = 0, Start bei x = 0.
+  // abstand: zusätzlicher Buchstabenabstand in px zwischen den Zeichen.
+  function textKonturen(font, text, groesse, abstand){
+    const s = groesse / font.upm, out = [];
+    let x = 0, vor = null;
+    const zeichen = [...text];
+    zeichen.forEach((ch, i) => {
+      const g = font.glyphe(ch.codePointAt(0));
+      if (vor !== null) x += font.kern(vor, g) * s;
+      for (const k of font.konturen(g)) out.push(k.map(p => ({ x:x + p.x * s, y:-p.y * s, on:p.on })));
+      x += font.vorschub(g) * s + (i < zeichen.length - 1 ? abstand : 0);
+      vor = g;
+    });
+    return { konturen:out, breite:x };
+  }
+  return { lade, textKonturen };
+})();
+
+const PROJEKT_KEY = 'aether.logoProjekt';          // selbst gewählt
+const PROJEKT_FORMAT = 'aether-logo-projekt', PROJEKT_VERSION = 1;
+const LOGO_TEXT = 'Aether', GROESSE = 100;         // Schriftgröße 100 = Maßstab für alle px-Angaben
+const ALLE_STAERKEN = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+const fsDatei = id => (w, k) => 'fonts/' + id + '/' + id + '-latin-' + w + '-' + (k ? 'italic' : 'normal') + '.woff';
+const ORBITRON = { 400:'Regular', 500:'Medium', 600:'SemiBold', 700:'Bold', 800:'ExtraBold', 900:'Black' };
+// Schriften aus fonts/ (Teil 1): vorhandene Stärken und Kursiv je Schrift; alle Dateien statisch je Stärke/Stil.
+const SCHRIFTEN = [
+  { id:'jost', name:'Jost', staerken:ALLE_STAERKEN, kursiv:true, datei:fsDatei('jost') },
+  { id:'exo-2', name:'Exo 2', staerken:ALLE_STAERKEN, kursiv:true, datei:fsDatei('exo-2') },
+  { id:'orbitron', name:'Orbitron', staerken:[400, 500, 600, 700, 800, 900], kursiv:false, datei:w => 'fonts/orbitron/Orbitron-' + ORBITRON[w] + '.ttf' },
+  { id:'rajdhani', name:'Rajdhani', staerken:[300, 400, 500, 600, 700], kursiv:false, datei:fsDatei('rajdhani') },
+  { id:'saira', name:'Saira', staerken:ALLE_STAERKEN, kursiv:true, datei:fsDatei('saira') },
+  { id:'space-grotesk', name:'Space Grotesk', staerken:[300, 400, 500, 600, 700], kursiv:false, datei:fsDatei('space-grotesk') },
+  { id:'michroma', name:'Michroma', staerken:[400], kursiv:false, datei:fsDatei('michroma') },
+  { id:'audiowide', name:'Audiowide', staerken:[400], kursiv:false, datei:() => 'fonts/audiowide/Audiowide-Regular.ttf' }
+];
+const SCHRIFT = Object.fromEntries(SCHRIFTEN.map(s => [s.id, s]));
+// Tiefe: 8 Richtungen (Bildschirm: y nach unten)
+const RICHTUNGEN = [
+  { id:'nw', pfeil:'↖', name:'oben links', x:-1, y:-1 }, { id:'n', pfeil:'↑', name:'oben', x:0, y:-1 }, { id:'no', pfeil:'↗', name:'oben rechts', x:1, y:-1 },
+  { id:'w', pfeil:'←', name:'links', x:-1, y:0 }, { id:'o', pfeil:'→', name:'rechts', x:1, y:0 },
+  { id:'sw', pfeil:'↙', name:'unten links', x:-1, y:1 }, { id:'s', pfeil:'↓', name:'unten', x:0, y:1 }, { id:'so', pfeil:'↘', name:'unten rechts', x:1, y:1 }
+];
+const RICHTUNG = Object.fromEntries(RICHTUNGEN.map(r => [r.id, r]));
+// Regler-Bereiche (selbst gewählt), Einheit px bei Schriftgröße 100
+const BEREICHE = {
+  abstand:{ min:-20, max:60, schritt:1 },
+  tiefe:{ min:0, max:40, schritt:1 },
+  umriss:{ min:0, max:10, schritt:0.5 },
+  weich:{ min:0, max:30, schritt:1 }
+};
+const EFFEKTE = ['aus', 'schatten', 'leuchten'];
+// Startzustand = heutiges Logo, soweit möglich (Jost 500, Verlauf wie im Spiel, leichter dunkler Schatten)
+const START = Object.freeze({
+  schrift:'jost', staerke:500, kursiv:false, abstand:0,
+  farbe1:'#8C7CF0', farbe2:'#C4BBFF',
+  tiefe:0, richtung:'so',
+  umriss:0, umrissFarbe:'#1B1838',
+  effekt:'schatten', weich:0,
+  ringHinten:true, ringVorne:true
+});
+const SCHATTEN = { dx:2.5, dy:3, deckkraft:0.35 };  // wie der Schatten des heutigen Logos (selbst gewählt: aus der Annäherung im Screen-Editor)
+const MAX_VERLAUF = 100;                             // Schritte für Rückgängig (selbst gewählt)
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/* ---------- Zustand prüfen ---------- */
+function rasterZahl(v, b, std){
+  if (typeof v !== 'number' || !Number.isFinite(v)) return std;
+  const k = Math.round((Math.min(b.max, Math.max(b.min, v)) - b.min) / b.schritt);
+  return Math.round((b.min + k * b.schritt) * 100) / 100;
+}
+function naechsteStaerke(s, w){
+  let best = s.staerken[0];
+  for (const x of s.staerken){
+    const d = Math.abs(x - w), db = Math.abs(best - w);
+    if (d < db || (d === db && x > best)) best = x;
+  }
+  return best;
+}
+// Nicht vorhandene Stärke oder Kursiv der gewählten Schrift → nächster vorhandener Wert (mit Hinweis)
+function anpassen(z){
+  const s = SCHRIFT[z.schrift], h = [];
+  if (!s.staerken.includes(z.staerke)){ const w = naechsteStaerke(s, z.staerke); h.push(s.name + ' hat keine Stärke ' + z.staerke + ' – ' + w + ' gewählt'); z.staerke = w; }
+  if (z.kursiv && !s.kursiv){ h.push(s.name + ' hat kein Kursiv – Normal gewählt'); z.kursiv = false; }
+  return h;
+}
+// Beliebiges Objekt → vollständiger, gültiger Zustand (feste Reihenfolge der Schlüssel)
+function normalisiere(o){
+  o = (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  const h = [], z = {};
+  if (typeof o.schrift === 'string' && Object.prototype.hasOwnProperty.call(SCHRIFT, o.schrift)) z.schrift = o.schrift;
+  else { z.schrift = 'jost'; if (o.schrift !== undefined) h.push('Schrift „' + String(o.schrift).slice(0, 40) + '“ ist unbekannt – Jost gewählt'); }
+  z.staerke = ALLE_STAERKEN.includes(o.staerke) ? o.staerke : START.staerke;
+  z.kursiv = o.kursiv === true;
+  z.abstand = rasterZahl(o.abstand, BEREICHE.abstand, START.abstand);
+  z.farbe1 = HEX.test(o.farbe1) ? o.farbe1.toUpperCase() : START.farbe1;
+  z.farbe2 = HEX.test(o.farbe2) ? o.farbe2.toUpperCase() : START.farbe2;
+  z.tiefe = rasterZahl(o.tiefe, BEREICHE.tiefe, START.tiefe);
+  z.richtung = typeof o.richtung === 'string' && Object.prototype.hasOwnProperty.call(RICHTUNG, o.richtung) ? o.richtung : START.richtung;
+  z.umriss = rasterZahl(o.umriss, BEREICHE.umriss, START.umriss);
+  z.umrissFarbe = HEX.test(o.umrissFarbe) ? o.umrissFarbe.toUpperCase() : START.umrissFarbe;
+  z.effekt = EFFEKTE.includes(o.effekt) ? o.effekt : START.effekt;
+  z.weich = rasterZahl(o.weich, BEREICHE.weich, START.weich);
+  z.ringHinten = o.ringHinten !== false;
+  z.ringVorne = o.ringVorne !== false;
+  h.push(...anpassen(z));
+  return { z, hinweise:h };
+}
+// Projektdatei/Speicher: nur Format, Version, Zeitpunkt und Einstellungen – nie das Token
+function projektObjekt(z){
+  return { format:PROJEKT_FORMAT, version:PROJEKT_VERSION, text:LOGO_TEXT, gespeichert:new Date().toISOString(), einstellungen:{ ...z } };
+}
+// Datei/Speicher prüfen: { z, hinweise } oder { fehler:'kaputt'|'fremd'|'version' }
+function pruefeProjekt(text){
+  let o;
+  try { o = JSON.parse(text); } catch (e) { return { fehler:'kaputt' }; }
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.format !== PROJEKT_FORMAT) return { fehler:'fremd' };
+  if (o.version !== PROJEKT_VERSION) return { fehler:'version', version:o.version };
+  if (!o.einstellungen || typeof o.einstellungen !== 'object' || Array.isArray(o.einstellungen)) return { fehler:'kaputt' };
+  return normalisiere(o.einstellungen);
+}
+function projektLesen(){
+  try { const t = localStorage.getItem(PROJEKT_KEY); if (t){ const r = pruefeProjekt(t); if (r.z) return r.z; } } catch (e) {}
+  return null;
+}
+function projektSpeichern(){
+  try { localStorage.setItem(PROJEKT_KEY, JSON.stringify(projektObjekt(zustand))); } catch (e) { /* Speicher voll o. ä. */ }
+}
+
+/* ---------- Verlauf (Rückgängig/Wiederholen) ---------- */
+let zustand = projektLesen() || { ...START };
+let verlauf = [JSON.stringify(zustand)], vpos = 0;
+// Einen Schritt merken (nach Loslassen des Reglers, Antippen, Laden) – Zwischenwerte beim Ziehen nicht
+function merke(){
+  const s = JSON.stringify(zustand);
+  if (s === verlauf[vpos]) return;
+  verlauf = verlauf.slice(0, vpos + 1);
+  verlauf.push(s);
+  while (verlauf.length > MAX_VERLAUF + 1) verlauf.shift();
+  vpos = verlauf.length - 1;
+  verlaufKnoepfe();
+}
+function setze(neu, schritt){
+  zustand = neu;
+  if (schritt) merke();
+  projektSpeichern(); bedienungZeigen(); planeZeichnen();
+}
+function aendere(f, schritt){ const z = { ...zustand }; f(z); setze(z, schritt); }
+function springe(p){
+  if (p < 0 || p >= verlauf.length) return;
+  vpos = p; zustand = JSON.parse(verlauf[vpos]);
+  projektSpeichern(); bedienungZeigen(); planeZeichnen(); verlaufKnoepfe();
+}
+const rueckgaengig = () => springe(vpos - 1), wiederholen = () => springe(vpos + 1);
+function verlaufKnoepfe(){ $('btnUndo').disabled = vpos <= 0; $('btnRedo').disabled = vpos >= verlauf.length - 1; }
+function editorMeldung(t){ $('editorMeldung').textContent = t || ''; if (t) meldung(t); }
+
+/* ---------- Schriften laden (nur eigener Ursprung) ---------- */
+const schriftCache = new Map();
+function ladeSchrift(datei){
+  if (!schriftCache.has(datei)){
+    const p = fetch(datei, { credentials:'same-origin' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(SchriftLader.lade);
+    p.catch(() => schriftCache.delete(datei));
+    schriftCache.set(datei, p);
+  }
+  return schriftCache.get(datei);
+}
+const schriftDatei = z => SCHRIFT[z.schrift].datei(z.staerke, z.kursiv);
+
+/* ---------- Geometrie ---------- */
+const r2 = n => { const v = Math.round(n * 100) / 100; return Object.is(v, -0) ? 0 : v; };
+const pt = p => r2(p.x) + ' ' + r2(p.y);
+// TrueType-Kontur (Punkte mit on/off) → Segmente { a, c (Kontrollpunkt, nur Kurven), b }
+function segmente(k){
+  const n = k.length;
+  if (n < 2) return [];
+  const s0 = k.findIndex(q => q.on);
+  let start, folge;
+  if (s0 < 0){ start = { x:(k[0].x + k[n - 1].x) / 2, y:(k[0].y + k[n - 1].y) / 2 }; folge = k.concat([{ x:start.x, y:start.y, on:true }]); }
+  else { start = { x:k[s0].x, y:k[s0].y }; folge = []; for (let i = 1; i <= n; i++) folge.push(k[(s0 + i) % n]); }
+  const out = [];
+  let cur = start, ctrl = null;
+  for (const q of folge){
+    const p = { x:q.x, y:q.y };
+    if (q.on){
+      if (ctrl) out.push({ a:cur, c:ctrl, b:p }); else if (p.x !== cur.x || p.y !== cur.y) out.push({ a:cur, b:p });
+      ctrl = null; cur = p;
+    } else {
+      if (ctrl){ const m = { x:(ctrl.x + p.x) / 2, y:(ctrl.y + p.y) / 2 }; out.push({ a:cur, c:ctrl, b:m }); cur = m; }
+      ctrl = p;
+    }
+  }
+  return out;
+}
+const schiebe = (p, dx, dy) => ({ x:p.x + dx, y:p.y + dy });
+const schiebeSeg = (listen, dx, dy) => listen.map(l => l.map(s => s.c ? { a:schiebe(s.a, dx, dy), c:schiebe(s.c, dx, dy), b:schiebe(s.b, dx, dy) } : { a:schiebe(s.a, dx, dy), b:schiebe(s.b, dx, dy) }));
+function pfadD(listen){
+  let d = '';
+  for (const l of listen){
+    if (!l.length) continue;
+    d += 'M' + pt(l[0].a);
+    for (const s of l) d += s.c ? 'Q' + pt(s.c) + ' ' + pt(s.b) : 'L' + pt(s.b);
+    d += 'Z';
+  }
+  return d;
+}
+// Genaue Box (Extrempunkte der Kurven)
+function segBox(listen){
+  const b = { x1:Infinity, y1:Infinity, x2:-Infinity, y2:-Infinity };
+  const add = (x, y) => { if (x < b.x1) b.x1 = x; if (x > b.x2) b.x2 = x; if (y < b.y1) b.y1 = y; if (y > b.y2) b.y2 = y; };
+  for (const l of listen) for (const s of l){
+    add(s.a.x, s.a.y); add(s.b.x, s.b.y);
+    if (s.c) for (const ax of ['x', 'y']){
+      const den = s.a[ax] - 2 * s.c[ax] + s.b[ax];
+      if (den === 0) continue;
+      const t = (s.a[ax] - s.c[ax]) / den;
+      if (t > 0 && t < 1){ const u = 1 - t; add(u * u * s.a.x + 2 * u * t * s.c.x + t * t * s.b.x, u * u * s.a.y + 2 * u * t * s.c.y + t * t * s.b.y); }
+    }
+  }
+  return b.x1 === Infinity ? { x1:0, y1:0, x2:0, y2:0 } : b;
+}
+const vereinige = (...bs) => ({ x1:Math.min(...bs.map(b => b.x1)), y1:Math.min(...bs.map(b => b.y1)), x2:Math.max(...bs.map(b => b.x2)), y2:Math.max(...bs.map(b => b.y2)) });
+const erweitere = (b, r) => ({ x1:b.x1 - r, y1:b.y1 - r, x2:b.x2 + r, y2:b.y2 + r });
+const schiebeBox = (b, dx, dy) => ({ x1:b.x1 + dx, y1:b.y1 + dy, x2:b.x2 + dx, y2:b.y2 + dy });
+// Seitenflächen der 2,5D-Kante: je Kantenstück ein Viereck (p, q, q+D, p+D), alle gleich orientiert, damit sie
+// sich mit nonzero zu einer Fläche vereinigen (genaue Minkowski-Summe des Umrisses mit der Strecke D).
+function tiefeSeitenD(listen, D){
+  let d = '';
+  for (const l of listen){
+    if (!l.length) continue;
+    const pts = [l[0].a];
+    for (const s of l){
+      if (s.c){ for (let i = 1; i <= 12; i++){ const t = i / 12, u = 1 - t; pts.push({ x:u * u * s.a.x + 2 * u * t * s.c.x + t * t * s.b.x, y:u * u * s.a.y + 2 * u * t * s.c.y + t * t * s.b.y }); } }
+      else pts.push(s.b);
+    }
+    for (let i = 0; i < pts.length - 1; i++){
+      const p = pts[i], q = pts[i + 1], kr = (q.x - p.x) * D.y - (q.y - p.y) * D.x;
+      if (Math.abs(kr) < 1e-6) continue;
+      const pd = schiebe(p, D.x, D.y), qd = schiebe(q, D.x, D.y);
+      d += kr > 0 ? 'M' + pt(p) + 'L' + pt(q) + 'L' + pt(qd) + 'L' + pt(pd) + 'Z' : 'M' + pt(p) + 'L' + pt(pd) + 'L' + pt(qd) + 'L' + pt(q) + 'Z';
+    }
+  }
+  return d;
+}
+// Kantenfarbe: dunkler aus dem Verlauf (selbst gewählt: 55 % Helligkeit)
+function dunkler(hex, f){
+  const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.round(v * f));
+  return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+const KANTE = 0.55;
+const xmlAttr = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+/* ---------- Die eine Beschreibung: Zustand + Schrift + Ring → SVG ---------- */
+// Liefert { vb, ebenen, svg(px) }; svg(null) = Datei/Bühne (width/height = viewBox), svg({w,h}) = Quelle fürs PNG.
+function svgAufbau(z, font, ring){
+  const tk = SchriftLader.textKonturen(font, LOGO_TEXT, GROESSE, z.abstand);
+  let segs = tk.konturen.map(segmente).filter(l => l.length);
+  const b0 = segBox(segs), cx = (b0.x1 + b0.x2) / 2, cy = (b0.y1 + b0.y2) / 2;
+  segs = schiebeSeg(segs, -cx, -cy);                        // Mitte der Schrift = (0, 0) = Ringmitte
+  const bb = schiebeBox(b0, -cx, -cy);
+  const dText = pfadD(segs);
+  const R = RICHTUNG[z.richtung], rl = Math.hypot(R.x, R.y);
+  const D = { x:z.tiefe * R.x / rl, y:z.tiefe * R.y / rl };
+  const hatTiefe = z.tiefe > 0, hatUmriss = z.umriss > 0;
+  const dSeiten = hatTiefe ? tiefeSeitenD(segs, D) : '', dHinten = hatTiefe ? pfadD(schiebeSeg(segs, D.x, D.y)) : '';
+  const koerper = hatTiefe ? vereinige(bb, schiebeBox(bb, D.x, D.y)) : bb;
+  const boxen = [erweitere(bb, hatUmriss ? z.umriss / 2 : 0), koerper];
+  // Ring (unverändert aus der Arbeitsdatei, Mitte auf (0,0), Maßstab k)
+  const mitRing = { hinten:!!(ring && ring.hinten && z.ringHinten), vorne:!!(ring && ring.vorne && z.ringVorne) };
+  let ringTf = '';
+  if (ring && (mitRing.hinten || mitRing.vorne)){
+    const rb = ring.box, rcx = (rb.x1 + rb.x2) / 2, rcy = (rb.y1 + rb.y2) / 2, k = ring.k;
+    ringTf = 'scale(' + r2(k * 10000) / 10000 + ') translate(' + r2(-rcx) + ' ' + r2(-rcy) + ')';
+    boxen.push({ x1:(rb.x1 - rcx) * k, y1:(rb.y1 - rcy) * k, x2:(rb.x2 - rcx) * k, y2:(rb.y2 - rcy) * k });
+  }
+  let sigma = 0;
+  if (z.effekt === 'schatten'){ sigma = z.weich / 2; boxen.push(erweitere(schiebeBox(koerper, SCHATTEN.dx, SCHATTEN.dy), 3 * sigma)); }
+  if (z.effekt === 'leuchten'){ sigma = 2 + z.weich / 2; boxen.push(erweitere(koerper, 1.5 + 3 * sigma)); }
+  const u = erweitere(vereinige(...boxen), 4);
+  const vb = { x:Math.floor(u.x1), y:Math.floor(u.y1) };
+  vb.w = Math.ceil(u.x2) - vb.x; vb.h = Math.ceil(u.y2) - vb.y;
+
+  const defs = [];
+  const lin = (id, b, c1, c2) => '<linearGradient id="' + id + '" gradientUnits="userSpaceOnUse" x1="' + r2(b.x1) + '" y1="' + r2(b.y2) + '" x2="' + r2(b.x2) + '" y2="' + r2(b.y1) + '">'
+    + '<stop offset="0" stop-color="' + c1 + '"/><stop offset="1" stop-color="' + c2 + '"/></linearGradient>';
+  defs.push(lin('aeth-verlauf', bb, z.farbe1, z.farbe2));
+  if (hatTiefe) defs.push(lin('aeth-kante', koerper, dunkler(z.farbe1, KANTE), dunkler(z.farbe2, KANTE)));
+  if (sigma > 0) defs.push('<filter id="aeth-weich" filterUnits="userSpaceOnUse" x="' + vb.x + '" y="' + vb.y + '" width="' + vb.w + '" height="' + vb.h + '" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="' + r2(sigma) + '"/></filter>');
+  const filt = sigma > 0 ? ' filter="url(#aeth-weich)"' : '';
+  const koerperPfade = fill => '<path d="' + dText + '" fill="' + fill + '"/>' + (hatTiefe ? '<path d="' + dSeiten + '" fill="' + fill + '"/><path d="' + dHinten + '" fill="' + fill + '"/>' : '');
+
+  const ebenen = [], teile = [];
+  const ebene = (id, attr, inhalt) => { ebenen.push(id); teile.push('<g id="' + id + '"' + attr + '>' + inhalt + '</g>'); };
+  if (mitRing.hinten) ebene('ring-hinten', ' transform="' + ringTf + '"', ring.hinten);
+  if (z.effekt === 'schatten') ebene('schatten', ' opacity="' + SCHATTEN.deckkraft + '"' + filt, '<g transform="translate(' + SCHATTEN.dx + ' ' + SCHATTEN.dy + ')">' + koerperPfade('#000000') + '</g>');
+  if (z.effekt === 'leuchten') ebene('leuchten', ' opacity="0.9"' + filt, koerperPfade(z.farbe2).replace(/"\/>/g, '" stroke="' + z.farbe2 + '" stroke-width="3" stroke-linejoin="round"/>'));
+  if (hatTiefe) ebene('tiefe', '', '<path d="' + dSeiten + '" fill="url(#aeth-kante)"/><path d="' + dHinten + '" fill="url(#aeth-kante)"/>');
+  ebene('schrift', '', '<path d="' + dText + '" fill="url(#aeth-verlauf)"/>');
+  if (hatUmriss) ebene('umriss', '', '<path d="' + dText + '" fill="none" stroke="' + z.umrissFarbe + '" stroke-width="' + z.umriss + '" stroke-linejoin="round"/>');
+  if (mitRing.vorne) ebene('ring-vorne', ' transform="' + ringTf + '"', ring.vorne);
+
+  const s = SCHRIFT[z.schrift];
+  const info = 'Aether-Logo-Projekt: ' + s.name + ' ' + z.staerke + (z.kursiv ? ' kursiv' : ' normal') + ', Schrift als Pfade';
+  const rumpf = '<!-- ' + info + ' --><defs>' + (mitRing.hinten || mitRing.vorne ? ring.defs : '') + defs.join('') + '</defs>' + teile.join('') + '</svg>';
+  return {
+    vb, ebenen,
+    svg:px => '<svg xmlns="' + SVG_NS + '" viewBox="' + vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h + '" width="' + (px ? px.w : vb.w) + '" height="' + (px ? px.h : vb.h) + '">' + rumpf
+  };
+}
+
+/* ---------- Ring aus der Arbeitsdatei ---------- */
+let ring = null, ringStand = 'keine', ringNr = 0;   // keine | laden | bereit | fehlt | fehler
+const serialisiere = n => new XMLSerializer().serializeToString(n);
+// Gruppe ohne eigene id, umhüllt von flachen Kopien ihrer Vorfahren (Transformationen, geerbte Attribute)
+function gruppenText(doc, id){
+  const g = gruppe(doc, id);
+  if (!g) return null;
+  let n = g.cloneNode(true); n.removeAttribute('id');
+  for (let p = g.parentNode; p && p !== doc.documentElement && p.nodeType === 1; p = p.parentNode){
+    const h = p.cloneNode(false); h.removeAttribute('id'); h.appendChild(n); n = h;
+  }
+  return serialisiere(n);
+}
+function defsText(doc){
+  const typen = 'defs, style, linearGradient, radialGradient, filter, clipPath, mask, pattern, symbol, marker';
+  // nur die äußersten solcher Elemente (Inhalt von defs nicht doppelt)
+  const oben = e => { for (let p = e.parentNode; p && p.nodeType === 1; p = p.parentNode) if (p.matches(typen)) return false; return true; };
+  return [...doc.documentElement.querySelectorAll(typen)].filter(oben).map(serialisiere).join('');
+}
+function bildAusSvg(svg, w, h){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' })), img = new Image();
+    img.onload = () => res({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('SVG-Bild')); };
+    if (w){ img.width = w; img.height = h; }
+    img.src = url;
+  });
+}
+// Sichtbare Fläche (Alpha) eines Inhalts in Koordinaten der viewBox; null, wenn nichts zu sehen ist
+async function rasterBox(doc, defs, inhalt){
+  const r = doc.documentElement, vbt = (r.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const m = masse(doc), vb = vbt.length === 4 && vbt.every(Number.isFinite) && vbt[2] > 0 && vbt[3] > 0 ? { x:vbt[0], y:vbt[1], w:vbt[2], h:vbt[3] } : { x:0, y:0, w:m.w, h:m.h };
+  const W = 1024, H = Math.max(1, Math.round(W * vb.h / vb.w));
+  const svg = '<svg xmlns="' + SVG_NS + '" viewBox="' + vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h + '" width="' + W + '" height="' + H + '" preserveAspectRatio="none"><defs>' + defs + '</defs>' + inhalt + '</svg>';
+  const { img, url } = await bildAusSvg(svg, W, H);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently:true });
+  ctx.drawImage(img, 0, 0, W, H); URL.revokeObjectURL(url);
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x1 = W, y1 = H, x2 = -1, y2 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3] > 8){ if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; }
+  cv.width = cv.height = 0;
+  if (x2 < 0) return null;
+  const sx = vb.w / W, sy = vb.h / H;
+  return { x1:vb.x + x1 * sx, y1:vb.y + y1 * sy, x2:vb.x + (x2 + 1) * sx, y2:vb.y + (y2 + 1) * sy };
+}
+async function ringVorbereiten(){
+  const nr = ++ringNr, doc = basis;
+  if (!doc){ ring = null; ringStand = 'keine'; ringAnzeigen(); planeZeichnen(); return; }
+  ringStand = 'laden'; ringAnzeigen();
+  let neu = null, stand = 'fehler';
+  try {
+    const hinten = gruppenText(doc, 'ring-hinten'), vorne = gruppenText(doc, 'ring-vorne'), defs = defsText(doc);
+    const rb = (hinten || vorne) ? await rasterBox(doc, defs, (hinten || '') + (vorne || '')) : null;
+    if (!rb) stand = 'fehlt';
+    else {
+      // Maßstab: Schrift der Datei (Gruppe „schrift“) ↔ Jost 500 bei Größe 100 – damit der Ring zur Schrift passt wie in der Datei
+      const st = gruppenText(doc, 'schrift'), sb = st ? await rasterBox(doc, defs, st) : null;
+      let k = 1;
+      if (sb && sb.y2 > sb.y1){
+        const jost = await ladeSchrift(SCHRIFT.jost.datei(500, false)), jb = segBox(SchriftLader.textKonturen(jost, LOGO_TEXT, GROESSE, 0).konturen.map(segmente));
+        k = (jb.y2 - jb.y1) / (sb.y2 - sb.y1);
+      }
+      neu = { defs, hinten, vorne, box:rb, k }; stand = 'bereit';
+    }
+  } catch (e) { neu = null; stand = 'fehler'; }
+  if (nr !== ringNr) return;
+  ring = neu; ringStand = stand; ringAnzeigen(); planeZeichnen();
+}
+function ringAnzeigen(){
+  const h = $('ringHinweis'), da = { hinten:!!(ring && ring.hinten), vorne:!!(ring && ring.vorne) };
+  for (const [k, id] of [['hinten', 'rHinten'], ['vorne', 'rVorne']]){
+    const cb = $(id), lab = cb.closest('label');
+    cb.disabled = !da[k]; cb.checked = da[k] && zustand['ring' + (k === 'hinten' ? 'Hinten' : 'Vorne')];
+    lab.classList.toggle('fehlt', !da[k]);
+  }
+  let t = '';
+  if (ringStand === 'keine') t = 'Keine Arbeitsdatei gespeichert – das Projekt läuft ohne Ring. Einmal online (mit Token) öffnen, dann kommt der Ring aus ' + DATEI + '.';
+  else if (ringStand === 'fehlt') t = 'Die Arbeitsdatei hat keine Gruppen „ring-hinten“/„ring-vorne“ – das Projekt läuft ohne Ring.';
+  else if (ringStand === 'fehler') t = 'Der Ring ließ sich nicht aus der Arbeitsdatei lesen – das Projekt läuft ohne Ring.';
+  h.textContent = t; h.hidden = !t;
+}
+
+/* ---------- Zeichnen (Bühne, PNG-Quelle) ---------- */
+let aktuell = null, bildUrl = null, zeichenNr = 0, geplant = false, pngTimer = null;
+function planeZeichnen(){
+  if (geplant) return;
+  geplant = true;
+  requestAnimationFrame(() => { geplant = false; zeichnen(); });
+}
+async function zeichnen(){
+  const nr = ++zeichenNr, z = { ...zustand }, json = JSON.stringify(z), r = ring;
+  let font;
+  try { font = await ladeSchrift(schriftDatei(z)); }
+  catch (e) {
+    if (nr !== zeichenNr) return;
+    aktuell = null; $('editorBild').hidden = true; $('editorLeer').hidden = false;
+    $('editorLeer').textContent = 'Schrift „' + SCHRIFT[z.schrift].name + ' ' + z.staerke + (z.kursiv ? ' kursiv' : '') + '“ ließ sich nicht laden – einmal online öffnen.';
+    ausgabeKnoepfe(); return;
+  }
+  if (nr !== zeichenNr) return;
+  const b = svgAufbau(z, font, r);
+  const svg = b.svg(null);
+  aktuell = { ...b, text:svg, json, geladen:false };
+  const a = aktuell, alt = bildUrl, img = $('editorBild');
+  bildUrl = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' }));
+  img.onload = () => { if (alt) URL.revokeObjectURL(alt); if (aktuell === a) a.geladen = true; };
+  img.src = bildUrl; img.hidden = false; $('editorLeer').hidden = true;
+  ausgabeKnoepfe();
+  clearTimeout(pngTimer); pngTimer = setTimeout(editorPngVorbereiten, 150);
+}
+let eBreite = 2048;
+let ePng = { schluessel:'', img:null, url:null, bereit:false, w:0, h:0, svg:'' };
+// Wie bei der Arbeitsdatei: die PNG-Quelle liegt in der gewählten Größe vorab geladen bereit, damit der
+// Teilen-Dialog innerhalb der Nutzergeste aufgeht.
+function editorPngVorbereiten(){
+  if (!aktuell) return;
+  const w = eBreite, h = Math.max(1, Math.round(w * aktuell.vb.h / aktuell.vb.w)), svg = aktuell.svg({ w, h });
+  if (ePng.schluessel === svg && ePng.img) return;
+  if (ePng.url) URL.revokeObjectURL(ePng.url);
+  const url = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' })), img = new Image();
+  img.decoding = 'sync';
+  const p = ePng = { schluessel:svg, img, url, bereit:false, w, h, svg };
+  img.onload = () => { if (ePng === p){ p.bereit = true; ausgabeKnoepfe(); } };
+  img.onerror = () => { if (ePng === p){ p.bereit = false; ausgabeKnoepfe(); } };
+  img.width = w; img.height = h; img.src = url;
+  ausgabeKnoepfe();
+}
+const ePngAktuell = () => !!aktuell && ePng.bereit && ePng.w === eBreite && ePng.schluessel === aktuell.svg({ w:ePng.w, h:ePng.h });
+function ausgabeKnoepfe(){
+  $('btnEditorSvg').disabled = !aktuell;
+  $('btnEditorPng').disabled = !ePngAktuell();
+}
+
+/* ---------- Bedienelemente ---------- */
+function regler(id, b){ const e = $(id); e.min = b.min; e.max = b.max; e.step = b.schritt; }
+regler('sAbstand', BEREICHE.abstand); regler('sTiefe', BEREICHE.tiefe); regler('sUmriss', BEREICHE.umriss); regler('sWeich', BEREICHE.weich);
+for (const s of SCHRIFTEN){ const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; $('sSchrift').appendChild(o); }
+for (const w of ALLE_STAERKEN){
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.w = String(w); b.textContent = String(w);
+  b.addEventListener('click', () => { if (!b.disabled) aendere(z => { z.staerke = w; }, true); });
+  $('sStaerke').appendChild(b);
+}
+for (const r of RICHTUNGEN){
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.r = r.id; b.textContent = r.pfeil; b.title = r.name; b.setAttribute('aria-label', 'Richtung ' + r.name);
+  b.addEventListener('click', () => aendere(z => { z.richtung = r.id; }, true));
+  $('sRichtung').appendChild(b);
+}
+const pxText = v => (Math.round(v * 10) / 10).toLocaleString('de-DE') + ' px';
+function bedienungZeigen(){
+  const z = zustand, s = SCHRIFT[z.schrift];
+  $('sSchrift').value = z.schrift;
+  for (const b of $('sStaerke').children){
+    const w = Number(b.dataset.w), da = s.staerken.includes(w);
+    b.disabled = !da; b.setAttribute('aria-pressed', String(w === z.staerke));
+    b.title = da ? '' : s.name + ' hat keine Stärke ' + w;
+  }
+  for (const b of $('sStil').children){
+    const k = b.dataset.kursiv === '1';
+    b.disabled = k && !s.kursiv;
+    b.title = b.disabled ? s.name + ' hat kein Kursiv' : '';
+    b.setAttribute('aria-pressed', String(k === z.kursiv));
+  }
+  for (const [id, v, t] of [['sAbstand', z.abstand, pxText(z.abstand)], ['sTiefe', z.tiefe, z.tiefe ? pxText(z.tiefe) : 'aus'], ['sUmriss', z.umriss, z.umriss ? pxText(z.umriss) : 'aus'], ['sWeich', z.weich, pxText(z.weich)]]){
+    if (Number($(id).value) !== v) $(id).value = String(v);
+    $(id + 'Wert').textContent = t;
+  }
+  for (const [id, v] of [['sFarbe1', z.farbe1], ['sFarbe2', z.farbe2], ['sUmrissFarbe', z.umrissFarbe]]){
+    if ($(id).value.toUpperCase() !== v) $(id).value = v.toLowerCase();
+    const hx = $(id === 'sUmrissFarbe' ? 'sUmrissHex' : id + 'Hex');
+    if (document.activeElement !== hx){ hx.value = v; hx.removeAttribute('aria-invalid'); }
+  }
+  for (const b of $('sRichtung').children) b.setAttribute('aria-pressed', String(b.dataset.r === z.richtung));
+  for (const b of $('sEffekt').children) b.setAttribute('aria-pressed', String(b.dataset.effekt === z.effekt));
+  $('sWeich').disabled = z.effekt === 'aus';
+  ringAnzeigen();
+}
+$('sSchrift').addEventListener('change', () => {
+  const z = { ...zustand, schrift:$('sSchrift').value }, h = anpassen(z);
+  setze(z, true); editorMeldung(h.join(' · '));
+});
+$('sStil').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  aendere(z => { z.kursiv = b.dataset.kursiv === '1'; }, true);
+});
+$('sEffekt').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  aendere(z => { z.effekt = b.dataset.effekt; }, true);
+});
+// Regler: Ziehen zeigt live (ohne Schritt), Loslassen ist EIN Schritt
+for (const [id, key] of [['sAbstand', 'abstand'], ['sTiefe', 'tiefe'], ['sUmriss', 'umriss'], ['sWeich', 'weich']]){
+  const e = $(id), wert = () => rasterZahl(Number(e.value), BEREICHE[key], zustand[key]);
+  e.addEventListener('input', () => aendere(z => { z[key] = wert(); }, false));
+  e.addEventListener('change', () => aendere(z => { z[key] = wert(); }, true));
+}
+// Farben: Farbwähler und Hex-Feld (Text: Backspace löscht nur Zeichen)
+for (const [farbId, hexId, key] of [['sFarbe1', 'sFarbe1Hex', 'farbe1'], ['sFarbe2', 'sFarbe2Hex', 'farbe2'], ['sUmrissFarbe', 'sUmrissHex', 'umrissFarbe']]){
+  const f = $(farbId), hx = $(hexId);
+  f.addEventListener('input', () => aendere(z => { z[key] = f.value.toUpperCase(); }, false));
+  f.addEventListener('change', () => aendere(z => { z[key] = f.value.toUpperCase(); }, true));
+  const hexWert = () => { let v = hx.value.trim(); if (v && v[0] !== '#') v = '#' + v; return HEX.test(v) ? v.toUpperCase() : null; };
+  hx.addEventListener('input', () => {
+    const v = hexWert();
+    hx.toggleAttribute('aria-invalid', !v && hx.value.length >= 6);
+    if (v) aendere(z => { z[key] = v; }, false);
+  });
+  hx.addEventListener('change', () => {
+    const v = hexWert();
+    if (v) aendere(z => { z[key] = v; }, true);
+    else { hx.value = zustand[key]; hx.removeAttribute('aria-invalid'); merke(); }
+  });
+}
+for (const [id, key] of [['rHinten', 'ringHinten'], ['rVorne', 'ringVorne']]) $(id).addEventListener('change', () => aendere(z => { z[key] = $(id).checked; }, true));
+$('btnUndo').addEventListener('click', rueckgaengig);
+$('btnRedo').addEventListener('click', wiederholen);
+
+// Reiter
+const REITER = [['tabSchrift', 'panelSchrift'], ['tabRing', 'panelRing'], ['tabAusgabe', 'panelAusgabe']];
+for (const [tab] of REITER) $(tab).addEventListener('click', () => {
+  for (const [t, p] of REITER){ const an = t === tab; $(t).setAttribute('aria-selected', String(an)); $(p).hidden = !an; }
+  if (tab === 'tabAusgabe') editorPngVorbereiten();
+});
+document.querySelectorAll('#eBreite button').forEach(b => b.addEventListener('click', () => {
+  eBreite = Number(b.dataset.w);
+  document.querySelectorAll('#eBreite button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  editorPngVorbereiten();
+}));
+
+/* ---------- Ausgabe und Projektdatei ---------- */
+function stempel(){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('de-DE', { timeZone:'Europe/Berlin', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' })
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return p.year + p.month + p.day + '-' + p.hour + p.minute;
+}
+const dateiName = endung => 'aether-logo-projekt-' + stempel() + endung;   // selbst gewählt
+$('btnEditorSvg').addEventListener('click', ev => {
+  if (!aktuell) return;
+  const svg = aktuell.text;
+  dateiSichern(ev, () => ({ datei:new File([svg], dateiName('.svg'), { type:'image/svg+xml' }) }));
+});
+$('btnEditorPng').addEventListener('click', ev => {
+  if (!ePngAktuell()){ meldung('Einen Moment – das PNG wird vorbereitet'); return; }
+  const p = ePng;
+  dateiSichern(ev, () => { const r = bildAlsPng(p.img, p.w, p.h); return { url:r.url, datei:new File([r.u8], dateiName('-' + p.w + '.png'), { type:'image/png' }) }; });
+});
+$('btnProjSichern').addEventListener('click', ev => {
+  const json = JSON.stringify(projektObjekt(zustand), null, 2) + '\n';
+  dateiSichern(ev, () => ({ datei:new File([json], dateiName('.json'), { type:'application/json' }) }));
+});
+$('btnProjLaden').addEventListener('click', () => $('projDatei').click());
+const MAX_PROJEKT_BYTES = 256 * 1024;   // selbst gewählt
+async function projektAusDatei(file){
+  if (!file) return;
+  let text;
+  if (file.size > MAX_PROJEKT_BYTES){ editorMeldung('Die Datei ist zu groß für eine Projektdatei – das aktuelle Projekt bleibt unverändert.'); return; }
+  try { text = await file.text(); } catch (e) { editorMeldung('Die Datei ließ sich nicht lesen – das aktuelle Projekt bleibt unverändert.'); return; }
+  const r = pruefeProjekt(text);
+  if (r.fehler === 'kaputt'){ editorMeldung('Die Projektdatei ist beschädigt – das aktuelle Projekt bleibt unverändert.'); return; }
+  if (r.fehler === 'fremd'){ editorMeldung('Das ist keine Logo-Projektdatei – das aktuelle Projekt bleibt unverändert.'); return; }
+  if (r.fehler === 'version'){ editorMeldung('Projektdatei-Version ' + String(r.version).slice(0, 20) + ' wird nicht unterstützt – das aktuelle Projekt bleibt unverändert.'); return; }
+  setze(r.z, true);
+  editorMeldung(['Projekt geladen'].concat(r.hinweise).join(' · '));
+}
+$('projDatei').addEventListener('change', () => { const f = $('projDatei').files[0]; $('projDatei').value = ''; projektAusDatei(f); });
+
+// Tastatur: Strg/⌘+Z, Strg/⌘+Umschalt+Z – nicht in Texteingabefeldern
+const istTextfeld = e => !!e && (e.isContentEditable || (e.localName === 'input' && !['range', 'color', 'checkbox', 'radio', 'button', 'file'].includes(e.type)) || e.localName === 'textarea' || e.localName === 'select');
+document.addEventListener('keydown', e => {
+  if (istTextfeld(e.target)) return;   // dort löscht Backspace Zeichen und sonst passiert nichts
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'z'){ e.preventDefault(); if (e.shiftKey) wiederholen(); else rueckgaengig(); }
+  else if (e.key === 'Backspace' && !$('modal').hidden){ e.preventDefault(); $('modal').hidden = true; }   // Backspace = zurück (wie Esc)
+});
+
+/* ---------- Aufklappbare Karten (Standard: zugeklappt) ---------- */
+function klappe(id, offen){
+  const b = $(id); b.setAttribute('aria-expanded', String(offen));
+  for (const t of b.getAttribute('aria-controls').split(/\s+/)) $(t).hidden = !offen;
+  $('karten').classList.toggle('svg-zu', $('klappSvg').getAttribute('aria-expanded') !== 'true');
+}
+for (const id of ['klappSvg', 'klappPng']) $(id).addEventListener('click', () => klappe(id, $(id).getAttribute('aria-expanded') !== 'true'));
+// Nur für die automatischen Tests: Karten offen starten (die bestehenden Tests der Karten prüfen deren Inhalt)
+const kartenOffen = window.AETHER_TEST_KARTEN_OFFEN === true;
+klappe('klappSvg', kartenOffen); klappe('klappPng', kartenOffen);
+
+bedienungZeigen(); verlaufKnoepfe(); ringAnzeigen(); planeZeichnen();
+
+// Schnittstelle für die automatischen Tests (nur lesen)
+window.AetherLogoEditor = Object.freeze({
+  zustand:() => JSON.parse(JSON.stringify(zustand)),
+  start:() => ({ ...START }),
+  schriften:() => SCHRIFTEN.map(s => ({ id:s.id, name:s.name, staerken:s.staerken.slice(), kursiv:s.kursiv, dateien:s.staerken.flatMap(w => [s.datei(w, false)].concat(s.kursiv ? [s.datei(w, true)] : [])) })),
+  bereit:() => !!aktuell && aktuell.json === JSON.stringify(zustand) && aktuell.geladen,
+  svg:() => aktuell ? aktuell.text : '',
+  angezeigtesSvg:() => aktuell && aktuell.geladen ? aktuell.text : '',
+  ebenen:() => aktuell ? aktuell.ebenen.slice() : [],
+  pngBereit:() => ePngAktuell(),
+  pngSvg:() => ePng.svg,
+  verlauf:() => ({ pos:vpos, laenge:verlauf.length, max:MAX_VERLAUF }),
+  ring:() => ({ stand:ringStand, k:ring ? ring.k : null, box:ring ? { ...ring.box } : null }),
+  bereiche:JSON.parse(JSON.stringify(BEREICHE)),
+  breiten:BREITEN.slice()
+});
 
 // Schnittstelle für die automatischen Tests (nur lesen)
 window.AetherLogo = Object.freeze({

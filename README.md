@@ -241,7 +241,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 **Ablauf beim Start**
 
 1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
-   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`) die Logo-Seite (`logo.html`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`), die Logo-Seite (`logo.html`) samt Schriften (`fonts/`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -576,6 +576,68 @@ und bietet es als Datei zum Sichern an, z. B. für Affinity.
 
 **Testschnittstelle:** `window.AetherLogo` (nur lesen: Zustand, Fassung, angezeigtes SVG, Ebenen; PNG-Zustand und -Maße).
 
+### Logo-Editor (Stufe 1: Projekt + Schrift)
+
+Oben auf der Logo-Seite. Darunter liegen die Karten „Arbeitsdatei (SVG)“ und „Im Spiel (PNG)“ mit allen bisherigen
+Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüssel und Anfragen unverändert).
+
+- **Bühne „Logo-Projekt“** mit „Rückgängig“, „Wiederholen“ (auch Strg/⌘+Z, Strg/⌘+Umschalt+Z), „Projekt sichern“
+  und „Projekt laden“. Der Hintergrund-Schalter Dunkel/Hell/Kariert gilt für alle drei Bühnen.
+- **Reiter „Schrift“:** Schriftart (acht Schriften, siehe unten), Stärke 100–900 (nicht vorhandene ausgegraut),
+  Normal/Kursiv (ohne Kursiv ausgegraut; keine künstliche Schräge oder Verfettung), Buchstabenabstand −20…60 px,
+  Farbverlauf (Standard #8C7CF0 links unten → #C4BBFF rechts oben, Farbwähler und Hex-Feld), Tiefe 0–40 px mit
+  8 Richtungen (Kante = Verlauf mit 55 % Helligkeit), Umriss 0–10 px mit Farbe, Schatten/Leuchten mit Weichheit 0–30
+  px. px gelten bei Schriftgröße 100. Wechselt man auf eine Schrift ohne die eingestellte Stärke/Kursiv, wird der
+  nächste vorhandene Wert genommen (bei Gleichstand der schwerere) und kurz gemeldet. Text immer „Aether“.
+- **Reiter „Ring“** (Platzhalter): Schalter „Ring hinten“/„Ring vorne“. Der Ring kommt unverändert aus den Gruppen
+  `ring-hinten`/`ring-vorne` der zuletzt geladenen Arbeitsdatei (bereinigt wie die Anzeige), Mitte auf der Mitte der
+  Schrift; der Maßstab folgt aus der Höhe der Gruppe `schrift` der Datei im Verhältnis zu Jost 500. Ohne gespeicherte
+  Arbeitsdatei läuft das Projekt ohne Ring mit Hinweis. Ring bearbeiten folgt in Stufe 2.
+- **Reiter „Ausgabe“:** „PNG sichern“ (transparent, nur sichtbare Ebenen, 1024/2048/4096 px) und „SVG sichern“
+  (Schrift als Pfade, kein `<text>`, keine Schriftdatei; Gruppen `ring-hinten`, `schatten` bzw. `leuchten`, `tiefe`,
+  `schrift`, `umriss`, `ring-vorne` je nach Inhalt; Verlauf als `linearGradient`, Weichheit als `feGaussianBlur`).
+  Namen `aether-logo-projekt-<JJJJMMTT-HHMM>[-<breite>].png/.svg`. Weg wie bisher: Teilen-Dialog, sonst Download,
+  sonst „Lange drücken“.
+- **Ein Zeichenweg:** Eine Funktion baut aus Einstellungen, Schrift-Umrissen und Ring ein SVG. Die Bühne zeigt genau
+  diesen Text, die SVG-Datei ist dieser Text, das PNG zeichnet ihn mit Pixelmaßen auf ein Canvas.
+- **Schrift-Umrisse:** eigener kleiner Lader in `logo.html` (TTF/WOFF 1.0, `cmap`, `glyf`, `hmtx`, Kerning aus GPOS
+  oder `kern`, WOFF entpackt mit `DecompressionStream`). Keine fremde Bibliothek; alle Schriften sind statisch je
+  Stärke, also stimmt die Stärke exakt.
+- **Projekt:** automatisch in `localStorage` `aether.logoProjekt` (klein, sofort gespeichert, offline und nach Neustart
+  da). Die Projektdatei ist JSON `{ "format": "aether-logo-projekt", "version": 1, "text", "gespeichert",
+  "einstellungen" }`. Beim Laden: kaputte, fremde Datei oder andere Version → Meldung, Projekt unverändert; unbekannte
+  Schrift → Jost mit Meldung; Werte außerhalb der Bereiche werden begrenzt. Laden ist ein Schritt im Verlauf.
+  Der Verlauf hält 100 Schritte (nur im Speicher der Seite); ein Zug am Regler ist ein Schritt. Kein Token in
+  Projekt, Speicher oder Cache.
+- **Bedienung:** Regler mit `touch-action: none` (Ziehen scrollt die Seite nicht), Tippflächen ≥ 44 × 44 px. In den
+  Hex-Feldern löscht Backspace nur Zeichen; außerhalb von Textfeldern schließt Backspace einen offenen Dialog.
+
+**Testschnittstelle:** `window.AetherLogoEditor` (nur lesen: Zustand, SVG, Ebenen, PNG-Quelle, Verlauf, Ring).
+
+## Schriften (Logo-Editor)
+
+Acht Schriften für den Logo-Editor auf der Logo-Seite. Sie liegen im Repo unter `fonts/<name>/` (je Ordner der
+Lizenztext `OFL.txt` aus der Quelle, Prüfsummen aller Dateien in `fonts/SHA256SUMS`), werden nur vom eigenen
+Ursprung geladen (kein Google-Fonts-CDN, keine fremden Server) und liegen für den Offline-Start in der App-Hülle
+(`sw.js`, Cache `aether-shell-v1`). Zusammen 72 Schriftdateien, ca. 1,4 MB. Alle sind statische Dateien je Stärke
+und Stil (keine variablen Schriften), damit die gewählte Stärke in den Pfaden exakt stimmt.
+
+| Name | Lizenz | Quelle | Version | Stärken | Kursiv | Reserved Font Name |
+|---|---|---|---|---|---|---|
+| Jost | SIL OFL 1.1 | npm `@fontsource/jost@5.3.0` (Teilsatz „latin“, WOFF) | 3.710 (Fontsource v20, 2025-09-10) | 100–900 | ja | nein |
+| Exo 2 | SIL OFL 1.1 | npm `@fontsource/exo-2@5.3.0` (Teilsatz „latin“, WOFF) | 2.010 (Fontsource v26, 2025-09-02) | 100–900 | ja | nein |
+| Orbitron | SIL OFL 1.1 | `googlefonts/orbitron-vf` @ `f164828` (`fonts/ttf/`, unverändert, TTF) | 2.001 | 400–900 | nein | ja („Orbitron“) |
+| Rajdhani | SIL OFL 1.1 | npm `@fontsource/rajdhani@5.3.0` (Teilsatz „latin“, WOFF) | 1.201 (Fontsource v17, 2025-09-16) | 300–700 | nein | nein |
+| Saira | SIL OFL 1.1 | npm `@fontsource/saira@5.3.0` (Teilsatz „latin“, WOFF) | 1.101 (Fontsource v23, 2025-11-18) | 100–900 | ja | nein |
+| Space Grotesk | SIL OFL 1.1 | npm `@fontsource/space-grotesk@5.3.0` (Teilsatz „latin“, WOFF) | 2.000 (Fontsource v22, 2025-09-05) | 300–700 | nein | nein |
+| Michroma | SIL OFL 1.1 | npm `@fontsource/michroma@5.3.0` (Teilsatz „latin“, WOFF) | 1.100 (Fontsource v21, 2025-09-05) | 400 | nein | nein |
+| Audiowide | SIL OFL 1.1 | `google/fonts` @ `29b4ec6` (`ofl/audiowide/`, unverändert, TTF) | 1.003 | 400 | nein | ja („Audiowide“) |
+
+Die Fontsource-Pakete 5.3.0 sind vom 19.07.2026. Orbitron und Audiowide haben einen Reserved Font Name; von ihnen
+liegen nur die unveränderten Originaldateien im Repo (kein Teilsatz). Orbitron ist bei Google Fonts nur als
+variable Datei verfügbar; die statischen Originale stammen aus dem Quell-Repo, das Google Fonts dafür angibt
+(`ofl/orbitron/METADATA.pb`). Der Teilsatz „latin“ enthält die Buchstaben von „Aether“ (geprüft in den Tests).
+
 ## WebGPU-Check
 
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
@@ -727,6 +789,14 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   des jeweiligen Screens, Export/Import; alte Daten ohne Angabe; offline aus dem Service Worker; iPhone hochkant.
   Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=ein-logo|neuladen|gestreckt|leiche node --test
   tests/screen-logo.test.js` (ein Logo für alle Screens, Logo nach Neuladen weg, Bild gestreckt, Bildleiche).
+- `tests/logo-editor.test.js` – Logo-Editor: Schriftdateien (Lizenz, Prüfsummen, Stärke/Stil laut Datei, Buchstaben
+  von „Aether“, `sw.js`-Liste), Schriftliste und Ausgrauen je Schrift, Wechsel ohne Kursiv/Stärke, Pfade = Umrisse
+  der richtigen Datei je Stärke/Stil, SVG ohne `<text>`/`<script>`/externe Verweise mit Gruppen, PNG 1024/2048/4096
+  transparent, Bühne = SVG = PNG-Quelle (auch Pixelvergleich), Rückgängig/Wiederholen, Projekt sichern/laden,
+  Neuladen, offline, keine fremden Server, Token, Backspace, Layout (iPhone 16 Pro hoch/quer, iPad quer/hoch,
+  Desktop, 320 px), Karten aufklappbar. Gegenproben (müssen rot werden):
+  `AETHER_GEGENPROBE=kursiv|text|kaputt|verlauf|fremd|token node --test tests/logo-editor.test.js`.
+  `logo.test.js` und `logo-png.test.js` starten die Karten mit `window.AETHER_TEST_KARTEN_OFFEN = true` offen.
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,
@@ -743,6 +813,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
-`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `icons/`) auf GitHub Pages
+`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

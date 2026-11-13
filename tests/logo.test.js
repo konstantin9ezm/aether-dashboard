@@ -144,6 +144,8 @@ async function newPage(opts = {}) {
   context.on('request', (r) => log.urls.push(r.url()));
   if (withToken) await context.addInitScript((t) => { if (window === window.top) localStorage.setItem('aether.githubToken', t); }, TOKEN);
   if (init) await context.addInitScript(init.fn, init.arg);
+  // Seit dem Logo-Editor sind die Karten aufklappbar (Standard zu); diese Tests prüfen ihren Inhalt, also offen starten.
+  await context.addInitScript(() => { window.AETHER_TEST_KARTEN_OFFEN = true; });
   await context.route('https://api.github.com/**', githubApi);
   await context.route(/^https?:\/\/(?!localhost|api\.github\.com)/, (r) => r.abort());
   return { context, page, log };

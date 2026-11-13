@@ -66,6 +66,8 @@ jobs:
           # Commit des Dashboards für den WebGPU-Check (Seite zeigt sonst „nicht bekannt“).
           sed -i "s/__AETHER_COMMIT__/${GITHUB_SHA}/" _site/webgpu-check.html
           cp -r icons _site/
+          # Schriften des Logo-Editors (SIL OFL 1.1, Lizenz je Ordner), nur vom eigenen Ursprung geladen.
+          cp -r fonts _site/
           touch _site/.nojekyll
 
       - name: Pages-Artefakt hochladen

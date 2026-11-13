@@ -1,5 +1,5 @@
 // Service Worker des Aether-Dashboards: hält nur die App-Hülle (diese Seite, Manifest, Icons,
-// engine-map.json, Screen-Editor, Logo-Seite, gemeinsam.js) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
+// engine-map.json, Screen-Editor, Logo-Seite, gemeinsam.js, Schriften des Logo-Editors) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
 // Anfragen an api.github.com (mit Token im Authorization-Header) werden hier nie angefasst,
 // also auch nie in einem Cache abgelegt.
 'use strict';
@@ -10,9 +10,29 @@ var SHELL_CACHE = 'aether-shell-v1';
 // Der Screen-Editor (screen-editor.html mit three.js aus vendor/) gehört dazu, damit er offline startet, ebenso
 // die Logo-Seite (logo.html; ihre API-Antworten und das Token kommen nie hierher, siehe unten) und gemeinsam.js
 // (Hilfsfunktionen dieser drei Seiten; ohne sie starten sie offline nicht).
+// Schriften des Logo-Editors (logo.html, fonts/<name>/, Lizenzen in fonts/<name>/OFL.txt): alle Stärken und Stile,
+// damit der Editor offline jede Schrift zeichnen kann (zusammen ca. 1,4 MB). Nur vom eigenen Ursprung.
+var SCHRIFT_DATEIEN = [
+  // jost
+  'fonts/jost/jost-latin-100-italic.woff', 'fonts/jost/jost-latin-100-normal.woff', 'fonts/jost/jost-latin-200-italic.woff', 'fonts/jost/jost-latin-200-normal.woff', 'fonts/jost/jost-latin-300-italic.woff', 'fonts/jost/jost-latin-300-normal.woff', 'fonts/jost/jost-latin-400-italic.woff', 'fonts/jost/jost-latin-400-normal.woff', 'fonts/jost/jost-latin-500-italic.woff', 'fonts/jost/jost-latin-500-normal.woff', 'fonts/jost/jost-latin-600-italic.woff', 'fonts/jost/jost-latin-600-normal.woff', 'fonts/jost/jost-latin-700-italic.woff', 'fonts/jost/jost-latin-700-normal.woff', 'fonts/jost/jost-latin-800-italic.woff', 'fonts/jost/jost-latin-800-normal.woff', 'fonts/jost/jost-latin-900-italic.woff', 'fonts/jost/jost-latin-900-normal.woff',
+  // exo-2
+  'fonts/exo-2/exo-2-latin-100-italic.woff', 'fonts/exo-2/exo-2-latin-100-normal.woff', 'fonts/exo-2/exo-2-latin-200-italic.woff', 'fonts/exo-2/exo-2-latin-200-normal.woff', 'fonts/exo-2/exo-2-latin-300-italic.woff', 'fonts/exo-2/exo-2-latin-300-normal.woff', 'fonts/exo-2/exo-2-latin-400-italic.woff', 'fonts/exo-2/exo-2-latin-400-normal.woff', 'fonts/exo-2/exo-2-latin-500-italic.woff', 'fonts/exo-2/exo-2-latin-500-normal.woff', 'fonts/exo-2/exo-2-latin-600-italic.woff', 'fonts/exo-2/exo-2-latin-600-normal.woff', 'fonts/exo-2/exo-2-latin-700-italic.woff', 'fonts/exo-2/exo-2-latin-700-normal.woff', 'fonts/exo-2/exo-2-latin-800-italic.woff', 'fonts/exo-2/exo-2-latin-800-normal.woff', 'fonts/exo-2/exo-2-latin-900-italic.woff', 'fonts/exo-2/exo-2-latin-900-normal.woff',
+  // orbitron
+  'fonts/orbitron/Orbitron-Black.ttf', 'fonts/orbitron/Orbitron-Bold.ttf', 'fonts/orbitron/Orbitron-ExtraBold.ttf', 'fonts/orbitron/Orbitron-Medium.ttf', 'fonts/orbitron/Orbitron-Regular.ttf', 'fonts/orbitron/Orbitron-SemiBold.ttf',
+  // rajdhani
+  'fonts/rajdhani/rajdhani-latin-300-normal.woff', 'fonts/rajdhani/rajdhani-latin-400-normal.woff', 'fonts/rajdhani/rajdhani-latin-500-normal.woff', 'fonts/rajdhani/rajdhani-latin-600-normal.woff', 'fonts/rajdhani/rajdhani-latin-700-normal.woff',
+  // saira
+  'fonts/saira/saira-latin-100-italic.woff', 'fonts/saira/saira-latin-100-normal.woff', 'fonts/saira/saira-latin-200-italic.woff', 'fonts/saira/saira-latin-200-normal.woff', 'fonts/saira/saira-latin-300-italic.woff', 'fonts/saira/saira-latin-300-normal.woff', 'fonts/saira/saira-latin-400-italic.woff', 'fonts/saira/saira-latin-400-normal.woff', 'fonts/saira/saira-latin-500-italic.woff', 'fonts/saira/saira-latin-500-normal.woff', 'fonts/saira/saira-latin-600-italic.woff', 'fonts/saira/saira-latin-600-normal.woff', 'fonts/saira/saira-latin-700-italic.woff', 'fonts/saira/saira-latin-700-normal.woff', 'fonts/saira/saira-latin-800-italic.woff', 'fonts/saira/saira-latin-800-normal.woff', 'fonts/saira/saira-latin-900-italic.woff', 'fonts/saira/saira-latin-900-normal.woff',
+  // space-grotesk
+  'fonts/space-grotesk/space-grotesk-latin-300-normal.woff', 'fonts/space-grotesk/space-grotesk-latin-400-normal.woff', 'fonts/space-grotesk/space-grotesk-latin-500-normal.woff', 'fonts/space-grotesk/space-grotesk-latin-600-normal.woff', 'fonts/space-grotesk/space-grotesk-latin-700-normal.woff',
+  // michroma
+  'fonts/michroma/michroma-latin-400-normal.woff',
+  // audiowide
+  'fonts/audiowide/Audiowide-Regular.ttf'
+];
 var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
-  'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js'];
+  'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js'].concat(SCHRIFT_DATEIEN);
 
 function shellKey(url) {
   // Ohne Query und Hash, damit "…/?x#projekt" denselben Eintrag trifft wie "…/".
