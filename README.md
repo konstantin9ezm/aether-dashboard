@@ -94,6 +94,28 @@ Kennung, die das Boot-Skript beim Laden des Rahmens setzt; sie bleibt nach dem S
 
 Die Schnittstelle Spiel ↔ Dashboard (Version 1) ändert sich dadurch nicht; `AETHER_HOST.version` bleibt `1`.
 
+## Spielrahmen-Höhe in der Home-App
+
+**Befund (Analyse vom 13.11.2026):** Auf dem iPad Pro 11" (iPadOS 26.6.2) meldet die Home-Bildschirm-App im
+Querformat nur 802 pt Höhe (`innerHeight`), der Bildschirm hat 834 pt. Der frühere Höhen-Ausgleich in
+`fitGameToScreen()` zog `#game` per `--game-h` auf 834 pt, iPadOS zeichnet die unteren 32 pt aber nicht – der
+Touch-Stick wurde unten abgeschnitten. Vermutete Ursache: Fehler von iPadOS 26 bei `viewport-fit=cover` mit
+`black-translucent`. iPhone 16 Pro quer in der Home-App ist laut Gerätetest nicht betroffen.
+
+**Schalter:** `HOEHEN_AUSGLEICH_HOME_APP` in `index.html` (direkt vor `fitGameToScreen()`), Standard `false`.
+Damit ist der Spielrahmen in der Home-App so hoch wie die gemeldete Ansicht (`innerHeight`); unten bleibt auf dem
+iPad ein schmaler Streifen. Wieder einschalten: Konstante auf `true` setzen. Abgeschaltet ist nur die Höhe; der
+Breiten-Ausgleich (`--game-w`) arbeitet wie bisher. Safari-Tab und Vollbild-Knopf sind nicht betroffen (der
+Ausgleich galt nur in der Home-App).
+
+**Test-Schalter:** `?strecken=1` an der Adresse schaltet den Höhen-Ausgleich nur für diesen Seitenaufruf ein
+(wird nicht gespeichert). Hinweis: In der Home-Bildschirm-App gibt es keine Adresszeile, dort lässt sich der
+Zusatz nicht eingeben; er dient für Tests (z. B. Playwright) bzw. eine zum Home-Bildschirm hinzugefügte Adresse
+mit diesem Zusatz.
+
+**Apple-Fix:** Meldet iPadOS künftig die volle Höhe in `innerHeight`, füllt das Spiel ohne Änderung am Code
+wieder den ganzen Bildschirm.
+
 ## Schnittstelle Spiel ↔ Dashboard (Version 1)
 
 **Die Sandbox bleibt bewusst unverändert** (`sandbox="allow-scripts allow-pointer-lock"`, kein `allow-same-origin`).
@@ -606,7 +628,11 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   führen zu neuen Rahmen; Start per Enter mit Touch-Emulation (`maxTouchPoints` 5 per CDP) zeigt den Hinweis, der
   Tipp darauf kommt im Spiel an und blendet ihn aus, Feedback-Dialog blendet ihn aus, Desktop ohne Hinweis; Layout
   (iPhone 16 Pro quer, iPad Pro 11 quer, Desktop: Knopf an der Stelle und in der Größe des früheren Knopfs, ±1 px);
-  `?fps=1` mit und ohne Parameter.
+  `?fps=1` mit und ohne Parameter. Spielrahmen-Höhe in der Home-App (`navigator.standalone` per Init-Skript,
+  Ansicht 1194 × 802, Bildschirm 1194 × 834): Standard ohne `--game-h` (802 px), mit `?strecken=1` 834 px,
+  Breiten-Ausgleich bei 1150 px Ansichtsbreite wie bisher, ohne Home-App-Modus nichts gesetzt. Gegenproben (von
+  Hand, müssen rot werden): `HOEHEN_AUSGLEICH_HOME_APP = true` → Fall a rot; Breiten-Zeile ebenfalls abgeschaltet
+  → Fall c rot.
 - `tests/webgpu-check.test.js` – WebGPU-Check im **vollen Chromium** mit WebGPU aus SwiftShader
   (`--enable-unsafe-webgpu --use-angle=swiftshader --enable-features=Vulkan --use-vulkan=swiftshader`): lädt ohne
   Token und ohne Anfrage an api.github.com, alle Abschnitte gefüllt, Probe direkt und im iframe grün, iframe-Attribute
