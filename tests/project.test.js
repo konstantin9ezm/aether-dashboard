@@ -507,11 +507,11 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
     })));
     assert.deepEqual(layers.map((l) => l.name), ['Spiel/Lua', 'Engine-Systeme', 'Kern', 'Plattform-Layer/RHI']);
     assert.deepEqual(layers[0].chips, ['Lua-Skripting=geplant']);
-    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=vorschau', 'Debug-UI=fertig', 'Profiler=fertig', 'Asset-System=geplant']);
+    assert.deepEqual(layers[1].chips, ['Flugmodell=vorschau', 'Physik=geplant', 'ECS=geplant', 'Audio=geplant', 'UI=fertig', 'Debug-UI=fertig', 'Profiler=fertig', 'Asset-System=geplant']);
     assert.deepEqual(layers[2].chips, ['Log=fertig', 'Mathe=fertig', 'Spielschleife=fertig', 'Frame-Zeiten=fertig']);
     assert.deepEqual(layers[3].chips, ['SDL3-Backend=fertig', 'NULL-Backend=fertig', 'Web/Emscripten=fertig', 'Einstellungen/Speicher=fertig', 'OpenGL ES 3.0 / WebGL 2=vorschau', 'WebGPU=geplant', 'Vulkan-RHI=geplant']);
-    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi, Umzug läuft · Vorschau.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
-    assert.match(await text(page, '#engineLegend'), /fertig: 10.*Vorschau: 3.*geplant: 7/);
+    assert.match(await text(page, '#engineBody'), /Regler, Basiswerte v1 · Vorschau.*Jolt · geplant.*EnTT.*miniaudio.*RmlUi, Spielmenüs · fertig.*Dear ImGui · fertig.*Tracy.*Katalog, Streaming · geplant.*double-Positionen · fertig.*60 Hz.*Messung, 1-s-Fenster · fertig/);
+    assert.match(await text(page, '#engineLegend'), /fertig: 11.*Vorschau: 2.*geplant: 7/);
     assert.deepEqual(await page.$$eval('#engineBody .em-layer:last-child .glabel', (g) => g.map((x) => x.textContent)), ['Plattform', 'Renderer']);
 
     await assertTouchFriendly(page, label);
@@ -812,18 +812,19 @@ test('engine-map.json ist gültig und wird mit veröffentlicht', () => {
   assert.match(wf, /cp [^\n]*engine-map\.json/, 'engine-map.json wird nach _site kopiert');
 });
 
-test('Engine-Karte: Baustein „UI“ zeigt „RmlUi, Umzug läuft“ (Vorschau), Legende 10 · 3 · 7', async () => {
+test('Engine-Karte: Baustein „UI“ zeigt „RmlUi, Spielmenüs“ (fertig), Legende 11 · 2 · 7', async () => {
   const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'engine-map.json'), 'utf8'));
   const ui = map.schichten.flatMap((l) => l.bausteine).filter((b) => b.name === 'UI');
-  assert.deepEqual(ui, [{ name: 'UI', detail: 'RmlUi, Umzug läuft', status: 'vorschau' }]);
+  assert.deepEqual(ui, [{ name: 'UI', detail: 'RmlUi, Spielmenüs', status: 'fertig' }]);
+  assert.equal(map.schichten.flatMap((l) => l.bausteine).length, 20, '20 Bausteine');
   mock.reset();
   const { context, page } = await newPage(null);
   await openProject(page);
   const chip = await page.$$eval('#engineBody .chip', (cs) => cs.filter((c) => c.querySelector('.cn').textContent === 'UI')
     .map((c) => ({ status: c.dataset.status, text: c.textContent.replace(/\s+/g, ' ').trim() })));
-  assert.deepEqual(chip, [{ status: 'vorschau', text: 'UIRmlUi, Umzug läuft · Vorschau' }]);
-  assert.doesNotMatch(await text(page, '#engineBody'), /HUD-Tempo/, 'alter Text ist weg');
-  assert.match(await text(page, '#engineLegend'), /fertig: 10.*Vorschau: 3.*geplant: 7/);
+  assert.deepEqual(chip, [{ status: 'fertig', text: 'UIRmlUi, Spielmenüs · fertig' }]);
+  assert.doesNotMatch(await text(page, '#engineBody'), /HUD-Tempo|Umzug läuft/, 'alte Texte sind weg');
+  assert.match(await text(page, '#engineLegend'), /fertig: 11.*Vorschau: 2.*geplant: 7/);
   await context.close();
 });
 
