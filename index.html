@@ -660,6 +660,7 @@
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
       </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
+      <div id="buildsKlapp"></div>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
       <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
     </div>
@@ -791,6 +792,10 @@
   var HINT_TEXT = 'Einmal ins Spielbild tippen für flüssigere Darstellung';
   var offlineReason = null; // null = online; sonst der AppError, warum GitHub zuletzt nicht erreichbar war
   var savedBuilds = {};     // short -> true, wenn der Build vollständig lokal gespeichert ist
+  // Build-Liste: zugeklappt die neuesten BUILDS_SICHTBAR Builds (+ ggf. der gewählte ältere als zusätzlicher Eintrag).
+  // buildsOffen gilt nur für diese Sitzung (nie gespeichert).
+  var BUILDS_SICHTBAR = 3;
+  var buildsOffen = false;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -1976,6 +1981,7 @@
       li.className = 'muted';
       li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
       ul.appendChild(li);
+      $('buildsKlapp').textContent = '';
       syncStartFrame();
       return;
     }
@@ -2022,8 +2028,42 @@
       li.appendChild(label);
       ul.appendChild(li);
     });
+    applyBuildsKlapp();
     updateApiInfo();
     syncStartFrame();
+  }
+
+  // Zugeklappt: die neuesten BUILDS_SICHTBAR Builds und – falls er weiter unten liegt – der gewählte Build
+  // als zusätzlicher Eintrag (die Auswahl bleibt immer sichtbar). Darunter „Ältere Builds anzeigen (n)“
+  // bzw. aufgeklappt „Einklappen“. Ältere Einträge bleiben im DOM (nur ausgeblendet), damit Auswahl und
+  // Start-Rahmen unverändert funktionieren.
+  function applyBuildsKlapp() {
+    var lis = Array.prototype.slice.call($('buildList').children).filter(function (li) { return li.querySelector('input[name="build"]'); });
+    var box = $('buildsKlapp');
+    box.textContent = '';
+    if (lis.length <= BUILDS_SICHTBAR) { lis.forEach(function (li) { li.hidden = false; }); return; }
+    var verborgen = 0;
+    lis.forEach(function (li, i) {
+      var zeigen = buildsOffen || i < BUILDS_SICHTBAR || li.querySelector('input[name="build"]').checked;
+      li.hidden = !zeigen;
+      if (!zeigen) verborgen++;
+    });
+    if (!buildsOffen && !verborgen) return;
+    var btn = buildsOffen
+      ? klappKnopf('Einklappen', true, 'Build-Liste einklappen', function () {
+          buildsOffen = false;
+          applyBuildsKlapp();
+          var more = $('buildsMore');
+          zeigeNachEinklappen(more || $('buildList'), more);
+        })
+      : klappKnopf('Ältere Builds anzeigen (' + verborgen + ')', false, 'Ältere Builds anzeigen, ' + verborgen + ' weitere', function () {
+          buildsOffen = true;
+          applyBuildsKlapp();
+          var first = lis[BUILDS_SICHTBAR] && lis[BUILDS_SICHTBAR].querySelector('input');
+          if (first) { try { first.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+        });
+    btn.id = buildsOffen ? 'buildsLess' : 'buildsMore';
+    box.appendChild(btn);
   }
 
   function updateApiInfo() {
@@ -3599,7 +3639,7 @@
   $('projReload').addEventListener('click', function () { loadProject(true); });
   $('reloadBtn').addEventListener('click', refreshBuilds);
   // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
-  $('buildList').addEventListener('change', syncStartFrame);
+  $('buildList').addEventListener('change', function () { applyBuildsKlapp(); syncStartFrame(); });
   window.addEventListener('resize', fitHeader);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeader, function () { /* egal */ });
   // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).

@@ -113,3 +113,101 @@ describe('Teil A – Fortschritt', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Teil B – Build-Liste
+// ---------------------------------------------------------------------------
+const buildRows = (page) => page.$$eval('#buildList .build', (ls) => ls.filter((l) => l.getBoundingClientRect().height > 0).map((l) => {
+  const i = l.querySelector('input');
+  return l.querySelector('code').textContent + (i.checked ? '*' : '') + ([...l.querySelectorAll('.badge')].map((b) => ' ' + b.textContent).join(''));
+}));
+const buildsBtn = (page) => page.$$eval('#buildsKlapp button', (bs) => bs.map((b) => ({ id: b.id, text: b.textContent, expanded: b.getAttribute('aria-expanded'), label: b.getAttribute('aria-label'), h: Math.round(b.getBoundingClientRect().height), w: Math.round(b.getBoundingClientRect().width) })));
+
+describe('Teil B – Build-Liste', () => {
+  test('7 Builds: 3 sichtbar + „Ältere Builds anzeigen (4)“, aufgeklappt alle + „Einklappen“, Startzustand nach Neuladen', async () => {
+    mock.reset();
+    mock.builds = H.makeBuilds(7);
+    const { context, page, log } = await H.newPage({ device: 'iPhone 13' });
+    await H.openBuilds(page);
+    const keysBefore = await storageKeys(page);
+    const shorts = mock.builds.map((b) => b.short);
+    let rows = await buildRows(page);
+    assert.equal(rows.length, 3);
+    assert.match(rows[0], new RegExp(`^${shorts[0]}\\* neuester gespeichert$`), 'Auswahl und Abzeichen unverändert');
+    assert.deepEqual(rows.slice(1), [shorts[1], shorts[2]]);
+    let btn = await buildsBtn(page);
+    assert.equal(btn.length, 1);
+    assert.deepEqual([btn[0].id, btn[0].text, btn[0].expanded], ['buildsMore', 'Ältere Builds anzeigen (4)', 'false']);
+    assert.ok(btn[0].h === 44 && btn[0].w >= (await page.$eval('#buildList', (u) => u.getBoundingClientRect().width)) - 1, `volle Breite, 44 px: ${btn[0].w}x${btn[0].h}`);
+    const listW = await page.$eval('#buildList', (u) => Math.round(u.getBoundingClientRect().width));
+    assert.equal(btn[0].w, listW, 'volle Listenbreite');
+    // Knopf liegt zwischen Liste und „Spielen“
+    const order = await page.evaluate(() => {
+      const l = document.getElementById('buildList').getBoundingClientRect(), b = document.getElementById('buildsMore').getBoundingClientRect(), s = document.getElementById('playSlot').getBoundingClientRect();
+      return l.bottom <= b.top && b.bottom <= s.top;
+    });
+    assert.ok(order, 'Knopf unter der Liste, über „Spielen“');
+    await page.screenshot({ path: path.join(H.OUT, 'klappen-builds-zu.png'), fullPage: true });
+    // Tastatur: Tab erreicht den Knopf, Enter klappt auf
+    await page.focus('#buildsMore');
+    await page.keyboard.press('Enter');
+    rows = await buildRows(page);
+    assert.equal(rows.length, 7, 'alle Builds');
+    btn = await buildsBtn(page);
+    assert.deepEqual([btn[0].id, btn[0].text, btn[0].expanded, btn[0].h], ['buildsLess', 'Einklappen', 'true', 44]);
+    await page.screenshot({ path: path.join(H.OUT, 'klappen-builds-offen.png'), fullPage: true });
+    // Einklappen am Ende: danach Startzustand und „… anzeigen“ sichtbar
+    await page.$eval('#buildsLess', (b) => b.scrollIntoView({ block: 'end' }));
+    await page.click('#buildsLess');
+    assert.equal((await buildRows(page)).length, 3);
+    const more = await H.rectOf(page, '#buildsMore');
+    const vh = await page.evaluate(() => innerHeight);
+    assert.ok(more.top >= 0 && more.bottom <= vh, 'Knopf „Ältere Builds anzeigen“ sichtbar');
+    // Start-Rahmen folgt dem verschobenen Knopf „Spielen“
+    await page.waitForFunction(() => {
+      const s = document.getElementById('playSlot').getBoundingClientRect(), f = document.querySelector('#game.slot iframe').getBoundingClientRect();
+      return Math.abs(s.top - f.top) < 1 && Math.abs(s.left - f.left) < 1;
+    });
+    await noOverflow(page, 'Build-Liste');
+    assert.deepEqual(await storageKeys(page), keysBefore, 'kein Speicher für den Klapp-Zustand');
+    // Aufklappen, neu laden → wieder zu
+    await page.click('#buildsMore');
+    await page.reload();
+    await page.waitForSelector('#buildsView:not([hidden]) #buildList .build');
+    assert.equal((await buildRows(page)).length, 3, 'nach Neuladen wieder zugeklappt');
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  for (const n of [1, 3]) {
+    test(`${n} Build(s): kein Klapp-Knopf`, async () => {
+      mock.reset();
+      mock.builds = H.makeBuilds(n);
+      const { context, page } = await H.newPage({});
+      await H.openBuilds(page);
+      assert.equal((await buildRows(page)).length, n);
+      assert.deepEqual(await buildsBtn(page), []);
+      await context.close();
+    });
+  }
+
+  test('gewählter älterer Build bleibt als 4. Eintrag sichtbar, n zählt ihn nicht; Wechsel auf neuere Auswahl blendet ihn aus', async () => {
+    mock.reset();
+    mock.builds = H.makeBuilds(6);
+    const s = mock.builds.map((b) => b.short);
+    const { context, page } = await H.newPage({});
+    await H.openBuilds(page);
+    await page.click('#buildsMore');
+    await page.click(`#buildList label:has-text("${s[4]}")`);
+    await page.waitForFunction((x) => document.querySelector('#game.slot iframe')?.getAttribute('title') === 'Aether ' + x, s[4]);
+    await page.click('#buildsLess');
+    assert.deepEqual(await buildRows(page), [`${s[0]} neuester gespeichert`, s[1], s[2], `${s[4]}*`]);
+    assert.equal((await buildsBtn(page))[0].text, 'Ältere Builds anzeigen (2)');
+    assert.equal(await page.getAttribute('#game.slot iframe', 'title'), `Aether ${s[4]}`, 'Auswahl und Start-Rahmen bleiben');
+    // Auswahl auf einen der 3 neuesten → der 4. Eintrag verschwindet, n zählt wieder alle verborgenen
+    await page.click(`#buildList label:has-text("${s[1]}")`);
+    assert.deepEqual(await buildRows(page), [`${s[0]} neuester gespeichert`, `${s[1]}*`, s[2]]);
+    assert.equal((await buildsBtn(page))[0].text, 'Ältere Builds anzeigen (3)');
+    await context.close();
+  });
+});
