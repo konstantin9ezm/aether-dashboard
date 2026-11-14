@@ -108,6 +108,8 @@ async function githubApi(route) {
 const srv = { version: 'v1', navVersion: null, docLoads: 0, base: '' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.js': 'text/javascript', '.woff': 'font/woff', '.ttf': 'font/ttf' };
 let server, browser;
+const contexts = new Set();
+async function closeAll() { for (const c of contexts) await c.close().catch(() => {}); contexts.clear(); }
 
 async function start() {
   server = http.createServer((req, res) => {
@@ -138,6 +140,8 @@ async function stop() {
 async function newPage(opts = {}) {
   const dev = opts.device ? { ...devices[opts.device] } : { viewport: opts.viewport || { width: 1180, height: 820 } };
   const context = await browser.newContext({ ...dev, locale: 'de-DE', timezoneId: 'Europe/Berlin', serviceWorkers: opts.noSw ? 'block' : 'allow' });
+  contexts.add(context);
+  context.on('close', () => contexts.delete(context));
   const page = await context.newPage();
   const log = { errors: [], dialogs: [] };
   page.on('pageerror', (e) => log.errors.push(String(e)));
@@ -190,4 +194,4 @@ async function startGame(page) {
 // Tippfläche und Sichtbarkeit eines Elements.
 const rectOf = (page, sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, top: r.top, bottom: r.bottom, visible: r.width > 0 && r.height > 0 }; });
 
-module.exports = { ROOT, OUT, TOKEN, BASE, DASH_BASE, mock, srv, start, stop, newPage, openProject, openBuilds, waitProjectLoaded, setVisibility, startGame, rectOf, makeBuilds, makePulls, roadmap, sha };
+module.exports = { closeAll, ROOT, OUT, TOKEN, BASE, DASH_BASE, mock, srv, start, stop, newPage, openProject, openBuilds, waitProjectLoaded, setVisibility, startGame, rectOf, makeBuilds, makePulls, roadmap, sha };

@@ -4,16 +4,20 @@
 // Aufruf: node --test tests/selbst-aktualisieren.test.js
 'use strict';
 
-const { test, before, after, describe } = require('node:test');
+const { test, before, after, afterEach, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const H = require('./mock-dashboard');
 const { mock, srv, BASE, DASH_BASE } = H;
 
 before(H.start);
 after(H.stop);
+// Schlägt ein Test fehl, bevor er seinen Kontext schließt, liefe dessen Intervall weiter und verfälschte die
+// Anfragezählung der folgenden Tests: daher nach jedem Test alle Kontexte schließen.
+afterEach(H.closeAll);
 
-// Protokoll der automatischen Versuche: [{ grund, ergebnis }]
+// Protokoll der automatischen Versuche: [{ grund, ergebnis }]; Versionsprüfungen (Teil E) stehen mit grund 'version' darin.
 const auto = (page) => page.evaluate(() => window.__aetherAuto.slice());
+const daten = (list) => list.filter((x) => x.grund !== 'version');
 // Warten, bis n (weitere) Einträge mit diesem Ergebnis im Protokoll stehen.
 async function untilAuto(page, ergebnis, n = 1, from = 0) {
   await page.waitForFunction(([e, k, f]) => window.__aetherAuto.slice(f).filter((x) => x.ergebnis === e).length >= k, [ergebnis, n, from], { timeout: 20000 });
@@ -90,7 +94,7 @@ describe('Teil D – Daten selbst aktualisieren', () => {
     const runde = mock.requests.slice(r1, apiCount()).sort();
     assert.deepEqual(runde, PROJEKT_ANFRAGEN, `Anfragen je Neuladen (${runde.length})`);
     assert.ok(r1 - r0 === PROJEKT_ANFRAGEN.length, `auch die Runde davor: ${r1 - r0}`);
-    assert.ok((await auto(page)).every((x) => x.grund === 'intervall'));
+    assert.ok(daten(await auto(page)).every((x) => x.grund === 'intervall'));
     assert.deepEqual(log.errors, []);
     await context.close();
   });
@@ -168,7 +172,7 @@ describe('Teil D – Daten selbst aktualisieren', () => {
     await H.setVisibility(page, 'hidden');
     await H.setVisibility(page, 'visible');
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    assert.deepEqual((await auto(page)).map((x) => x.grund + ':' + x.ergebnis), ['sichtbar:zu-frueh', 'online:zu-frueh']);
+    assert.deepEqual(daten(await auto(page)).map((x) => x.grund + ':' + x.ergebnis), ['sichtbar:zu-frueh', 'online:zu-frueh']);
     assert.equal(apiCount(), r0);
     await context.close();
     // Ohne Test-Schalter: kein Protokoll
@@ -207,7 +211,7 @@ describe('Teil D – Daten selbst aktualisieren', () => {
     const n1 = await autoLen(page);
     await untilAuto(page, 'feedback', 3, n1);
     assert.equal(apiCount(), r0, 'keine Anfrage während Spiel und Dialog');
-    assert.ok((await auto(page)).slice(n0).every((x) => x.ergebnis === 'spiel' || x.ergebnis === 'feedback'));
+    assert.ok(daten((await auto(page)).slice(n0)).every((x) => x.ergebnis === 'spiel' || x.ergebnis === 'feedback'));
     await page.click('#fbClose');
     // Spiel schließen → sofort einmal aktualisieren
     const n2 = await autoLen(page);
@@ -254,4 +258,161 @@ describe('Teil D – Daten selbst aktualisieren', () => {
       await context.close();
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Teil E – neue Dashboard-Version
+// ---------------------------------------------------------------------------
+// Auf eine Bedingung im Test-Server warten (Seitenaufrufe zählen), kurz nachgesehen – keine feste Wartezeit.
+async function until(cond, label, ms = 20000) {
+  const t0 = Date.now();
+  while (!cond()) {
+    if (Date.now() - t0 > ms) throw new Error('Zeitüberschreitung: ' + label);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+const version = (page) => page.$eval('meta[name="aether-version"]', (m) => m.content);
+// Mit blockiertem Service Worker (serviceWorkers: 'block', nur um Seitenaufrufe zu zählen) meldet Chromium im
+// abgeschotteten Spiel-iframe einen SecurityError beim Lesen von navigator.serviceWorker – Folge der Testumgebung.
+const echteFehler = (errors) => errors.filter((e) => !/Service worker is disabled because the context is sandboxed/.test(e));
+const vlog = (page) => page.evaluate(() => window.__aetherAuto.filter((x) => x.grund === 'version').map((x) => x.ergebnis));
+async function untilVersion(page, ergebnis, n = 1) {
+  await page.waitForFunction(([e, k]) => window.__aetherAuto.filter((x) => x.grund === 'version' && x.ergebnis === e).length >= k, [ergebnis, n], { timeout: 20000 });
+}
+
+describe('Teil E – neue Dashboard-Version', () => {
+  test('neue Version → Neuladen ohne Spiel, danach kein weiteres Neuladen', async () => {
+    mock.reset();
+    srv.version = 'v1'; srv.navVersion = null; srv.docLoads = 0;
+    const { context, page, log } = await H.newPage({ auto: 300, minGap: 0, versionStart: 0, noSw: true });
+    await H.openBuilds(page);
+    assert.equal(await version(page), 'v1');
+    await untilVersion(page, 'gleich', 2);
+    assert.equal(srv.docLoads, 1);
+    srv.version = 'v2';
+    await until(() => srv.docLoads === 2, 'Neuladen');
+    await page.waitForSelector('#buildsView:not([hidden]) #buildList .build');
+    assert.equal(await version(page), 'v2');
+    await untilVersion(page, 'gleich', 3);
+    assert.equal(srv.docLoads, 2, 'genau ein automatisches Neuladen');
+    assert.deepEqual(await page.evaluate(() => Object.keys(sessionStorage)), ['aether.versionNeugeladen'], 'nur der Merker gegen Kreislauf');
+    assert.deepEqual(echteFehler(log.errors), []);
+    await context.close();
+  });
+
+  test('kein Kreislauf: liefert der Seitenaufruf weiter die alte Version, wird nur einmal neu geladen', async () => {
+    mock.reset();
+    srv.version = 'v2'; srv.navVersion = 'v1'; srv.docLoads = 0;
+    const { context, page } = await H.newPage({ auto: 250, minGap: 0, versionStart: 0, noSw: true });
+    await page.goto(srv.base);
+    await until(() => srv.docLoads === 2, 'ein Neuladen');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await untilVersion(page, 'schon-neugeladen', 4);
+    assert.equal(srv.docLoads, 2, 'kein weiteres Neuladen');
+    assert.equal(await version(page), 'v1');
+    srv.navVersion = null;
+    await context.close();
+  });
+
+  test('mit laufendem Spiel (und Feedback-Dialog) erst nach dem Schließen neu laden', async () => {
+    mock.reset();
+    srv.version = 'v1'; srv.navVersion = null; srv.docLoads = 0;
+    const { context, page } = await H.newPage({ auto: 300, minGap: 0, versionStart: 0, noSw: true });
+    await H.openBuilds(page);
+    const frame = await H.startGame(page);
+    srv.version = 'v2';
+    await untilVersion(page, 'wartet', 2);
+    await page.focus('#game iframe');
+    await frame.press('canvas', 'f');
+    await page.waitForSelector('#feedback:not([hidden])');
+    const w = (await vlog(page)).filter((x) => x === 'wartet').length;
+    await untilVersion(page, 'wartet', w + 2);
+    assert.equal(srv.docLoads, 1, 'nicht während des Spiels');
+    await page.click('#fbClose');
+    await untilVersion(page, 'wartet', w + 3);
+    assert.equal(srv.docLoads, 1, 'Spiel läuft noch');
+    await page.click('#exitBtn');
+    await until(() => srv.docLoads === 2, 'Neuladen nach dem Schließen');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.equal(await version(page), 'v2');
+    await context.close();
+  });
+
+  test('Texteingabefeld mit Fokus (Token): erst nach dem Verlassen des Felds', async () => {
+    mock.reset();
+    srv.version = 'v1'; srv.navVersion = null; srv.docLoads = 0;
+    const { context, page } = await H.newPage({ auto: 300, minGap: 0, versionStart: 0, noSw: true, withToken: false });
+    await page.goto(srv.base);
+    await page.waitForSelector('#tokenView:not([hidden])');
+    await page.focus('#tokenInput');
+    await page.keyboard.type('github_pat_');
+    srv.version = 'v2';
+    await untilVersion(page, 'wartet', 2);
+    assert.equal(srv.docLoads, 1);
+    await page.click('#tokenView h2');
+    await until(() => srv.docLoads === 2, 'Neuladen nach dem Verlassen');
+    await context.close();
+  });
+
+  test('Screen-Editor und Logo-Seite laden nicht automatisch neu', async () => {
+    mock.reset();
+    srv.version = 'v1'; srv.navVersion = null; srv.docLoads = 0;
+    const { context, page } = await H.newPage({ auto: 300, minGap: 0, versionStart: 0, noSw: true });
+    await H.openBuilds(page);
+    const editors = [];
+    for (const f of ['screen-editor.html', 'logo.html']) {
+      const p = await context.newPage();
+      await p.goto(srv.base + f);
+      await p.evaluate(() => { window.__marke = 'ungespeichert'; });
+      editors.push(p);
+    }
+    srv.version = 'v2';
+    await until(() => srv.docLoads === 2, 'Hauptseite lädt neu');
+    for (const p of editors) {
+      await H.setVisibility(p, 'hidden');
+      await H.setVisibility(p, 'visible');
+      await p.evaluate(() => window.dispatchEvent(new Event('online')));
+    }
+    // Hauptseite prüft weiter (gleich), die Editor-Seiten bleiben unverändert offen.
+    await page.waitForSelector('#buildsView:not([hidden])');
+    await untilVersion(page, 'gleich', 2);
+    for (const p of editors) assert.equal(await p.evaluate(() => window.__marke), 'ungespeichert', `${p.url()} nicht neu geladen`);
+    for (const f of ['screen-editor.html', 'logo.html']) {
+      const src = require('node:fs').readFileSync(require('node:path').join(H.ROOT, f), 'utf8');
+      assert.doesNotMatch(src, /aether-version|versionspruefung|location\.reload/, `${f} ohne Versions-Neuladen`);
+    }
+    await context.close();
+  });
+
+  test('mit Service Worker: neue Version landet in der App-Hülle, offline keine Prüfung und keine Fehler', async () => {
+    mock.reset();
+    srv.version = 'v1'; srv.navVersion = null; srv.docLoads = 0;
+    const { context, page, log } = await H.newPage({ auto: 300, minGap: 0, versionStart: 0 });
+    await H.openBuilds(page);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.evaluate(() => { window.__marke = 1; });
+    srv.version = 'v2';
+    await page.waitForFunction(() => !window.__marke && document.querySelector('meta[name="aether-version"]')?.content === 'v2', null, { timeout: 20000 }).catch(async () => {
+      // Navigation kann den Kontext zerstören; dann auf die neue Seite warten.
+      await page.waitForSelector('meta[name="aether-version"][content="v2"]', { state: 'attached', timeout: 20000 });
+    });
+    await page.waitForSelector('#buildsView:not([hidden])');
+    assert.equal(await version(page), 'v2');
+    const shell = await page.evaluate(async () => {
+      const c = await caches.open('aether-shell-v1');
+      const r = await c.match(location.origin + '/');
+      return r ? (await r.text()).match(/name="aether-version" content="([^"]*)"/)[1] : null;
+    });
+    assert.equal(shell, 'v2', 'App-Hülle enthält die neue Version (offline startbar)');
+    const keys = await page.evaluate(async () => (await caches.keys()).sort());
+    assert.ok(keys.every((k) => k === 'aether-shell-v1' || k === 'aether-builds-v1'), keys.join(','));
+    // Offline: keine Prüfung, keine Fehler
+    await context.setOffline(true);
+    await H.setVisibility(page, 'hidden');
+    await H.setVisibility(page, 'visible');
+    await untilVersion(page, 'offline', 1);
+    assert.deepEqual(log.errors, []);
+    await context.setOffline(false);
+    await context.close();
+  });
 });

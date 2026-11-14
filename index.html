@@ -2,6 +2,8 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
+<!-- Versionsmarke: pages.yml setzt beim Veröffentlichen den Commit ein (Teil „Selbst aktualisieren“). -->
+<meta name="aether-version" content="__AETHER_VERSION__">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0e14">
@@ -1766,8 +1768,9 @@
     document.documentElement.classList.remove('playing');
     exitFullscreen();
     layoutGame();
-    // Nach dem Schließen des Spiels sofort einmal aktualisieren (sobald die Ansicht gewechselt ist).
-    setTimeout(function () { autoAktualisieren('spielende'); }, 0);
+    // Nach dem Schließen des Spiels sofort einmal aktualisieren (sobald die Ansicht gewechselt ist);
+    // eine inzwischen erkannte neue Dashboard-Version lädt jetzt.
+    setTimeout(function () { versionNeuladenWennMoeglich(); autoAktualisieren('spielende'); }, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -1819,6 +1822,7 @@
     if (name !== 'game' && name !== 'loading' && game) stopGame(true);
     fitHeader();
     syncStartFrame();
+    if (name !== 'game' && name !== 'loading') setTimeout(versionNeuladenWennMoeglich, 0);
   }
 
   // Kopfzeile ohne waagerechtes Scrollen: Die vorhandenen Schmal-Regeln (Symbol statt „WebGPU-Check“,
@@ -3595,6 +3599,55 @@
     setProjStamp();
   }
 
+  // ---------------------------------------------------------------------------
+  // Selbst aktualisieren (neue Dashboard-Version, nur diese Seite – nicht Screen-Editor und Logo-Seite):
+  // pages.yml setzt beim Veröffentlichen den Commit in <meta name="aether-version">. Beim Start, bei
+  // Rückkehr in die App und mit jeder Intervall-Runde wird index.html am Browser-Cache vorbei gelesen (über
+  // den Service Worker, der dabei auch die App-Hülle auffrischt) und die Marke verglichen. Ist sie neu, lädt
+  // die Seite neu: sofort, wenn kein Spiel läuft oder lädt, kein Feedback-Dialog offen ist und kein
+  // Texteingabefeld den Fokus hat, sonst sobald das zutrifft. Höchstens ein automatisches Neuladen je
+  // Version (Merker in sessionStorage, nur die Versionsmarke). Ohne Netz keine Prüfung; Fehler bleiben still.
+  // ---------------------------------------------------------------------------
+  var VERSION_START_MS = 3000; // erste Prüfung kurz nach dem Start (nach den Anfragen des ersten Ladens)
+  var versionStartMs = (typeof window.AETHER_TEST_VERSION_START_MS === 'number' && window.AETHER_TEST_VERSION_START_MS >= 0) ? window.AETHER_TEST_VERSION_START_MS : VERSION_START_MS;
+  var VERSION_RE = /<meta\s+name="aether-version"\s+content="([^"]*)"/i;
+  var VERSION_NEULADEN_KEY = 'aether.versionNeugeladen';
+  function gueltigeVersion(v) { return typeof v === 'string' && /^[\w.\-]{1,64}$/.test(v) && v.indexOf('__') !== 0; }
+  var eigeneVersion = (function () { var m = document.querySelector('meta[name="aether-version"]'); return m ? m.getAttribute('content') || '' : ''; })();
+  // Lokal (ohne pages.yml) steht der Platzhalter in der Seite: dann keine Prüfung.
+  var versionAktiv = gueltigeVersion(eigeneVersion);
+  var neueVersion = null;
+  var versionPruefung = false;
+  function versionMerke(e) { if (autoProtokoll) autoProtokoll.push({ grund: 'version', ergebnis: e }); }
+
+  function pruefeVersion() {
+    if (!versionAktiv || versionPruefung) return;
+    if (document.visibilityState !== 'visible') return;
+    if (navigator.onLine === false) { versionMerke('offline'); return; }
+    if (neueVersion) { versionNeuladenWennMoeglich(); return; }
+    versionPruefung = true;
+    withProjTimeout(fetch(location.pathname + '?versionspruefung=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' })).then(function (res) {
+      return res.ok ? res.text() : '';
+    }).then(function (text) {
+      var m = VERSION_RE.exec(text || '');
+      if (!m || !gueltigeVersion(m[1])) { versionMerke('unbekannt'); return; }
+      if (m[1] === eigeneVersion) { versionMerke('gleich'); return; }
+      neueVersion = m[1];
+      versionNeuladenWennMoeglich();
+    }).catch(function () { versionMerke('fehler'); }).then(function () { versionPruefung = false; });
+  }
+
+  function versionNeuladenWennMoeglich() {
+    if (!neueVersion) return;
+    if (feedback || spielOderLaden() || isTextEntry(document.activeElement)) { versionMerke('wartet'); return; }
+    var schon;
+    try { schon = sessionStorage.getItem(VERSION_NEULADEN_KEY); } catch (e) { versionMerke('ohne-merker'); return; }
+    if (schon === neueVersion) { versionMerke('schon-neugeladen'); return; }
+    try { sessionStorage.setItem(VERSION_NEULADEN_KEY, neueVersion); } catch (e) { versionMerke('ohne-merker'); return; }
+    versionMerke('neuladen');
+    location.reload();
+  }
+
   function setProjStamp() {
     var parts = ['Stand: ' + fmtBerlinTime(new Date())];
     if (lastRate && token) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
@@ -3973,11 +4026,16 @@
     else if (!$('projectView').hidden) loadProject(false);
   });
 
-  // Selbst aktualisieren: Intervall und Rückkehr in die App bzw. den Tab.
-  if (autoMs > 0) setInterval(function () { autoAktualisieren('intervall'); }, autoMs);
+  // Selbst aktualisieren: Intervall und Rückkehr in die App bzw. den Tab (Daten und Dashboard-Version).
+  if (autoMs > 0) setInterval(function () { autoAktualisieren('intervall'); pruefeVersion(); }, autoMs);
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') autoAktualisieren('sichtbar');
+    if (document.visibilityState !== 'visible') return;
+    autoAktualisieren('sichtbar');
+    pruefeVersion();
   });
+  // Wartende neue Version: sobald kein Texteingabefeld mehr den Fokus hat.
+  document.addEventListener('focusout', function () { setTimeout(versionNeuladenWennMoeglich, 0); });
+  setTimeout(pruefeVersion, versionStartMs);
 
   // Service Worker hält die Seite selbst für den Offline-Start vor (siehe sw.js).
   if ('serviceWorker' in navigator) {
