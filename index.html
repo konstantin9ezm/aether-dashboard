@@ -792,6 +792,7 @@
   var HINT_TEXT = 'Einmal ins Spielbild tippen für flüssigere Darstellung';
   var offlineReason = null; // null = online; sonst der AppError, warum GitHub zuletzt nicht erreichbar war
   var savedBuilds = {};     // short -> true, wenn der Build vollständig lokal gespeichert ist
+  var zuletztGeladen = { builds: 0, project: 0 }; // Zeitpunkt des letzten erfolgreichen Ladens (Selbst aktualisieren)
   // Build-Liste: zugeklappt die neuesten BUILDS_SICHTBAR Builds (+ ggf. der gewählte ältere als zusätzlicher Eintrag).
   // buildsOffen gilt nur für diese Sitzung (nie gespeichert).
   var BUILDS_SICHTBAR = 3;
@@ -1765,6 +1766,8 @@
     document.documentElement.classList.remove('playing');
     exitFullscreen();
     layoutGame();
+    // Nach dem Schließen des Spiels sofort einmal aktualisieren (sobald die Ansicht gewechselt ist).
+    setTimeout(function () { autoAktualisieren('spielende'); }, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -2098,6 +2101,7 @@
   async function applyIndex(list) {
     builds = list;
     indexLoaded = true;
+    zuletztGeladen.builds = Date.now();
     storeLastIndex(list);
     setOffline(null);
     await refreshSaved();
@@ -2170,6 +2174,7 @@
     }
     builds = list;
     indexLoaded = true;
+    zuletztGeladen.builds = Date.now();
     storeLastIndex(list);
     setOffline(null);
     await refreshSaved();
@@ -2776,6 +2781,8 @@
     box.dataset.state = 'unavailable';
   }
 
+  // CI-Details offen? Nur im Speicher, damit automatisches Neuladen sie nicht zuklappt.
+  var ciDetailsOffen = false;
   function renderCiStats(box, st, latestRun) {
     box.textContent = '';
     if (!st.run) {
@@ -2838,11 +2845,14 @@
 
     var det = el('div', 'ci-details');
     det.id = 'ciDetails';
-    det.hidden = true;
+    det.hidden = !ciDetailsOffen;
+    btn.setAttribute('aria-expanded', String(ciDetailsOffen));
+    btn.textContent = (ciDetailsOffen ? '▾' : '▸') + ' Details';
     renderCiDetails(det, st, pct, level);
     box.appendChild(det);
     btn.addEventListener('click', function () {
       var open = det.hidden;
+      ciDetailsOffen = open;
       det.hidden = !open;
       btn.setAttribute('aria-expanded', String(open));
       btn.textContent = (open ? '▾' : '▸') + ' Details';
@@ -3496,6 +3506,9 @@
   }
 
   function loadCiPart(force, fromPoll) {
+    // Manuelles Laden zeichnet die CI-Details wie bisher zugeklappt; nur das automatische Neuladen
+    // (renderStillCi) übernimmt den Zustand der Sitzung.
+    if (!fromPoll) ciDetailsOffen = false;
     return loadPart($('ciBody'), 'Lade Build-Status …', fetchLatestRun, function (box, run) {
       var info = renderRun(box, run);
       stopProjectPolling();
@@ -3578,9 +3591,136 @@
       btn.disabled = false;
     }
     if (gen !== projGen) return; // inzwischen offline (oder neu geladen)
+    zuletztGeladen.project = Date.now();
+    setProjStamp();
+  }
+
+  function setProjStamp() {
     var parts = ['Stand: ' + fmtBerlinTime(new Date())];
     if (lastRate && token) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
     $('projStamp').textContent = parts.join(' · ');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Selbst aktualisieren (Daten): Projektansicht bzw. Build-Liste laden im Hintergrund neu – alle
+  // AUTO_AKTUALISIEREN_MS, solange die Seite sichtbar und online ist und ein Token da ist, sowie sofort bei
+  // Rückkehr in die App (visibilitychange) und beim Ereignis „online“, frühestens AUTO_MIN_ABSTAND_MS nach
+  // dem letzten Laden (= 60-s-Cache). Nie während ein Spiel läuft oder lädt und nie bei offenem
+  // Feedback-Dialog. Still: kein „Lade …“, keine Fehlermeldung; Klapp-Zustand, Scroll-Position und
+  // Build-Auswahl bleiben. Schlägt es fehl, bleiben die vorhandenen Daten stehen.
+  // ---------------------------------------------------------------------------
+  var AUTO_AKTUALISIEREN_MS = 120 * 1000; // 0 = aus
+  var AUTO_MIN_ABSTAND_MS = 60 * 1000;
+  // Nur für die Tests: kürzere Werte, gesetzt bevor dieses Skript läuft.
+  var autoMs = (typeof window.AETHER_TEST_AUTO_MS === 'number' && window.AETHER_TEST_AUTO_MS >= 0) ? window.AETHER_TEST_AUTO_MS : AUTO_AKTUALISIEREN_MS;
+  var autoMinMs = (typeof window.AETHER_TEST_AUTO_MIN_MS === 'number' && window.AETHER_TEST_AUTO_MIN_MS >= 0) ? window.AETHER_TEST_AUTO_MIN_MS : AUTO_MIN_ABSTAND_MS;
+  var autoLaeuft = false;
+  // Protokoll nur mit Test-Schalter (Grund und Ergebnis jedes Versuchs, keine Daten).
+  var autoProtokoll = typeof window.AETHER_TEST_AUTO_MS === 'number' ? (window.__aetherAuto = []) : null;
+  function autoMerke(grund, ergebnis) { if (autoProtokoll) autoProtokoll.push({ grund: grund, ergebnis: ergebnis }); }
+
+  // Spiel offen oder im Start (nach dem Tipp im Start-Rahmen: Laden, Spiel) bzw. Ladeansicht sichtbar.
+  function spielOderLaden() {
+    return !!game || !!(frame && frame.state !== 'start') || !!loadAbort || !$('loadingView').hidden;
+  }
+  function autoHindernis() {
+    if (!autoMs) return 'aus';
+    if (document.visibilityState !== 'visible') return 'verborgen';
+    if (navigator.onLine === false) return 'offline';
+    if (!token) return 'ohne-token';
+    if (feedback) return 'feedback';
+    if (game) return 'spiel';
+    if (spielOderLaden()) return 'laedt';
+    if (autoLaeuft) return 'laeuft';
+    return null;
+  }
+  function autoAktualisieren(grund) {
+    var h = autoHindernis();
+    var ansicht = !$('buildsView').hidden ? 'builds' : !$('projectView').hidden ? 'project' : null;
+    if (!h && !ansicht) h = 'ansicht';
+    // Offline-Zustand (Hinweis oben) räumt weiterhin der bestehende Weg auf (Ereignis „online“, „Aktualisieren“).
+    if (!h && isOffline()) h = 'offline';
+    if (!h && ansicht === 'project' && $('projReload').disabled) h = 'laeuft';
+    if (!h && Date.now() - zuletztGeladen[ansicht] < autoMinMs) h = 'zu-frueh';
+    if (h) { autoMerke(grund, h); return; }
+    autoLaeuft = true;
+    (ansicht === 'builds' ? stillBuilds() : stillProject()).then(function (r) {
+      autoLaeuft = false;
+      autoMerke(grund, r || 'geladen');
+    }, function () {
+      autoLaeuft = false;
+      autoMerke(grund, 'fehler');
+    });
+  }
+
+  // Build-Liste: 1 API-Anfrage (index.json). Unveränderte Liste: nichts neu zeichnen. Ein neuer Build
+  // erscheint in der Liste, wird aber nicht automatisch heruntergeladen (das ginge nur mit Ladeansicht).
+  async function stillBuilds() {
+    var list = await checkOnline();
+    zuletztGeladen.builds = Date.now();
+    storeLastIndex(list);
+    if (JSON.stringify(list) === JSON.stringify(builds)) return 'unveraendert';
+    builds = list;
+    indexLoaded = true;
+    await refreshSaved();
+    var x = window.scrollX, y = window.scrollY;
+    renderBuilds(); // Auswahl bleibt (gewählter Build per Kurz-Hash), Klapp-Zustand bleibt (buildsOffen)
+    window.scrollTo(x, y);
+    return 'geladen';
+  }
+
+  // Zeitleiste vollständig (aether und Dashboard) holen, bevor gezeichnet wird: kein Zwischenstand
+  // „Dashboard-PRs werden geladen …“. Scheitert nur das Dashboard-Repo, bleiben die bisherigen Daten.
+  async function stillTimeline() {
+    var d = await fetchTimeline(true);
+    if (d.later) {
+      var dash = await d.later;
+      d = { aether: d.aether, items: mergeTimeline(d.aether, dash || []), dash: dash === null ? 'error' : 'ok' };
+    }
+    var alt = $('timelineBody')._tl;
+    if (d.dash === 'error' && alt && alt.dash === 'ok') throw new Error('Dashboard-PRs nicht erreichbar');
+    return d;
+  }
+
+  // Projektansicht: alle Teile holen (der 60-s-Cache ist zu diesem Zeitpunkt abgelaufen, siehe
+  // AUTO_MIN_ABSTAND_MS), dann in einem Schritt zeichnen. Teile mit Fehler bleiben, wie sie sind.
+  async function stillProject() {
+    var gen = projGen;
+    var settle = function (p) { return p.then(function (v) { return { ok: true, v: v }; }, function (e) { return { ok: false, e: e }; }); };
+    var ci = fetchLatestRun(true).then(function (run) {
+      if (!run) return { run: null, st: null };
+      return fetchCiStats(true).then(function (st) { return { run: run, st: st }; });
+    });
+    var r = await Promise.all([settle(ci), settle(stillTimeline()), settle(fetchRoadmap(true)), settle(fetchEngineMap(true))]);
+    if (gen !== projGen || $('projectView').hidden || isOffline() || feedback || spielOderLaden()) return 'verworfen';
+    var x = window.scrollX, y = window.scrollY;
+    var neu = 0;
+    if (r[0].ok) { renderStillCi(r[0].v); neu++; }
+    if (r[1].ok) { renderTimeline($('timelineBody'), r[1].v); neu++; }
+    if (r[2].ok) { renderRoadmap($('roadmapBody'), r[2].v); neu++; }
+    if (r[3].ok) { renderEngineMap($('engineBody'), r[3].v); neu++; }
+    window.scrollTo(x, y);
+    if (!neu) throw new Error('nichts geladen');
+    if (neu < r.length) return 'teilweise'; // Stempel „Stand: …“ bleibt beim letzten vollständigen Laden
+    zuletztGeladen.project = Date.now();
+    setProjStamp();
+    return 'geladen';
+  }
+
+  // Build-Ampel und CI-Zeile in einem Schritt (ohne „Lade CI-Laufzeit …“); Nachladen laufender Builds wie bisher.
+  function renderStillCi(d) {
+    var box = $('ciBody');
+    var info = renderRun(box, d.run);
+    stopProjectPolling();
+    if (info && info.running && !$('projectView').hidden) {
+      pollTimer = setTimeout(function () { if (!$('projectView').hidden) loadCiPart(true, true); }, POLL_RUNNING_MS);
+    }
+    if (!d.run) return;
+    var t = el('div', 'ci-time');
+    t.id = 'ciTime';
+    t.setAttribute('aria-live', 'off');
+    box.appendChild(t);
+    try { renderCiStats(t, d.st, d.run); } catch (e) { renderCiUnavailable(t); }
   }
 
   function setHash(h) {
@@ -3827,9 +3967,16 @@
   });
   window.addEventListener('online', function () {
     updateTools();
-    if (!offlineReason || !token || loadAbort || game) return;
+    if (!offlineReason) { autoAktualisieren('online'); return; }
+    if (!token || loadAbort || game) return;
     if (!$('buildsView').hidden) refreshBuilds();
     else if (!$('projectView').hidden) loadProject(false);
+  });
+
+  // Selbst aktualisieren: Intervall und Rückkehr in die App bzw. den Tab.
+  if (autoMs > 0) setInterval(function () { autoAktualisieren('intervall'); }, autoMs);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') autoAktualisieren('sichtbar');
   });
 
   // Service Worker hält die Seite selbst für den Offline-Start vor (siehe sw.js).
