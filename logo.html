@@ -100,9 +100,9 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .row.grow > *{ flex:1 1 0; }
 .sub{ font-size:13px; color:var(--muted); margin:10px 0 0; }
 .note{ font-size:13px; color:var(--muted); margin:6px 0 0; }
-#modal, #frage{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
-#modal[hidden], #frage[hidden]{ display:none; }
-#frage p{ color:var(--text); font-size:16px; }
+#modal, #frage, #rsName, #rsFrage{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
+#modal[hidden], #frage[hidden], #rsName[hidden], #rsFrage[hidden]{ display:none; }
+#frage p, #rsFrage p{ color:var(--text); font-size:16px; }
 .dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
 .dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; }
 .dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
@@ -156,6 +156,20 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
 .zahl[aria-invalid="true"]{ border-color:var(--danger); }
 .ring-knopf{ margin-top:14px; }
 #ringRegler[hidden], #ringBrocken[hidden]{ display:none; }
+/* Ring-Sammlung: Zeile darf auf schmalen Bildschirmen umbrechen */
+.ring-sammlung{ margin:0 0 10px; padding:0 0 10px; border-bottom:1px solid var(--line); }
+.rs-zeile{ display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
+.rs-zeile > label{ font-size:15px; font-weight:600; }
+.rs-zeile select{ font:inherit; font-size:16px; min-height:44px; flex:1 1 12em; min-width:0; max-width:100%; padding:6px 10px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.rs-geaendert{ font-size:13px; color:var(--sel); font-weight:600; }
+.rs-geaendert[hidden]{ display:none; }
+.rs-knoepfe{ display:flex; flex-wrap:wrap; gap:6px; flex:1 1 100%; }
+.rs-knoepfe button{ flex:1 1 auto; }
+.rs-datei{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.rs-datei button{ font-size:13px; padding:4px 10px; background:transparent; flex:1 1 auto; }
+#rsName input{ font:inherit; font-size:16px; width:100%; min-height:44px; padding:6px 10px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); margin:0 0 6px; }
+#rsName input[aria-invalid="true"]{ border-color:var(--danger); }
+.rs-fehler{ color:var(--danger) !important; font-size:14px !important; min-height:1.4em; }
 .auswahl-text{ font-size:15px; margin:4px 0 10px; min-height:1.4em; }
 /* Bühne im Modus „Brocken bearbeiten“: Ziehen bewegt Brocken, nicht die Seite */
 #editorBuehne{ position:relative; }
@@ -270,6 +284,25 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
     </div>
 
     <div role="tabpanel" class="panel" id="panelRing" aria-labelledby="tabRing" hidden>
+      <div class="ring-sammlung" id="ringSammlung">
+        <div class="rs-zeile">
+          <label for="rsAuswahl">Ring:</label>
+          <select id="rsAuswahl"></select>
+          <span class="rs-geaendert" id="rsGeaendert" hidden>geändert</span>
+          <div class="rs-knoepfe" role="group" aria-label="Ring-Sammlung">
+            <button type="button" id="rsSpeichern">Speichern</button>
+            <button type="button" id="rsSpeichernUnter">Speichern unter …</button>
+            <button type="button" id="rsUmbenennen">Umbenennen</button>
+            <button type="button" id="rsKopieren">Kopieren</button>
+            <button type="button" id="rsLoeschen">Löschen</button>
+          </div>
+        </div>
+        <div class="rs-datei">
+          <button type="button" id="rsDateiSichern">Sammlung als Datei sichern</button>
+          <button type="button" id="rsDateiLaden">Sammlung laden</button>
+          <input type="file" id="rsDatei" accept="application/json,.json" hidden>
+        </div>
+      </div>
       <div class="ebenen">
         <label class="check" data-ring="hinten"><input type="checkbox" id="rHinten"><span>Ring hinten</span></label>
         <label class="check" data-ring="vorne"><input type="checkbox" id="rVorne"><span>Ring vorne</span></label>
@@ -420,6 +453,17 @@ input[type="range"]{ width:100%; min-height:44px; margin:0; accent-color:var(--s
 <div id="frage" hidden><div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="fText">
   <p id="fText">Änderungen an Brocken des Rings verwerfen? Selbst gesetzte Brocken bleiben.</p>
   <div class="row grow"><button type="button" id="fAbbrechen">Abbrechen</button><button type="button" id="fVerwerfen" class="primary">Verwerfen</button></div>
+</div></div>
+<div id="rsName" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="rsNameTitel">
+  <h2 id="rsNameTitel"></h2>
+  <label for="rsNameFeld" class="titel">Name (1–40 Zeichen)</label>
+  <input type="text" id="rsNameFeld" spellcheck="false" autocomplete="off" autocapitalize="off" enterkeyhint="done">
+  <p class="rs-fehler" id="rsNameFehler" role="alert"></p>
+  <div class="row grow"><button type="button" id="rsNameAbbrechen">Abbrechen</button><button type="button" id="rsNameOk" class="primary">OK</button></div>
+</div></div>
+<div id="rsFrage" hidden><div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="rsFrageText">
+  <p id="rsFrageText"></p>
+  <div class="row grow" id="rsFrageKnoepfe"></div>
 </div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -1216,6 +1260,17 @@ const RingRechnung = (() => {
 
 const PROJEKT_KEY = 'aether.logoProjekt';          // selbst gewählt
 const PROJEKT_FORMAT = 'aether-logo-projekt', PROJEKT_VERSION = 2;   // Version 1 (ohne Ring) wird weiter geladen
+// Ring-Sammlung: EIN eigener Speicher für alle Projekte (selbst gewählt), Format mit Versionsnummer
+const RINGE_KEY = 'aether.logoRinge';
+const RINGE_FORMAT = 'aether-logo-ringe', RINGE_VERSION = 1;
+const MAX_RINGE = 100, MAX_NAME = 40;               // selbst gewählt
+const MAX_RINGE_BYTES = 4 * 1024 * 1024;           // selbst gewählt: größte Sammlungsdatei
+// Name: führende/abschließende Leerzeichen weg, 1–40 Zeichen, keine Steuerzeichen; sonst ''
+function ringNameNormal(v){
+  if (typeof v !== 'string') return '';
+  const t = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return t && [...t].length <= MAX_NAME ? t : '';
+}
 const LOGO_TEXT = 'Aether', GROESSE = 100;         // Schriftgröße 100 = Maßstab für alle px-Angaben
 const ALLE_STAERKEN = [100, 200, 300, 400, 500, 600, 700, 800, 900];
 const fsDatei = id => (w, k) => 'fonts/' + id + '/' + id + '-latin-' + w + '-' + (k ? 'italic' : 'normal') + '.woff';
@@ -1378,6 +1433,9 @@ function normalisiere(o){
   z.ring = ringNormal(o.ring);   // fehlt in Version 1: Spielwerte
   z.brocken = brockenNormal(o.brocken);
   z.eigene = eigeneNormal(o.eigene);
+  // Name des aktiven Rings der Sammlung (optional, Projekt Version 2 bleibt): nur gesetzt, wenn einer gewählt ist
+  const rn = ringNameNormal(o.ringName);
+  if (rn) z.ringName = rn;
   h.push(...anpassen(z));
   return { z, hinweise:h };
 }
@@ -1725,6 +1783,7 @@ function bedienungZeigen(){
   ringAnzeigen();
   ringReglerZeigen();
   brockenZeigen();
+  sammlungZeigen();
 }
 // Ring-Regler: Werte und Anzeige (Grad, px bei Schriftgröße 100)
 const grad = v => v * 180 / Math.PI;
@@ -1838,6 +1897,224 @@ function neuerZufall(){
 }
 $('btnWuerfeln').addEventListener('click', () => ringAendern({ zufall:neuerZufall() }, true));
 $('btnWieImSpiel').addEventListener('click', () => ringAendern({ ...RingRechnung.SPIEL }, true));
+
+/* ---------- Ring-Sammlung ---------- */
+// Ein Ring = Ring-Teil des Projekts: Regler und Zufallswert (ring), Einzeländerungen (brocken), eigene Brocken
+// (eigene) und „Ring hinten/vorne“. Nicht dabei: Schrift, Text, Farben, Hintergrund, Ausgabe. Die Sammlung liegt in
+// einem eigenen Speicher (RINGE_KEY) und gilt für alle Projekte; das Projekt merkt sich nur den Namen (ringName).
+const ringDaten = z => ({ ringHinten:z.ringHinten !== false, ringVorne:z.ringVorne !== false,
+  ring:ringNormal(z.ring), brocken:brockenNormal(z.brocken), eigene:eigeneNormal(z.eigene) });
+const gleicherName = (a, b) => a.toLocaleLowerCase('de-DE') === b.toLocaleLowerCase('de-DE');
+// Inhalt (Speicher oder Datei) prüfen: { ringe, verworfen } oder { fehler:'kaputt'|'fremd'|'version' }
+function pruefeRinge(text){
+  let o;
+  try { o = JSON.parse(text); } catch (e) { return { fehler:'kaputt' }; }
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.format !== RINGE_FORMAT) return { fehler:'fremd' };
+  if (o.version !== RINGE_VERSION) return { fehler:'version', version:o.version };
+  if (!Array.isArray(o.ringe)) return { fehler:'kaputt' };
+  const ringe = []; let verworfen = 0;
+  for (const r of o.ringe){
+    const name = r && typeof r === 'object' ? ringNameNormal(r.name) : '';
+    if (!name || !r.daten || typeof r.daten !== 'object' || Array.isArray(r.daten) || ringe.some(x => gleicherName(x.name, name)) || ringe.length >= MAX_RINGE){ verworfen++; continue; }
+    ringe.push({ name, gespeichert:typeof r.gespeichert === 'string' ? r.gespeichert.slice(0, 40) : '', daten:ringDaten(r.daten) });
+  }
+  return { ringe, verworfen };
+}
+const ringeObjekt = ringe => ({ format:RINGE_FORMAT, version:RINGE_VERSION, gespeichert:new Date().toISOString(), ringe });
+let sammlung = [], sammlungHinweis = '';
+function sammlungLesen(){
+  let t = null;
+  try { t = localStorage.getItem(RINGE_KEY); } catch (e) { sammlungHinweis = 'Die Ring-Sammlung ließ sich nicht lesen.'; return []; }
+  if (t === null) return [];
+  const r = pruefeRinge(t);
+  if (r.ringe){
+    if (r.verworfen) sammlungHinweis = 'Ring-Sammlung: ' + r.verworfen + ' beschädigte Einträge verworfen.';
+    return r.ringe;
+  }
+  // kaputt/fremd/unbekannte Version: verwerfen (ohne Absturz) und kurz melden
+  sammlungHinweis = 'Die gespeicherte Ring-Sammlung war beschädigt und wurde verworfen.';
+  try { localStorage.removeItem(RINGE_KEY); } catch (e) {}
+  return [];
+}
+// Schreiben; bei Fehler (Speicher voll o. ä.) bleibt die alte Sammlung und es gibt eine Meldung
+function sammlungSchreiben(neu){
+  try { localStorage.setItem(RINGE_KEY, JSON.stringify(ringeObjekt(neu))); }
+  catch (e) { editorMeldung('Die Ring-Sammlung ließ sich nicht speichern (Speicher voll?) – nichts geändert.'); return false; }
+  sammlung = neu; return true;
+}
+sammlung = sammlungLesen();
+const findeRing = name => name ? sammlung.find(r => r.name === name) || null : null;
+const aktiverRing = () => findeRing(zustand.ringName);
+const ringGeaendert = () => { const r = aktiverRing(); return !!r && JSON.stringify(ringDaten(zustand)) !== JSON.stringify(r.daten); };
+function sammlungZeigen(){
+  const sel = $('rsAuswahl'), r = aktiverRing();
+  const soll = (r ? [] : [['', '– ungespeichert –']]).concat(sammlung.map(x => [x.name, x.name]));
+  const ist = [...sel.options].map(o => [o.value, o.textContent]);
+  if (JSON.stringify(soll) !== JSON.stringify(ist)){
+    sel.textContent = '';
+    for (const [v, t] of soll){ const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+  }
+  sel.value = r ? r.name : '';
+  $('rsGeaendert').hidden = !ringGeaendert();
+  for (const id of ['rsUmbenennen', 'rsKopieren', 'rsLoeschen']) $(id).disabled = !r;
+  $('rsDateiSichern').disabled = sammlung.length === 0;
+}
+// Namen im Verlauf nachziehen (Umbenennen/Löschen), damit Rückgängig keinen verwaisten Namen zurückholt
+function nameImVerlauf(alt, neu){
+  const f = z => { if (z.ringName === alt){ if (neu) z.ringName = neu; else delete z.ringName; } return z; };
+  verlauf = verlauf.map(t => JSON.stringify(f(JSON.parse(t))));
+  zustand = f(zustand);
+  projektSpeichern();
+}
+const eintrag = (name, z) => ({ name, gespeichert:new Date().toISOString(), daten:ringDaten(z) });
+// Den gewählten Ring laden (EIN Rückgängig-Schritt): Ring-Teil und Name, sonst nichts
+function ringLaden(name){
+  const r = findeRing(name);
+  if (!r){ sammlungZeigen(); return; }
+  if (frageWerte) frageSchliessen(false);
+  aendere(z => { Object.assign(z, JSON.parse(JSON.stringify(r.daten))); z.ringName = r.name; }, true);
+  auswahl = null; brockenZeigen();
+}
+function ringUeberschreiben(){
+  const r = aktiverRing(); if (!r) return false;
+  const neu = sammlung.map(x => x === r ? eintrag(r.name, zustand) : x);
+  if (!sammlungSchreiben(neu)) return false;
+  sammlungZeigen(); return true;
+}
+
+// Dialoge (eigener Stil, kein window.prompt/confirm); solange einer offen ist, sind die Tastenkürzel der Seite gesperrt
+let nameDialog = null, frageDialog = null;
+const sammlungDialogOffen = () => !!nameDialog || !!frageDialog;
+function nameFragen(titel, vorschlag, pruefe){
+  return new Promise(fertig => {
+    nameDialog = { fertig, pruefe, zurueck:document.activeElement };
+    $('rsNameTitel').textContent = titel;
+    const f = $('rsNameFeld'); f.value = vorschlag || ''; f.removeAttribute('aria-invalid');
+    $('rsNameFehler').textContent = '';
+    $('rsName').hidden = false; f.focus(); f.select();
+  });
+}
+function nameSchliessen(ok){
+  const d = nameDialog; if (!d) return;
+  let name = null;
+  if (ok){
+    const roh = $('rsNameFeld').value, t = roh.trim();
+    const fehler = !t ? 'Bitte einen Namen eingeben.' : [...t].length > MAX_NAME ? 'Höchstens ' + MAX_NAME + ' Zeichen.' : !ringNameNormal(t) ? 'Dieser Name ist nicht erlaubt.' : d.pruefe(t);
+    if (fehler){ $('rsNameFehler').textContent = fehler; $('rsNameFeld').setAttribute('aria-invalid', 'true'); $('rsNameFeld').focus(); return; }
+    name = ringNameNormal(t);
+  }
+  nameDialog = null; $('rsName').hidden = true;
+  if (d.zurueck && d.zurueck.focus) d.zurueck.focus();
+  d.fertig(name);
+}
+$('rsNameOk').addEventListener('click', () => nameSchliessen(true));
+$('rsNameAbbrechen').addEventListener('click', () => nameSchliessen(false));
+$('rsNameFeld').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); nameSchliessen(true); } });
+$('rsNameFeld').addEventListener('input', () => { $('rsNameFehler').textContent = ''; $('rsNameFeld').removeAttribute('aria-invalid'); });
+// Rückfrage: knoepfe = [[wert, text, primär?]]; vorgewählt = Wert des fokussierten Knopfs; Esc/Backspace = 'abbrechen'
+function fragen(text, knoepfe, vorgewaehlt){
+  return new Promise(fertig => {
+    frageDialog = { fertig, zurueck:document.activeElement };
+    $('rsFrageText').textContent = text;
+    const box = $('rsFrageKnoepfe'); box.textContent = '';
+    for (const [w, t, primaer] of knoepfe){
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.wert = w; b.textContent = t;
+      if (primaer) b.className = 'primary';
+      b.addEventListener('click', () => frageEnde(w));
+      box.appendChild(b);
+    }
+    $('rsFrage').hidden = false;
+    box.querySelector('[data-wert="' + vorgewaehlt + '"]').focus();
+  });
+}
+function frageEnde(w){
+  const d = frageDialog; if (!d) return;
+  frageDialog = null; $('rsFrage').hidden = true;
+  if (d.zurueck && d.zurueck.focus && d.zurueck.isConnected) d.zurueck.focus();
+  d.fertig(w);
+}
+const nameFrei = ausser => t => sammlung.some(r => r !== ausser && gleicherName(r.name, t)) ? 'Ein Ring „' + t + '“ gibt es schon.' : '';
+
+// Umschalten: bei ungespeicherten Änderungen zuerst fragen (Speichern/Verwerfen/Abbrechen)
+$('rsAuswahl').addEventListener('change', async () => {
+  const ziel = $('rsAuswahl').value, r = aktiverRing();
+  if (!ziel || (r && ziel === r.name)){ sammlungZeigen(); return; }
+  sammlungZeigen();   // Auswahl bleibt sichtbar beim alten Ring, bis entschieden ist
+  if (ringGeaendert()){
+    const w = await fragen('Änderungen an „' + r.name + '“ speichern?', [['speichern', 'Speichern', true], ['verwerfen', 'Verwerfen'], ['abbrechen', 'Abbrechen']], 'abbrechen');
+    if (w === 'abbrechen') return;
+    if (w === 'speichern' && !ringUeberschreiben()) return;
+  }
+  ringLaden(ziel);
+  editorMeldung('Ring „' + ziel + '“ geladen');
+});
+async function speichernUnter(titel, vorschlag){
+  const name = await nameFragen(titel, vorschlag, nameFrei(null));
+  if (!name) return;
+  if (sammlung.length >= MAX_RINGE){ editorMeldung('Die Sammlung ist voll (höchstens ' + MAX_RINGE + ' Ringe).'); return; }
+  if (!sammlungSchreiben(sammlung.concat([eintrag(name, zustand)]))) return;
+  aendere(z => { z.ringName = name; }, true);
+  editorMeldung('Ring „' + name + '“ gespeichert');
+}
+$('rsSpeichern').addEventListener('click', () => {
+  const r = aktiverRing();
+  if (!r) return speichernUnter('Ring speichern unter …', '');
+  if (ringUeberschreiben()) editorMeldung('Ring „' + r.name + '“ gespeichert');
+});
+$('rsSpeichernUnter').addEventListener('click', () => speichernUnter('Ring speichern unter …', aktiverRing() ? aktiverRing().name : ''));
+$('rsKopieren').addEventListener('click', () => { const r = aktiverRing(); if (r) speichernUnter('Ring kopieren', r.name.slice(0, MAX_NAME - 8) + ' (Kopie)'); });
+$('rsUmbenennen').addEventListener('click', async () => {
+  const r = aktiverRing(); if (!r) return;
+  const name = await nameFragen('Ring umbenennen', r.name, nameFrei(r));
+  if (!name || name === r.name) return;
+  if (!sammlungSchreiben(sammlung.map(x => x === r ? { ...x, name } : x))) return;
+  nameImVerlauf(r.name, name); sammlungZeigen();
+  editorMeldung('Ring umbenannt in „' + name + '“');
+});
+$('rsLoeschen').addEventListener('click', async () => {
+  const r = aktiverRing(); if (!r) return;
+  const w = await fragen('Ring „' + r.name + '“ löschen?', [['loeschen', 'Löschen', true], ['abbrechen', 'Abbrechen']], 'abbrechen');
+  if (w !== 'loeschen') return;
+  if (!sammlungSchreiben(sammlung.filter(x => x !== r))) return;
+  nameImVerlauf(r.name, null); sammlungZeigen();
+  editorMeldung('Ring „' + r.name + '“ gelöscht – der Ring bleibt im Editor als ungespeichert');
+});
+// Datei: sichern (JSON) und laden (vorhandene bleiben, gleichnamige bekommen „ (2)“, „ (3)“ …)
+$('rsDateiSichern').addEventListener('click', ev => {
+  const json = JSON.stringify(ringeObjekt(sammlung), null, 2) + '\n';
+  dateiSichern(ev, () => ({ datei:new File([json], 'aether-logo-ringe-' + stempel() + '.json', { type:'application/json' }) }));
+});
+$('rsDateiLaden').addEventListener('click', () => $('rsDatei').click());
+function freierName(name, belegt){
+  if (!belegt.some(n => gleicherName(n, name))) return name;
+  for (let i = 2; ; i++){
+    const zusatz = ' (' + i + ')', n = [...name].slice(0, MAX_NAME - zusatz.length).join('') + zusatz;
+    if (!belegt.some(x => gleicherName(x, n))) return n;
+  }
+}
+async function sammlungAusDatei(file){
+  if (!file) return;
+  const nichts = ' – die Sammlung bleibt unverändert.';
+  if (file.size > MAX_RINGE_BYTES){ editorMeldung('Die Datei ist zu groß für eine Ring-Sammlung' + nichts); return; }
+  let text;
+  try { text = await file.text(); } catch (e) { editorMeldung('Die Datei ließ sich nicht lesen' + nichts); return; }
+  const r = pruefeRinge(text);
+  if (r.fehler === 'kaputt'){ editorMeldung('Die Sammlungsdatei ist beschädigt' + nichts); return; }
+  if (r.fehler === 'fremd'){ editorMeldung('Das ist keine Ring-Sammlung (aether-logo-ringe)' + nichts); return; }
+  if (r.fehler === 'version'){ editorMeldung('Sammlungs-Version ' + String(r.version).slice(0, 20) + ' wird nicht unterstützt' + nichts); return; }
+  const neu = sammlung.slice(), belegt = neu.map(x => x.name);
+  let n = 0;
+  for (const x of r.ringe){
+    if (neu.length >= MAX_RINGE) break;
+    const name = freierName(x.name, belegt);
+    belegt.push(name); neu.push({ ...x, name }); n++;
+  }
+  if (n && !sammlungSchreiben(neu)) return;
+  sammlungZeigen();
+  const rest = r.ringe.length - n;
+  editorMeldung(n + (n === 1 ? ' Ring' : ' Ringe') + ' übernommen' + (rest ? ' · ' + rest + ' nicht (Sammlung voll)' : '') + (r.verworfen ? ' · ' + r.verworfen + ' beschädigte Einträge übersprungen' : ''));
+}
+$('rsDatei').addEventListener('change', () => { const f = $('rsDatei').files[0]; $('rsDatei').value = ''; sammlungAusDatei(f); });
 
 /* ---------- Brocken bearbeiten (Modus-Umschalter V1, Einzeländerungen E3) ---------- */
 // Nur im Reiter „Ring“ und im Modus „Brocken bearbeiten“ lässt sich auf der Bühne etwas anfassen. Auswahl, Modus und
@@ -2064,6 +2341,10 @@ $('projDatei').addEventListener('change', () => { const f = $('projDatei').files
 // Tastatur: Strg/⌘+Z, Strg/⌘+Umschalt+Z – nicht in Texteingabefeldern
 const istTextfeld = e => !!e && (e.isContentEditable || (e.localName === 'input' && !['range', 'color', 'checkbox', 'radio', 'button', 'file'].includes(e.type)) || e.localName === 'textarea' || e.localName === 'select');
 document.addEventListener('keydown', e => {
+  if (sammlungDialogOffen()){   // Dialog der Ring-Sammlung offen: Esc/Backspace (außerhalb von Textfeldern) = Abbrechen, sonst keine Kürzel
+    if (e.key === 'Escape' || (e.key === 'Backspace' && !istTextfeld(e.target))){ e.preventDefault(); if (nameDialog) nameSchliessen(false); else frageEnde('abbrechen'); }
+    return;
+  }
   if (!$('frage').hidden){   // Rückfrage offen: Esc/Backspace = Abbrechen, sonst keine Kürzel
     if (e.key === 'Escape' || (e.key === 'Backspace' && !istTextfeld(e.target))){ e.preventDefault(); frageSchliessen(false); }
     return;
@@ -2086,6 +2367,7 @@ const kartenOffen = window.AETHER_TEST_KARTEN_OFFEN === true;
 klappe('klappSvg', kartenOffen); klappe('klappPng', kartenOffen);
 
 bedienungZeigen(); verlaufKnoepfe(); ringAnzeigen(); modusZeigen(); planeZeichnen();
+if (sammlungHinweis) editorMeldung(sammlungHinweis);
 
 // Schnittstelle für die automatischen Tests (nur lesen)
 window.AetherLogoEditor = Object.freeze({
@@ -2102,6 +2384,7 @@ window.AetherLogoEditor = Object.freeze({
   ring:() => ({ stand:'bereit', einstellungen:{ ...zustand.ring }, spiel:{ ...RingRechnung.SPIEL }, box:aktuell && aktuell.ring ? { ...aktuell.ring.box } : null,
     brocken:aktuell && aktuell.ring ? aktuell.ring.brocken.map(b => ({ schluessel:b.schluessel, nr:b.nr, id:b.id, x:b.m.x, y:b.m.y, r:b.r, vorne:b.vorne, pts:b.pts.map(q => [q.x, q.y]) })) : [] }),
   ringBereiche:JSON.parse(JSON.stringify(RING_BEREICHE)),
+  sammlung:() => ({ ringe:JSON.parse(JSON.stringify(sammlung)), aktiv:aktiverRing() ? aktiverRing().name : null, geaendert:ringGeaendert(), dialog:nameDialog ? 'name' : frageDialog ? 'frage' : null }),
   modus:() => modus, auswahl:() => auswahl, bearbeitbar:() => bearbeitbar(), frageOffen:() => !$('frage').hidden,
   // Bildkoordinaten → Bildschirm (für Klick/Touch in den Tests)
   bildschirm:(x, y) => { const f = bildRahmen(); return f ? { x:f.left + (x - f.vb.x) * f.k, y:f.top + (y - f.vb.y) * f.k, k:f.k } : null; },

@@ -616,6 +616,27 @@ Funktionen als aufklappbare Karten (Standard: zugeklappt; Laden, Speicherschlüs
   würfeln“, Lage des Kopfs, Schweif-Länge, Dichte und „Wie im Spiel“ verteilen den Ring neu: Gibt es Änderungen an
   Brocken des Rings, fragt die Seite vorher „Änderungen an Brocken des Rings verwerfen? Selbst gesetzte Brocken
   bleiben.“ (Verwerfen/Abbrechen; Esc = Abbrechen). Rückfrage und Änderung sind zusammen ein Schritt.
+- **Ring-Sammlung** (Reiter „Ring“, ganz oben): Zeile „Ring:“ mit Auswahlliste der gespeicherten Ringe (erster
+  Eintrag „– ungespeichert –“, solange der aktuelle Ring keinen Namen hat), Markierung „geändert“ und den Knöpfen
+  „Speichern“ (überschreibt den gewählten Ring; ohne Namen wie „Speichern unter …“), „Speichern unter …“,
+  „Umbenennen“, „Kopieren“ (Vorschlag „<Name> (Kopie)“; speichert den Ring, wie er gerade ist, unter neuem Namen und
+  wählt die Kopie) und „Löschen“ (Rückfrage, Abbrechen vorgewählt). Darunter „Sammlung als Datei sichern“ und
+  „Sammlung laden“. Ein Ring ist genau der Ring-Teil des Projekts: `ring` (Regler, Zufallswert), `brocken`
+  (Einzeländerungen), `eigene` (eigene Brocken), `ringHinten`, `ringVorne` – keine Schrift, Farben, Hintergrund oder
+  Ausgabe. Umschalten lädt den Ring sofort (ein Rückgängig-Schritt); bei ungespeicherten Änderungen am gewählten
+  Ring fragt die Seite „Änderungen an „<Name>“ speichern?“ (Speichern/Verwerfen/Abbrechen, Abbrechen vorgewählt).
+  Ein ungespeicherter Ring ohne Namen wird ohne Rückfrage ersetzt; Rückgängig holt ihn zurück. Namen: 1–40 Zeichen,
+  Leerzeichen am Rand entfernt, keine doppelten (Groß-/Kleinschreibung egal), Fehler im Dialog. Höchstens 100 Ringe.
+  Dialoge im Stil der Seite (kein `window.prompt`): Enter bestätigt, Esc und Backspace (außerhalb des Textfelds)
+  schließen, im Namensfeld löscht Backspace nur Zeichen; Tastenkürzel der Seite sind bei offenem Dialog gesperrt.
+  - Speicher: EINE Sammlung für alle Projekte in `localStorage` `aether.logoRinge`:
+    `{ "format": "aether-logo-ringe", "version": 1, "gespeichert", "ringe": [{ "name", "gespeichert", "daten": {
+    "ringHinten", "ringVorne", "ring", "brocken", "eigene" } }] }`. Kaputter Inhalt wird verworfen (Meldung), einzelne
+    kaputte Einträge fallen weg. Das Projekt merkt sich nur den Namen des aktiven Rings im optionalen Feld
+    `einstellungen.ringName` (Projektformat bleibt Version 2; ältere Fassungen ignorieren das Feld).
+  - Datei: gleiches Format, Name `aether-logo-ringe-<JJJJMMTT-HHMM>.json`. Laden: vorhandene Ringe bleiben,
+    gleichnamige bekommen „ (2)“, „ (3)“ …; die Anzahl übernommener Ringe wird gemeldet; falsches Format → Meldung,
+    nichts geändert. Laden und Sichern der Sammlung ändern den Verlauf nicht.
 - **Reiter „Ausgabe“:** „PNG sichern“ (transparent, nur sichtbare Ebenen, 1024/2048/4096 px) und „SVG sichern“
   (Schrift als Pfade, kein `<text>`, keine Schriftdatei; Gruppen `ring-hinten`, `schatten` bzw. `leuchten`, `tiefe`,
   `schrift`, `umriss`, `ring-vorne` je nach Inhalt; Verlauf als `linearGradient`, Weichheit als `feGaussianBlur`).
@@ -831,6 +852,12 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   mit Änderungen, Abbrechen/Verwerfen, Rückgängig/Wiederholen, Projekt mit Änderungen, Layout in beiden Modi.
   Gegenproben (müssen rot werden): `AETHER_GEGENPROBE=referenz|neigung|ohne-frage|verwerfen-alles|loeschen|regler-anfassbar|version1
   node --test tests/logo-ring.test.js`.
+- `tests/ring-sammlung.test.js` – Ring-Sammlung: Speichern unter, Speichern, Umbenennen, Kopieren, Löschen mit
+  Rückfrage, Umschalten lädt den Ring-Teil exakt, Rückfrage bei ungespeicherten Änderungen
+  (Speichern/Verwerfen/Abbrechen/Esc), Namensregeln, Neuladen/Neustart/offline, unabhängig vom Projekt, Datei
+  sichern/laden (Namenskonflikt, falsches Format), kaputter Speicher, Tastatur, Rückgängig nach Umschalten, Layout
+  (iPhone hoch/quer, iPad, Desktop). Gegenproben (müssen rot werden):
+  `AETHER_GEGENPROBE=ohne-frage|ohne-einzel|im-projekt|doppelt|backspace node --test tests/ring-sammlung.test.js`.
 - `tests/gemeinsam.test.js` – `gemeinsam.js`: keine der ausgelagerten Funktionen ist in `index.html`,
   `screen-editor.html` oder `logo.html` selbst definiert (Quelltextprüfung), alle drei binden die Datei ein, sie
   speichert nichts und liest kein Token; sie liegt in der App-Hülle und ist offline abrufbar, Projektansicht,
