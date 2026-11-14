@@ -2,6 +2,8 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
+<!-- Versionsmarke: pages.yml setzt beim Veröffentlichen den Commit ein (Teil „Selbst aktualisieren“). -->
+<meta name="aether-version" content="__AETHER_VERSION__">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0e14">
@@ -523,17 +525,45 @@
   .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
   .bar.full > div { background: var(--ok); }
   .rm-sec { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); margin-top: 10px; }
-  .rm-sec summary {
-    list-style: none; cursor: pointer; touch-action: manipulation;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center;
+  /* Abschnittskopf: ganzer Kopf antippbar; der Pfeil-Knopf links ist das Tastatur-Ziel (aria-expanded). */
+  .rm-head {
+    cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center;
     padding: 12px 14px; min-height: 60px;
   }
-  .rm-sec summary::-webkit-details-marker { display: none; }
-  .rm-sec summary .name { font-weight: 600; overflow-wrap: anywhere; }
-  .rm-sec summary .name::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); transition: transform .15s; }
-  .rm-sec[open] summary .name::before { transform: rotate(90deg); }
-  .rm-sec summary .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
-  .rm-sec summary .bar { grid-column: 1 / -1; }
+  .rm-head .name { font-weight: 600; overflow-wrap: anywhere; }
+  .rm-head .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .rm-head .bar { grid-column: 1 / -1; }
+  .rm-pfeil {
+    width: 44px; height: 44px; padding: 0; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 10px; border: 1px solid #404D69; background: #242D41; color: var(--text);
+    cursor: pointer; touch-action: manipulation;
+  }
+  /* Pfeil aus zwei Linien (ca. 3 px): zugeklappt nach rechts (›), aufgeklappt nach unten (⌄). */
+  .rm-pfeil::before {
+    content: ''; display: block; width: 11px; height: 11px;
+    border-right: 3px solid currentColor; border-bottom: 3px solid currentColor; border-radius: 1px;
+    transform: translateX(-2px) rotate(-45deg);
+  }
+  .rm-pfeil[aria-expanded="true"]::before { transform: translateY(-2px) rotate(45deg); }
+  .rm-pfeil:focus-visible, .klapp-breit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rm-sec .klapp-breit { margin: 4px 14px 14px; width: calc(100% - 28px); background: #242D41; border-color: #404D69; }
+  /* Breiter Klapp-Knopf am Listenende („… anzeigen ⌄“ / „Einklappen ⌃“), Pfeil per CSS gezeichnet. */
+  .klapp-breit {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 44px; min-height: 44px; margin-top: 8px; padding: 0 16px;
+    border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font: inherit; font-weight: 500; cursor: pointer; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .klapp-breit:active { transform: scale(.99); }
+  .klapp-breit::after {
+    content: ''; flex: none; width: 8px; height: 8px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+  }
+  .klapp-breit[aria-expanded="true"]::after { transform: translateY(2px) rotate(-135deg); }
   .rm-items { list-style: none; margin: 0; padding: 0 14px 6px; }
   .rm-items li { display: flex; gap: 10px; align-items: center; padding: 6px 0; min-height: 44px; border-top: 1px solid var(--line); }
   .rm-items li.empty { color: var(--muted); font-size: 14px; }
@@ -632,6 +662,7 @@
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
       </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
+      <div id="buildsKlapp"></div>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
       <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
     </div>
@@ -763,6 +794,11 @@
   var HINT_TEXT = 'Einmal ins Spielbild tippen für flüssigere Darstellung';
   var offlineReason = null; // null = online; sonst der AppError, warum GitHub zuletzt nicht erreichbar war
   var savedBuilds = {};     // short -> true, wenn der Build vollständig lokal gespeichert ist
+  var zuletztGeladen = { builds: 0, project: 0 }; // Zeitpunkt des letzten erfolgreichen Ladens (Selbst aktualisieren)
+  // Build-Liste: zugeklappt die neuesten BUILDS_SICHTBAR Builds (+ ggf. der gewählte ältere als zusätzlicher Eintrag).
+  // buildsOffen gilt nur für diese Sitzung (nie gespeichert).
+  var BUILDS_SICHTBAR = 3;
+  var buildsOffen = false;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -1732,6 +1768,9 @@
     document.documentElement.classList.remove('playing');
     exitFullscreen();
     layoutGame();
+    // Nach dem Schließen des Spiels sofort einmal aktualisieren (sobald die Ansicht gewechselt ist);
+    // eine inzwischen erkannte neue Dashboard-Version lädt jetzt.
+    setTimeout(function () { versionNeuladenWennMoeglich(); autoAktualisieren('spielende'); }, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -1783,6 +1822,7 @@
     if (name !== 'game' && name !== 'loading' && game) stopGame(true);
     fitHeader();
     syncStartFrame();
+    if (name !== 'game' && name !== 'loading') setTimeout(versionNeuladenWennMoeglich, 0);
   }
 
   // Kopfzeile ohne waagerechtes Scrollen: Die vorhandenen Schmal-Regeln (Symbol statt „WebGPU-Check“,
@@ -1880,6 +1920,32 @@
     return b;
   }
 
+  // ---------------------------------------------------------------------------
+  // Klapp-Baustein (Fortschritt, Build-Liste, Zeitleiste). Der Klapp-Zustand lebt nur im Speicher dieser
+  // Sitzung, nie in localStorage/sessionStorage: Nach jedem Neuladen der Seite gilt wieder der Startzustand.
+  // ---------------------------------------------------------------------------
+  // Breiter Knopf am Listenende („… anzeigen ⌄“ bzw. „Einklappen ⌃“); den Pfeil zeichnet CSS (aria-expanded).
+  function klappKnopf(text, offen, ariaLabel, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'klapp-breit';
+    b.textContent = text;
+    b.setAttribute('aria-expanded', String(!!offen));
+    if (ariaLabel) b.setAttribute('aria-label', ariaLabel);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  // Nach „Einklappen“: Liegt das Ziel (Listenkopf bzw. Knopf „… anzeigen“) außerhalb des sichtbaren
+  // Bereichs, so weit scrollen, dass es sichtbar ist (kein Sprung ins Leere). Fokus folgt ohne Scrollen.
+  function zeigeNachEinklappen(ziel, fokus) {
+    if (!ziel || !ziel.isConnected) return;
+    var r = ziel.getBoundingClientRect();
+    var h = window.innerHeight || document.documentElement.clientHeight;
+    if (r.top < 0) window.scrollBy(0, r.top - 16);
+    else if (r.bottom > h) window.scrollBy(0, r.bottom - h + 16);
+    if (fokus) { try { fokus.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+  }
+
   var toastTimer = null;
   function showToast(text, isError) {
     var t = $('gameToast');
@@ -1922,6 +1988,7 @@
       li.className = 'muted';
       li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
       ul.appendChild(li);
+      $('buildsKlapp').textContent = '';
       syncStartFrame();
       return;
     }
@@ -1968,8 +2035,42 @@
       li.appendChild(label);
       ul.appendChild(li);
     });
+    applyBuildsKlapp();
     updateApiInfo();
     syncStartFrame();
+  }
+
+  // Zugeklappt: die neuesten BUILDS_SICHTBAR Builds und – falls er weiter unten liegt – der gewählte Build
+  // als zusätzlicher Eintrag (die Auswahl bleibt immer sichtbar). Darunter „Ältere Builds anzeigen (n)“
+  // bzw. aufgeklappt „Einklappen“. Ältere Einträge bleiben im DOM (nur ausgeblendet), damit Auswahl und
+  // Start-Rahmen unverändert funktionieren.
+  function applyBuildsKlapp() {
+    var lis = Array.prototype.slice.call($('buildList').children).filter(function (li) { return li.querySelector('input[name="build"]'); });
+    var box = $('buildsKlapp');
+    box.textContent = '';
+    if (lis.length <= BUILDS_SICHTBAR) { lis.forEach(function (li) { li.hidden = false; }); return; }
+    var verborgen = 0;
+    lis.forEach(function (li, i) {
+      var zeigen = buildsOffen || i < BUILDS_SICHTBAR || li.querySelector('input[name="build"]').checked;
+      li.hidden = !zeigen;
+      if (!zeigen) verborgen++;
+    });
+    if (!buildsOffen && !verborgen) return;
+    var btn = buildsOffen
+      ? klappKnopf('Einklappen', true, 'Build-Liste einklappen', function () {
+          buildsOffen = false;
+          applyBuildsKlapp();
+          var more = $('buildsMore');
+          zeigeNachEinklappen(more || $('buildList'), more);
+        })
+      : klappKnopf('Ältere Builds anzeigen (' + verborgen + ')', false, 'Ältere Builds anzeigen, ' + verborgen + ' weitere', function () {
+          buildsOffen = true;
+          applyBuildsKlapp();
+          var first = lis[BUILDS_SICHTBAR] && lis[BUILDS_SICHTBAR].querySelector('input');
+          if (first) { try { first.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+        });
+    btn.id = buildsOffen ? 'buildsLess' : 'buildsMore';
+    box.appendChild(btn);
   }
 
   function updateApiInfo() {
@@ -2004,6 +2105,7 @@
   async function applyIndex(list) {
     builds = list;
     indexLoaded = true;
+    zuletztGeladen.builds = Date.now();
     storeLastIndex(list);
     setOffline(null);
     await refreshSaved();
@@ -2076,6 +2178,7 @@
     }
     builds = list;
     indexLoaded = true;
+    zuletztGeladen.builds = Date.now();
     storeLastIndex(list);
     setOffline(null);
     await refreshSaved();
@@ -2193,7 +2296,8 @@
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
-  var TIMELINE_SHOW = 15;
+  // Zeitleiste zugeklappt: die neuesten TIMELINE_SHOW Einträge der Filteransicht; ein Tipp zeigt alle.
+  var TIMELINE_SHOW = 3;
   var projCache = {};
   var projGen = 0;
   var pollTimer = null;
@@ -2201,6 +2305,8 @@
   var dashOhneToken = false;
   // Filter der Zeitleiste: 'alle' | 'spiel' | 'dashboard'. Nicht gespeichert, beim Neuladen der Seite wieder „Alle“.
   var tlFilter = 'alle';
+  // Zeitleiste aufgeklappt? Nur für diese Sitzung (nie gespeichert); Filterwechsel setzt auf zugeklappt zurück.
+  var tlOffen = false;
 
   function clearProjectCache() { projCache = {}; dashOhneToken = false; }
 
@@ -2679,6 +2785,8 @@
     box.dataset.state = 'unavailable';
   }
 
+  // CI-Details offen? Nur im Speicher, damit automatisches Neuladen sie nicht zuklappt.
+  var ciDetailsOffen = false;
   function renderCiStats(box, st, latestRun) {
     box.textContent = '';
     if (!st.run) {
@@ -2741,11 +2849,14 @@
 
     var det = el('div', 'ci-details');
     det.id = 'ciDetails';
-    det.hidden = true;
+    det.hidden = !ciDetailsOffen;
+    btn.setAttribute('aria-expanded', String(ciDetailsOffen));
+    btn.textContent = (ciDetailsOffen ? '▾' : '▸') + ' Details';
     renderCiDetails(det, st, pct, level);
     box.appendChild(det);
     btn.addEventListener('click', function () {
       var open = det.hidden;
+      ciDetailsOffen = open;
       det.hidden = !open;
       btn.setAttribute('aria-expanded', String(open));
       btn.textContent = (open ? '▾' : '▸') + ' Details';
@@ -2991,12 +3102,12 @@
   var TL_FILTERS = [{ id: 'alle', label: 'Alle' }, { id: 'spiel', label: 'Spiel' }, { id: 'dashboard', label: 'Dashboard' }];
 
   // Filterleiste einmal; Hinweiszeile und Liste werden aus st gezeichnet, auch wenn die Dashboard-PRs nachkommen.
-  // Filter (tlFilter) und „Ältere anzeigen“ (st.expanded) bleiben dabei erhalten.
+  // Filter (tlFilter) und Klapp-Zustand (tlOffen) bleiben dabei erhalten, auch beim Neuladen der Daten.
   function renderTimeline(box, data) {
     box.textContent = '';
     $('tlTitle').textContent = 'Zeitleiste';
     var gen = projGen;
-    var st = { aether: data.aether, all: data.items, dash: data.dash, expanded: false, note: null };
+    var st = { aether: data.aether, all: data.items, dash: data.dash, note: null };
     box._tl = st;
     var bar = el('div', 'tl-filter');
     bar.id = 'timelineFilter';
@@ -3013,7 +3124,7 @@
       b.setAttribute('aria-pressed', String(tlFilter === f.id));
       b.addEventListener('click', function () {
         tlFilter = f.id;
-        st.expanded = false;
+        tlOffen = false;
         bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x.dataset.filter === tlFilter)); });
         paintTimeline(st);
       });
@@ -3079,19 +3190,33 @@
       li.appendChild(a);
       ol.appendChild(li);
     };
-    var expanded = st && st.expanded;
-    items.slice(0, expanded ? items.length : TIMELINE_SHOW).forEach(addItem);
+    items.forEach(addItem);
     box.appendChild(ol);
-    if (!expanded && items.length > TIMELINE_SHOW) {
-      var more = mkBtn('Ältere anzeigen (' + (items.length - TIMELINE_SHOW) + ')', function () {
-        items.slice(TIMELINE_SHOW).forEach(addItem);
-        more.remove();
-        if (st) st.expanded = true;
-      });
-      more.classList.add('block', 'mt');
-      more.id = 'timelineMore';
-      box.appendChild(more);
-    }
+    applyTlKlapp(box, ol, items.length);
+  }
+
+  // Zugeklappt nur die neuesten TIMELINE_SHOW Einträge, darunter „Ältere anzeigen (n)“; aufgeklappt alle
+  // Einträge der Filteransicht und am Ende „Einklappen“. Alle Einträge sind schon geladen (je Quelle bis zu
+  // 50), es wird nichts nachgeladen; ältere bleiben nur ausgeblendet im DOM.
+  function applyTlKlapp(box, ol, n) {
+    var old = box.querySelector('.klapp-breit');
+    if (old) old.remove();
+    Array.prototype.forEach.call(ol.children, function (li, i) { li.hidden = !tlOffen && i >= TIMELINE_SHOW; });
+    if (n <= TIMELINE_SHOW) return;
+    var btn = tlOffen
+      ? klappKnopf('Einklappen', true, 'Zeitleiste einklappen', function () {
+          tlOffen = false;
+          applyTlKlapp(box, ol, n);
+          zeigeNachEinklappen($('timelineMore'), $('timelineMore'));
+        })
+      : klappKnopf('Ältere anzeigen (' + (n - TIMELINE_SHOW) + ')', false, 'Ältere Einträge anzeigen, ' + (n - TIMELINE_SHOW) + ' weitere', function () {
+          tlOffen = true;
+          applyTlKlapp(box, ol, n);
+          var a = ol.children[TIMELINE_SHOW] && ol.children[TIMELINE_SHOW].querySelector('a');
+          if (a) { try { a.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+        });
+    btn.id = tlOffen ? 'timelineLess' : 'timelineMore';
+    box.appendChild(btn);
   }
 
   // --- 3. ROADMAP.md -----------------------------------------------------------
@@ -3157,6 +3282,12 @@
     return bar;
   }
 
+  // Startzustand der Abschnitte: „Erledigt“ zu, alle übrigen offen (wie bisher). Umschalten gilt nur für
+  // die laufende Sitzung (rmOffen im Speicher), auch über automatisches und manuelles Neuladen der Daten.
+  var rmOffen = {};
+  function istErledigt(name) { return /^erledigt\b/i.test(String(name).trim()); }
+  function rmStartOffen(name) { return Object.prototype.hasOwnProperty.call(rmOffen, name) ? rmOffen[name] : !istErledigt(name); }
+
   function renderRoadmap(box, rm) {
     box.textContent = '';
     if (!rm.sections.length) {
@@ -3171,16 +3302,22 @@
       box.appendChild(tot);
       box.appendChild(progressBar(allDone, all));
     }
-    rm.sections.forEach(function (s) {
+    rm.sections.forEach(function (s, si) {
       var done = s.items.filter(function (i) { return i.done; }).length;
-      var d = el('details', 'rm-sec');
-      d.open = true;
-      var sum = el('summary');
-      sum.appendChild(el('span', 'name', s.name));
-      sum.appendChild(el('span', 'num', done + '/' + s.items.length));
-      sum.appendChild(progressBar(done, s.items.length));
-      d.appendChild(sum);
+      var d = el('div', 'rm-sec');
+      var head = el('div', 'rm-head');
+      var pfeil = el('button', 'rm-pfeil');
+      pfeil.type = 'button';
+      pfeil.setAttribute('aria-label', 'Abschnitt „' + s.name + '“');
+      var ulId = 'rmItems' + si;
+      pfeil.setAttribute('aria-controls', ulId);
+      head.appendChild(pfeil);
+      head.appendChild(el('span', 'name', s.name));
+      head.appendChild(el('span', 'num', done + '/' + s.items.length));
+      head.appendChild(progressBar(done, s.items.length));
+      d.appendChild(head);
       var ul = el('ul', 'rm-items');
+      ul.id = ulId;
       if (!s.items.length) ul.appendChild(el('li', 'empty', 'Keine Punkte.'));
       s.items.forEach(function (i) {
         var li = el('li', i.done ? 'done' : '');
@@ -3202,6 +3339,25 @@
         ul.appendChild(li);
       });
       d.appendChild(ul);
+      // Nur der lange Abschnitt „Erledigt“ bekommt am Ende „Einklappen“.
+      var lang = istErledigt(s.name);
+      var unten = lang ? klappKnopf('Einklappen', true, 'Abschnitt „' + s.name + '“ einklappen', function () {
+        setze(false);
+        zeigeNachEinklappen(head, pfeil);
+      }) : null;
+      if (unten) d.appendChild(unten);
+      var setze = function (offen) {
+        rmOffen[s.name] = offen;
+        d.classList.toggle('open', offen);
+        pfeil.setAttribute('aria-expanded', String(offen));
+        ul.hidden = !offen;
+        if (unten) unten.hidden = !offen;
+      };
+      head.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('a')) return;
+        setze(!d.classList.contains('open'));
+      });
+      setze(rmStartOffen(s.name));
       box.appendChild(d);
     });
     if (rm.skipped) {
@@ -3354,6 +3510,9 @@
   }
 
   function loadCiPart(force, fromPoll) {
+    // Manuelles Laden zeichnet die CI-Details wie bisher zugeklappt; nur das automatische Neuladen
+    // (renderStillCi) übernimmt den Zustand der Sitzung.
+    if (!fromPoll) ciDetailsOffen = false;
     return loadPart($('ciBody'), 'Lade Build-Status …', fetchLatestRun, function (box, run) {
       var info = renderRun(box, run);
       stopProjectPolling();
@@ -3436,9 +3595,185 @@
       btn.disabled = false;
     }
     if (gen !== projGen) return; // inzwischen offline (oder neu geladen)
+    zuletztGeladen.project = Date.now();
+    setProjStamp();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Selbst aktualisieren (neue Dashboard-Version, nur diese Seite – nicht Screen-Editor und Logo-Seite):
+  // pages.yml setzt beim Veröffentlichen den Commit in <meta name="aether-version">. Beim Start, bei
+  // Rückkehr in die App und mit jeder Intervall-Runde wird index.html am Browser-Cache vorbei gelesen (über
+  // den Service Worker, der dabei auch die App-Hülle auffrischt) und die Marke verglichen. Ist sie neu, lädt
+  // die Seite neu: sofort, wenn kein Spiel läuft oder lädt, kein Feedback-Dialog offen ist und kein
+  // Texteingabefeld den Fokus hat, sonst sobald das zutrifft. Höchstens ein automatisches Neuladen je
+  // Version (Merker in sessionStorage, nur die Versionsmarke). Ohne Netz keine Prüfung; Fehler bleiben still.
+  // ---------------------------------------------------------------------------
+  var VERSION_START_MS = 3000; // erste Prüfung kurz nach dem Start (nach den Anfragen des ersten Ladens)
+  var versionStartMs = (typeof window.AETHER_TEST_VERSION_START_MS === 'number' && window.AETHER_TEST_VERSION_START_MS >= 0) ? window.AETHER_TEST_VERSION_START_MS : VERSION_START_MS;
+  var VERSION_RE = /<meta\s+name="aether-version"\s+content="([^"]*)"/i;
+  var VERSION_NEULADEN_KEY = 'aether.versionNeugeladen';
+  function gueltigeVersion(v) { return typeof v === 'string' && /^[\w.\-]{1,64}$/.test(v) && v.indexOf('__') !== 0; }
+  var eigeneVersion = (function () { var m = document.querySelector('meta[name="aether-version"]'); return m ? m.getAttribute('content') || '' : ''; })();
+  // Lokal (ohne pages.yml) steht der Platzhalter in der Seite: dann keine Prüfung.
+  var versionAktiv = gueltigeVersion(eigeneVersion);
+  var neueVersion = null;
+  var versionPruefung = false;
+  function versionMerke(e) { if (autoProtokoll) autoProtokoll.push({ grund: 'version', ergebnis: e }); }
+
+  function pruefeVersion() {
+    if (!versionAktiv || versionPruefung) return;
+    if (document.visibilityState !== 'visible') return;
+    if (navigator.onLine === false) { versionMerke('offline'); return; }
+    if (neueVersion) { versionNeuladenWennMoeglich(); return; }
+    versionPruefung = true;
+    withProjTimeout(fetch(location.pathname + '?versionspruefung=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' })).then(function (res) {
+      return res.ok ? res.text() : '';
+    }).then(function (text) {
+      var m = VERSION_RE.exec(text || '');
+      if (!m || !gueltigeVersion(m[1])) { versionMerke('unbekannt'); return; }
+      if (m[1] === eigeneVersion) { versionMerke('gleich'); return; }
+      neueVersion = m[1];
+      versionNeuladenWennMoeglich();
+    }).catch(function () { versionMerke('fehler'); }).then(function () { versionPruefung = false; });
+  }
+
+  function versionNeuladenWennMoeglich() {
+    if (!neueVersion) return;
+    if (feedback || spielOderLaden() || isTextEntry(document.activeElement)) { versionMerke('wartet'); return; }
+    var schon;
+    try { schon = sessionStorage.getItem(VERSION_NEULADEN_KEY); } catch (e) { versionMerke('ohne-merker'); return; }
+    if (schon === neueVersion) { versionMerke('schon-neugeladen'); return; }
+    try { sessionStorage.setItem(VERSION_NEULADEN_KEY, neueVersion); } catch (e) { versionMerke('ohne-merker'); return; }
+    versionMerke('neuladen');
+    location.reload();
+  }
+
+  function setProjStamp() {
     var parts = ['Stand: ' + fmtBerlinTime(new Date())];
     if (lastRate && token) parts.push('API: ' + lastRate.remaining + '/' + lastRate.limit);
     $('projStamp').textContent = parts.join(' · ');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Selbst aktualisieren (Daten): Projektansicht bzw. Build-Liste laden im Hintergrund neu – alle
+  // AUTO_AKTUALISIEREN_MS, solange die Seite sichtbar und online ist und ein Token da ist, sowie sofort bei
+  // Rückkehr in die App (visibilitychange) und beim Ereignis „online“, frühestens AUTO_MIN_ABSTAND_MS nach
+  // dem letzten Laden (= 60-s-Cache). Nie während ein Spiel läuft oder lädt und nie bei offenem
+  // Feedback-Dialog. Still: kein „Lade …“, keine Fehlermeldung; Klapp-Zustand, Scroll-Position und
+  // Build-Auswahl bleiben. Schlägt es fehl, bleiben die vorhandenen Daten stehen.
+  // ---------------------------------------------------------------------------
+  var AUTO_AKTUALISIEREN_MS = 120 * 1000; // 0 = aus
+  var AUTO_MIN_ABSTAND_MS = 60 * 1000;
+  // Nur für die Tests: kürzere Werte, gesetzt bevor dieses Skript läuft.
+  var autoMs = (typeof window.AETHER_TEST_AUTO_MS === 'number' && window.AETHER_TEST_AUTO_MS >= 0) ? window.AETHER_TEST_AUTO_MS : AUTO_AKTUALISIEREN_MS;
+  var autoMinMs = (typeof window.AETHER_TEST_AUTO_MIN_MS === 'number' && window.AETHER_TEST_AUTO_MIN_MS >= 0) ? window.AETHER_TEST_AUTO_MIN_MS : AUTO_MIN_ABSTAND_MS;
+  var autoLaeuft = false;
+  // Protokoll nur mit Test-Schalter (Grund und Ergebnis jedes Versuchs, keine Daten).
+  var autoProtokoll = typeof window.AETHER_TEST_AUTO_MS === 'number' ? (window.__aetherAuto = []) : null;
+  function autoMerke(grund, ergebnis) { if (autoProtokoll) autoProtokoll.push({ grund: grund, ergebnis: ergebnis }); }
+
+  // Spiel offen oder im Start (nach dem Tipp im Start-Rahmen: Laden, Spiel) bzw. Ladeansicht sichtbar.
+  function spielOderLaden() {
+    return !!game || !!(frame && frame.state !== 'start') || !!loadAbort || !$('loadingView').hidden;
+  }
+  function autoHindernis() {
+    if (!autoMs) return 'aus';
+    if (document.visibilityState !== 'visible') return 'verborgen';
+    if (navigator.onLine === false) return 'offline';
+    if (!token) return 'ohne-token';
+    if (feedback) return 'feedback';
+    if (game) return 'spiel';
+    if (spielOderLaden()) return 'laedt';
+    if (autoLaeuft) return 'laeuft';
+    return null;
+  }
+  function autoAktualisieren(grund) {
+    var h = autoHindernis();
+    var ansicht = !$('buildsView').hidden ? 'builds' : !$('projectView').hidden ? 'project' : null;
+    if (!h && !ansicht) h = 'ansicht';
+    // Offline-Zustand (Hinweis oben) räumt weiterhin der bestehende Weg auf (Ereignis „online“, „Aktualisieren“).
+    if (!h && isOffline()) h = 'offline';
+    if (!h && ansicht === 'project' && $('projReload').disabled) h = 'laeuft';
+    if (!h && Date.now() - zuletztGeladen[ansicht] < autoMinMs) h = 'zu-frueh';
+    if (h) { autoMerke(grund, h); return; }
+    autoLaeuft = true;
+    (ansicht === 'builds' ? stillBuilds() : stillProject()).then(function (r) {
+      autoLaeuft = false;
+      autoMerke(grund, r || 'geladen');
+    }, function () {
+      autoLaeuft = false;
+      autoMerke(grund, 'fehler');
+    });
+  }
+
+  // Build-Liste: 1 API-Anfrage (index.json). Unveränderte Liste: nichts neu zeichnen. Ein neuer Build
+  // erscheint in der Liste, wird aber nicht automatisch heruntergeladen (das ginge nur mit Ladeansicht).
+  async function stillBuilds() {
+    var list = await checkOnline();
+    zuletztGeladen.builds = Date.now();
+    storeLastIndex(list);
+    if (JSON.stringify(list) === JSON.stringify(builds)) return 'unveraendert';
+    builds = list;
+    indexLoaded = true;
+    await refreshSaved();
+    var x = window.scrollX, y = window.scrollY;
+    renderBuilds(); // Auswahl bleibt (gewählter Build per Kurz-Hash), Klapp-Zustand bleibt (buildsOffen)
+    window.scrollTo(x, y);
+    return 'geladen';
+  }
+
+  // Zeitleiste vollständig (aether und Dashboard) holen, bevor gezeichnet wird: kein Zwischenstand
+  // „Dashboard-PRs werden geladen …“. Scheitert nur das Dashboard-Repo, bleiben die bisherigen Daten.
+  async function stillTimeline() {
+    var d = await fetchTimeline(true);
+    if (d.later) {
+      var dash = await d.later;
+      d = { aether: d.aether, items: mergeTimeline(d.aether, dash || []), dash: dash === null ? 'error' : 'ok' };
+    }
+    var alt = $('timelineBody')._tl;
+    if (d.dash === 'error' && alt && alt.dash === 'ok') throw new Error('Dashboard-PRs nicht erreichbar');
+    return d;
+  }
+
+  // Projektansicht: alle Teile holen (der 60-s-Cache ist zu diesem Zeitpunkt abgelaufen, siehe
+  // AUTO_MIN_ABSTAND_MS), dann in einem Schritt zeichnen. Teile mit Fehler bleiben, wie sie sind.
+  async function stillProject() {
+    var gen = projGen;
+    var settle = function (p) { return p.then(function (v) { return { ok: true, v: v }; }, function (e) { return { ok: false, e: e }; }); };
+    var ci = fetchLatestRun(true).then(function (run) {
+      if (!run) return { run: null, st: null };
+      return fetchCiStats(true).then(function (st) { return { run: run, st: st }; });
+    });
+    var r = await Promise.all([settle(ci), settle(stillTimeline()), settle(fetchRoadmap(true)), settle(fetchEngineMap(true))]);
+    if (gen !== projGen || $('projectView').hidden || isOffline() || feedback || spielOderLaden()) return 'verworfen';
+    var x = window.scrollX, y = window.scrollY;
+    var neu = 0;
+    if (r[0].ok) { renderStillCi(r[0].v); neu++; }
+    if (r[1].ok) { renderTimeline($('timelineBody'), r[1].v); neu++; }
+    if (r[2].ok) { renderRoadmap($('roadmapBody'), r[2].v); neu++; }
+    if (r[3].ok) { renderEngineMap($('engineBody'), r[3].v); neu++; }
+    window.scrollTo(x, y);
+    if (!neu) throw new Error('nichts geladen');
+    if (neu < r.length) return 'teilweise'; // Stempel „Stand: …“ bleibt beim letzten vollständigen Laden
+    zuletztGeladen.project = Date.now();
+    setProjStamp();
+    return 'geladen';
+  }
+
+  // Build-Ampel und CI-Zeile in einem Schritt (ohne „Lade CI-Laufzeit …“); Nachladen laufender Builds wie bisher.
+  function renderStillCi(d) {
+    var box = $('ciBody');
+    var info = renderRun(box, d.run);
+    stopProjectPolling();
+    if (info && info.running && !$('projectView').hidden) {
+      pollTimer = setTimeout(function () { if (!$('projectView').hidden) loadCiPart(true, true); }, POLL_RUNNING_MS);
+    }
+    if (!d.run) return;
+    var t = el('div', 'ci-time');
+    t.id = 'ciTime';
+    t.setAttribute('aria-live', 'off');
+    box.appendChild(t);
+    try { renderCiStats(t, d.st, d.run); } catch (e) { renderCiUnavailable(t); }
   }
 
   function setHash(h) {
@@ -3514,7 +3849,7 @@
   $('projReload').addEventListener('click', function () { loadProject(true); });
   $('reloadBtn').addEventListener('click', refreshBuilds);
   // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
-  $('buildList').addEventListener('change', syncStartFrame);
+  $('buildList').addEventListener('change', function () { applyBuildsKlapp(); syncStartFrame(); });
   window.addEventListener('resize', fitHeader);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeader, function () { /* egal */ });
   // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).
@@ -3685,10 +4020,22 @@
   });
   window.addEventListener('online', function () {
     updateTools();
-    if (!offlineReason || !token || loadAbort || game) return;
+    if (!offlineReason) { autoAktualisieren('online'); return; }
+    if (!token || loadAbort || game) return;
     if (!$('buildsView').hidden) refreshBuilds();
     else if (!$('projectView').hidden) loadProject(false);
   });
+
+  // Selbst aktualisieren: Intervall und Rückkehr in die App bzw. den Tab (Daten und Dashboard-Version).
+  if (autoMs > 0) setInterval(function () { autoAktualisieren('intervall'); pruefeVersion(); }, autoMs);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    autoAktualisieren('sichtbar');
+    pruefeVersion();
+  });
+  // Wartende neue Version: sobald kein Texteingabefeld mehr den Fokus hat.
+  document.addEventListener('focusout', function () { setTimeout(versionNeuladenWennMoeglich, 0); });
+  setTimeout(pruefeVersion, versionStartMs);
 
   // Service Worker hält die Seite selbst für den Offline-Start vor (siehe sw.js).
   if ('serviceWorker' in navigator) {
