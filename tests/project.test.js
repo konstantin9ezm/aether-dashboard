@@ -483,7 +483,7 @@ for (const deviceName of [null, 'iPad Pro 11', 'iPad Pro 11 landscape', 'iPhone 
 
     // 3. Roadmap
     const secs = await page.$$eval('#roadmapBody .rm-sec', (ds) => ds.map((d) => ({
-      name: d.querySelector('summary .name').textContent, num: d.querySelector('summary .num').textContent,
+      name: d.querySelector('.rm-head .name').textContent, num: d.querySelector('.rm-head .num').textContent,
       now: d.querySelector('.bar').getAttribute('aria-valuenow'), max: d.querySelector('.bar').getAttribute('aria-valuemax'),
       width: d.querySelector('.bar > div').style.width
     })));
@@ -631,8 +631,8 @@ test('ROADMAP.md mit unerwarteten Zeilen wird tolerant gelesen', async () => {
   const { context, page, log } = await newPage('iPad Pro 11');
   await openProject(page);
   const secs = await page.$$eval('#roadmapBody .rm-sec', (ds) => ds.map((d) => ({
-    name: d.querySelector('summary .name').textContent,
-    num: d.querySelector('summary .num').textContent,
+    name: d.querySelector('.rm-head .name').textContent,
+    num: d.querySelector('.rm-head .num').textContent,
     items: [...d.querySelectorAll('.rm-items li:not(.empty) .txt')].map((t) => t.textContent)
   })));
   assert.deepEqual(secs, [
@@ -645,7 +645,8 @@ test('ROADMAP.md mit unerwarteten Zeilen wird tolerant gelesen', async () => {
   assert.deepEqual(await page.$$eval('#roadmapBody a.pr-link', (as) => as.map((a) => a.getAttribute('href'))), [7, 8, 9].map((n) => `${GH}/pull/${n}`));
   // Freitext, Liste ohne Kästchen, [~], Tabelle, ###-Überschrift
   assert.match(await text(page, '#roadmapBody .note'), /5 Zeilen hatten kein bekanntes Format/);
-  assert.match(await text(page, '#roadmapBody .rm-sec:nth-of-type(4)'), /Keine Punkte/);
+  // Abschnitte sind jetzt <div class="rm-sec"> (vorher <details>): vierter Abschnitt über die Liste, nicht nth-of-type.
+  assert.match(await page.$$eval('#roadmapBody .rm-sec', (ds) => ds[3].textContent), /Keine Punkte/);
   assert.equal(await page.evaluate(() => window.__xss), undefined, 'kein HTML aus der Datei ausgeführt');
   assert.equal(await page.$('#roadmapBody img'), null);
   const rmText = await text(page, '#roadmapBody');
@@ -686,8 +687,8 @@ test('ROADMAP.md: PR-Verweise auf aether und aether-dashboard', async () => {
   assert.equal(styles.length, 1, `einheitlicher Link-Stil: ${styles.join(' / ')}`);
   // Zählung unverändert: Abschnitte, Balken, erledigt/gesamt.
   const secs = await page.$$eval('#roadmapBody .rm-sec', (ds) => ds.map((d) => [
-    d.querySelector('summary .name').textContent, d.querySelector('summary .num').textContent,
-    d.querySelector('summary .bar').getAttribute('aria-valuenow'), d.querySelector('summary .bar').getAttribute('aria-valuemax')]));
+    d.querySelector('.rm-head .name').textContent, d.querySelector('.rm-head .num').textContent,
+    d.querySelector('.rm-head .bar').getAttribute('aria-valuenow'), d.querySelector('.rm-head .bar').getAttribute('aria-valuemax')]));
   assert.deepEqual(secs, [['Verweise', '4/6', '4', '6'], ['Fremd', '0/1', '0', '1']]);
   assert.match(await text(page, '#roadmapBody .rm-total'), /4 \/ 7 erledigt/);
   await assertTouchFriendly(page, 'ROADMAP Repos');

@@ -523,17 +523,45 @@
   .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
   .bar.full > div { background: var(--ok); }
   .rm-sec { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); margin-top: 10px; }
-  .rm-sec summary {
-    list-style: none; cursor: pointer; touch-action: manipulation;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center;
+  /* Abschnittskopf: ganzer Kopf antippbar; der Pfeil-Knopf links ist das Tastatur-Ziel (aria-expanded). */
+  .rm-head {
+    cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center;
     padding: 12px 14px; min-height: 60px;
   }
-  .rm-sec summary::-webkit-details-marker { display: none; }
-  .rm-sec summary .name { font-weight: 600; overflow-wrap: anywhere; }
-  .rm-sec summary .name::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); transition: transform .15s; }
-  .rm-sec[open] summary .name::before { transform: rotate(90deg); }
-  .rm-sec summary .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
-  .rm-sec summary .bar { grid-column: 1 / -1; }
+  .rm-head .name { font-weight: 600; overflow-wrap: anywhere; }
+  .rm-head .num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .rm-head .bar { grid-column: 1 / -1; }
+  .rm-pfeil {
+    width: 44px; height: 44px; padding: 0; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 10px; border: 1px solid #404D69; background: #242D41; color: var(--text);
+    cursor: pointer; touch-action: manipulation;
+  }
+  /* Pfeil aus zwei Linien (ca. 3 px): zugeklappt nach rechts (›), aufgeklappt nach unten (⌄). */
+  .rm-pfeil::before {
+    content: ''; display: block; width: 11px; height: 11px;
+    border-right: 3px solid currentColor; border-bottom: 3px solid currentColor; border-radius: 1px;
+    transform: translateX(-2px) rotate(-45deg);
+  }
+  .rm-pfeil[aria-expanded="true"]::before { transform: translateY(-2px) rotate(45deg); }
+  .rm-pfeil:focus-visible, .klapp-breit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rm-sec .klapp-breit { margin: 4px 14px 14px; width: calc(100% - 28px); background: #242D41; border-color: #404D69; }
+  /* Breiter Klapp-Knopf am Listenende („… anzeigen ⌄“ / „Einklappen ⌃“), Pfeil per CSS gezeichnet. */
+  .klapp-breit {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 44px; min-height: 44px; margin-top: 8px; padding: 0 16px;
+    border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font: inherit; font-weight: 500; cursor: pointer; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .klapp-breit:active { transform: scale(.99); }
+  .klapp-breit::after {
+    content: ''; flex: none; width: 8px; height: 8px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+  }
+  .klapp-breit[aria-expanded="true"]::after { transform: translateY(2px) rotate(-135deg); }
   .rm-items { list-style: none; margin: 0; padding: 0 14px 6px; }
   .rm-items li { display: flex; gap: 10px; align-items: center; padding: 6px 0; min-height: 44px; border-top: 1px solid var(--line); }
   .rm-items li.empty { color: var(--muted); font-size: 14px; }
@@ -1880,6 +1908,32 @@
     return b;
   }
 
+  // ---------------------------------------------------------------------------
+  // Klapp-Baustein (Fortschritt, Build-Liste, Zeitleiste). Der Klapp-Zustand lebt nur im Speicher dieser
+  // Sitzung, nie in localStorage/sessionStorage: Nach jedem Neuladen der Seite gilt wieder der Startzustand.
+  // ---------------------------------------------------------------------------
+  // Breiter Knopf am Listenende („… anzeigen ⌄“ bzw. „Einklappen ⌃“); den Pfeil zeichnet CSS (aria-expanded).
+  function klappKnopf(text, offen, ariaLabel, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'klapp-breit';
+    b.textContent = text;
+    b.setAttribute('aria-expanded', String(!!offen));
+    if (ariaLabel) b.setAttribute('aria-label', ariaLabel);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  // Nach „Einklappen“: Liegt das Ziel (Listenkopf bzw. Knopf „… anzeigen“) außerhalb des sichtbaren
+  // Bereichs, so weit scrollen, dass es sichtbar ist (kein Sprung ins Leere). Fokus folgt ohne Scrollen.
+  function zeigeNachEinklappen(ziel, fokus) {
+    if (!ziel || !ziel.isConnected) return;
+    var r = ziel.getBoundingClientRect();
+    var h = window.innerHeight || document.documentElement.clientHeight;
+    if (r.top < 0) window.scrollBy(0, r.top - 16);
+    else if (r.bottom > h) window.scrollBy(0, r.bottom - h + 16);
+    if (fokus) { try { fokus.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+  }
+
   var toastTimer = null;
   function showToast(text, isError) {
     var t = $('gameToast');
@@ -3157,6 +3211,12 @@
     return bar;
   }
 
+  // Startzustand der Abschnitte: „Erledigt“ zu, alle übrigen offen (wie bisher). Umschalten gilt nur für
+  // die laufende Sitzung (rmOffen im Speicher), auch über automatisches und manuelles Neuladen der Daten.
+  var rmOffen = {};
+  function istErledigt(name) { return /^erledigt\b/i.test(String(name).trim()); }
+  function rmStartOffen(name) { return Object.prototype.hasOwnProperty.call(rmOffen, name) ? rmOffen[name] : !istErledigt(name); }
+
   function renderRoadmap(box, rm) {
     box.textContent = '';
     if (!rm.sections.length) {
@@ -3171,16 +3231,22 @@
       box.appendChild(tot);
       box.appendChild(progressBar(allDone, all));
     }
-    rm.sections.forEach(function (s) {
+    rm.sections.forEach(function (s, si) {
       var done = s.items.filter(function (i) { return i.done; }).length;
-      var d = el('details', 'rm-sec');
-      d.open = true;
-      var sum = el('summary');
-      sum.appendChild(el('span', 'name', s.name));
-      sum.appendChild(el('span', 'num', done + '/' + s.items.length));
-      sum.appendChild(progressBar(done, s.items.length));
-      d.appendChild(sum);
+      var d = el('div', 'rm-sec');
+      var head = el('div', 'rm-head');
+      var pfeil = el('button', 'rm-pfeil');
+      pfeil.type = 'button';
+      pfeil.setAttribute('aria-label', 'Abschnitt „' + s.name + '“');
+      var ulId = 'rmItems' + si;
+      pfeil.setAttribute('aria-controls', ulId);
+      head.appendChild(pfeil);
+      head.appendChild(el('span', 'name', s.name));
+      head.appendChild(el('span', 'num', done + '/' + s.items.length));
+      head.appendChild(progressBar(done, s.items.length));
+      d.appendChild(head);
       var ul = el('ul', 'rm-items');
+      ul.id = ulId;
       if (!s.items.length) ul.appendChild(el('li', 'empty', 'Keine Punkte.'));
       s.items.forEach(function (i) {
         var li = el('li', i.done ? 'done' : '');
@@ -3202,6 +3268,25 @@
         ul.appendChild(li);
       });
       d.appendChild(ul);
+      // Nur der lange Abschnitt „Erledigt“ bekommt am Ende „Einklappen“.
+      var lang = istErledigt(s.name);
+      var unten = lang ? klappKnopf('Einklappen', true, 'Abschnitt „' + s.name + '“ einklappen', function () {
+        setze(false);
+        zeigeNachEinklappen(head, pfeil);
+      }) : null;
+      if (unten) d.appendChild(unten);
+      var setze = function (offen) {
+        rmOffen[s.name] = offen;
+        d.classList.toggle('open', offen);
+        pfeil.setAttribute('aria-expanded', String(offen));
+        ul.hidden = !offen;
+        if (unten) unten.hidden = !offen;
+      };
+      head.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('a')) return;
+        setze(!d.classList.contains('open'));
+      });
+      setze(rmStartOffen(s.name));
       box.appendChild(d);
     });
     if (rm.skipped) {
