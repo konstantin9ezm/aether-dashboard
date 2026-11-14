@@ -745,6 +745,91 @@ bewusst eigenständig. Sie gehört zur App-Hülle in `sw.js` und wird von `pages
 die drei Seiten offline nicht. `tests/gemeinsam.test.js` prüft, dass keine der Funktionen in den HTML-Dateien erneut
 definiert wird.
 
+## Ein- und Ausklappen
+
+Drei Listen sind beim Laden kurz und lassen sich aufklappen. Der Klapp-Zustand gilt **nur für die laufende
+Sitzung** (Variablen im Speicher, kein `localStorage`/`sessionStorage`): Nach jedem Neustart bzw. Neuladen der Seite
+gilt wieder der Startzustand. Automatisches und manuelles Neuladen der *Daten* lässt ihn dagegen stehen.
+
+| Stelle | Startzustand | Aufklappen | Am Ende (aufgeklappt) |
+| --- | --- | --- | --- |
+| Projekt › Fortschritt | „Erledigt“ zu, alle übrigen Abschnitte offen | Pfeil-Knopf links im Kopf oder ganzer Kopf | nur „Erledigt“: „Einklappen ⌃“ |
+| Spielen › Build wählen | die 3 neuesten Builds (+ ein gewählter älterer Build als zusätzlicher Eintrag) | „Ältere Builds anzeigen (n) ⌄“ (n = verborgene Builds; ≤ 3 Builds: kein Knopf) | „Einklappen ⌃“ |
+| Projekt › Zeitleiste | die 3 neuesten Einträge der Filteransicht (Alle / Spiel / Dashboard) | „Ältere anzeigen (n) ⌄“ zeigt **alle** Einträge der Filteransicht | „Einklappen ⌃“ |
+
+- Alle Klapp-Knöpfe sind `<button>`-Elemente mit `aria-expanded` und `aria-label`, per Tab und Enter/Leertaste
+  bedienbar, Tippfläche mindestens 44 × 44 px. Die Pfeile (›/⌄ im Fortschritt, ⌄/⌃ an den breiten Knöpfen) zeichnet
+  CSS, sie sind keine Schriftzeichen.
+- Breiter Knopf: volle Listenbreite, 44 px hoch, Hintergrund `--panel-2`/Rand `--line` (innerhalb eines
+  Fortschritt-Abschnitts etwas heller: `#242D41`/`#404D69`). Fortschritt-Pfeil-Knopf: 44 × 44 px, `#242D41`/`#404D69`.
+- „Einklappen“ stellt den Startzustand her; liegt der Listenkopf bzw. der Knopf „… anzeigen“ danach außerhalb des
+  sichtbaren Bereichs, wird dorthin gescrollt (Fokus auf diesen Knopf).
+- Zeitleiste: Je Quelle sind schon bis zu 50 Einträge geladen (wie bisher); „Ältere anzeigen“ blendet sie nur ein,
+  es gibt keine weitere API-Anfrage. Ein Filterwechsel setzt die Liste auf die 3 neuesten zurück.
+- Build-Liste: Ältere Builds bleiben ausgeblendet im DOM; Auswahl, Abzeichen „NEUESTER“/„GESPEICHERT“, Start-Rahmen
+  und „Aktualisieren“ funktionieren wie bisher. Wird ein Build unter den 3 neuesten gewählt, verschwindet der
+  zusätzliche Eintrag wieder.
+
+## Selbst aktualisieren
+
+### Daten (Projektansicht und Build-Liste)
+
+Die sichtbare Ansicht lädt im Hintergrund neu:
+
+- alle `AUTO_AKTUALISIEREN_MS` = 120 s (`0` = aus), solange die Seite sichtbar ist
+  (`document.visibilityState === 'visible'`), das Gerät online ist und ein Token gespeichert ist;
+- zusätzlich sofort bei Rückkehr in die App bzw. den Tab (`visibilitychange`) und beim Ereignis `online`, aber
+  frühestens `AUTO_MIN_ABSTAND_MS` = 60 s nach dem letzten Laden (entspricht dem 60-s-Cache);
+- **nie**, während ein Spiel lädt oder läuft (nach dem Tipp im Start-Rahmen bis zum Schließen) oder der
+  Feedback-Dialog offen ist. Nach dem Schließen des Spiels wird sofort einmal aktualisiert.
+
+Das Neuladen ist still: kein „Lade …“, keine Fehlermeldung, keine Fehlerkarte. Klapp-Zustand, Zeitleisten-Filter,
+CI-Details, Scroll-Position und gewählter Build bleiben. Erst wenn alle Teile da sind, wird in einem Schritt
+gezeichnet; Teile mit Fehler (offline, Zeitlimit, API) bleiben wie sie sind, der Stempel „Stand: …“ ändert sich nur
+bei vollständigem Erfolg. Der Offline-Zustand (Hinweis oben) wird wie bisher über das Ereignis `online` bzw.
+„Aktualisieren“ aufgeräumt. Ein neuer Build erscheint in der Liste (Abzeichen „NEUESTER“), wird aber erst beim
+Starten oder mit „Aktualisieren“ heruntergeladen (dafür bräuchte es die Ladeansicht).
+
+API-Anfragen je automatischem Neuladen (Limit 5000/h):
+
+| Ansicht | Anfragen | höchstens pro Stunde |
+| --- | --- | --- |
+| Projektansicht | 8 (letzter Lauf, abgeschlossene Läufe, Jobs, `build.yml`, PRs, Commits, Dashboard-PRs, `ROADMAP.md`; Workflow-ID aus dem 30-min-Cache, `engine-map.json` vom eigenen Ursprung) | Intervall: 30 × 8 = 240; mit häufigem Wechsel in die App höchstens 60 × 8 = 480 (Mindestabstand 60 s) |
+| Build-Liste | 1 (`index.json`) | 30, höchstens 60 |
+
+Dazu kommen wie bisher das Nachladen eines laufenden Builds alle 30 s und ggf. das Nachholen älterer CI-Dauern.
+Beim ersten Laden entstehen keine zusätzlichen Anfragen.
+
+Tests: `window.AETHER_TEST_AUTO_MS` und `window.AETHER_TEST_AUTO_MIN_MS` (vor dem Skript gesetzt) verkürzen
+Intervall und Mindestabstand; nur dann schreibt die Seite ein Protokoll der Versuche nach `window.__aetherAuto`
+(Grund und Ergebnis, keine Daten).
+
+### Neue Dashboard-Version (nur `index.html`)
+
+`pages.yml` setzt beim Veröffentlichen den Commit in `<meta name="aether-version" content="…">` der Hauptseite.
+Die offene Seite liest beim Start (nach 3 s), bei Rückkehr in die App und mit jeder Intervall-Runde `index.html`
+am Browser-Cache vorbei (`cache: 'no-store'`, über den Service Worker, der dabei auch die App-Hülle auffrischt) und
+vergleicht die Marke. Ist sie neu:
+
+- läuft kein Spiel, ist kein Feedback-Dialog offen und hat kein Texteingabefeld den Fokus (z. B. Token): sofort
+  `location.reload()`;
+- sonst wartet die Seite und lädt neu, sobald das zutrifft (nach dem Schließen des Spiels, beim Verlassen des Felds,
+  bei jedem Ansichtswechsel, bei der nächsten Prüfung).
+
+Kein Kreislauf: Vor dem Neuladen merkt sich die Seite die neue Version in `sessionStorage`
+(`aether.versionNeugeladen`, nur die Versionsmarke). Zeigt die Seite danach immer noch die alte Marke (z. B. CDN
+noch nicht aktuell), wird für diese Version nicht noch einmal neu geladen. Offline wird nicht geprüft; Fehler
+bleiben still. Lokal (ohne `pages.yml`) steht der Platzhalter `__AETHER_VERSION__` in der Seite, dann ist die
+Prüfung aus.
+
+`screen-editor.html` und `logo.html` laden **nicht** automatisch neu (dort könnten ungespeicherte Änderungen
+verloren gehen); sie verhalten sich wie bisher. `sw.js`, `aether-shell-v1` und `aether-builds-v1` sind
+unverändert; api.github.com landet weiterhin nie in einem Cache.
+
+Bereits installierte Home-Apps laufen bis zum nächsten echten Seitenaufruf mit der alten Fassung (ohne diese
+Prüfung). Einmal die App beenden und neu öffnen (oder warten, bis iOS sie verwirft) – danach übernimmt sie neue
+Versionen selbst.
+
 ## Entwicklung & Tests
 
 ```sh
@@ -773,6 +858,22 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   CI-Zeile mit langen Job- und Schrittnamen (Re-run): „Dauer / Limit (Prozent)“ liegt bei 1194×834, 834×1194,
   874×402, 402×874, 390×844, 360 und 320 px sowie in 10-px-Schritten von 320 bis 1400 px immer in einer Zeile,
   ohne Überlauf aus der Karte. Gegenprobe (muss rot werden): ohne `white-space: nowrap` am Block.
+- `tests/klappen.test.js` – Ein- und Ausklappen (Desktop, iPhone 13): Fortschritt mit „Erledigt“ beim Laden zu,
+  Pfeil-Knöpfe ≥ 44 × 44 in allen Abschnitten, Pfeilrichtung und `aria-expanded`, ganzer Kopf antippbar, Tastatur,
+  „Einklappen“ nur am Ende von „Erledigt“ samt Scrollen zum Kopf; Build-Liste mit 3 Builds + „Ältere Builds
+  anzeigen (n)“, aufgeklappt alle + „Einklappen“, ≤ 3 Builds ohne Knopf, gewählter älterer Build als 4. Eintrag;
+  Zeitleiste je Filter 3 Einträge + „Ältere anzeigen (n)“, ein Tipp zeigt alle, „Einklappen“, Filterwechsel setzt
+  zurück; jeweils nach Neuladen wieder Startzustand und keine neuen Speicher-Schlüssel. Gemeinsame Mock-API und
+  Server mit Versionsmarke: `tests/mock-dashboard.js`.
+- `tests/selbst-aktualisieren.test.js` – Selbst aktualisieren mit verkürztem Intervall (Test-Schalter, Protokoll
+  `window.__aetherAuto`, keine festen Wartezeiten): Projektansicht und Build-Liste laden nach dem Intervall neu,
+  Klapp-Zustand, Filter, CI-Details, Auswahl, Start-Rahmen und Scroll-Position bleiben, kein „Lade …“, 8 bzw. 1
+  Anfrage je Neuladen; nicht bei verborgener Seite, Rückkehr lädt sofort, aber erst nach dem Mindestabstand;
+  Standardwerte 120 s / 60 s; nie beim Laden oder Spielen eines Builds und bei offenem Feedback-Dialog, danach sofort
+  einmal; Fehler (500, abgebrochen) lassen Daten stehen. Neue Dashboard-Version: Neuladen ohne Spiel, mit Spiel und
+  Feedback-Dialog erst nach dem Schließen, mit Fokus im Token-Feld erst danach, kein Kreislauf bei weiter alter
+  Seite, Screen-Editor und Logo-Seite laden nicht neu, mit Service Worker neue Version in der App-Hülle, offline
+  keine Prüfung.
 - `tests/host.test.js` – Schnittstelle Spiel ↔ Dashboard im **vollen Chromium** (`channel: "chromium"`, nicht die
   Headless-Shell): Einstellungen speichern/löschen, Ablehnung ungültiger Nachrichten und fremder Quellen, Grenze von
   64 Schlüsseln, `"</script>"` im Wert, „Token löschen“; Feedback-Dialog mit echtem Klick und echter Enter-Taste
