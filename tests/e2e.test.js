@@ -711,7 +711,7 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 10 · Vorschau 3 · geplant 7).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 11 · Vorschau 2 · geplant 7).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
@@ -719,7 +719,7 @@ describe('Offline', () => {
       const count = (st) => all.filter((b) => b.status === st).length;
       return [all.length, count('fertig'), count('vorschau'), count('geplant')].join('/');
     });
-    assert.equal(offlineMap, '20/10/3/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 10, Vorschau 3, geplant 7)');
+    assert.equal(offlineMap, '20/11/2/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 11, Vorschau 2, geplant 7)');
     assert.ok(await page.isHidden('#message'), 'keine Fehlermeldung, nur der Hinweis');
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable, r.disabled, r.checked]), [
@@ -803,7 +803,7 @@ describe('Offline', () => {
     await page.waitForSelector('#offlineHint:not([hidden])');
     const hint = (await page.textContent('#offlineHint')).replace(/\s+/g, ' ').trim();
     assert.match(hint, /^Offline – letzte Version aaa1111/);
-    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 10 · Vorschau 3 · geplant 7).
+    // Offline aus dem Cache abrufbar (Inhalt unverändert: 20 Bausteine, fertig 11 · Vorschau 2 · geplant 7).
     const offlineMap = await page.evaluate(async () => {
       const res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin' });
       const j = await res.json();
@@ -811,7 +811,7 @@ describe('Offline', () => {
       const count = (st) => all.filter((b) => b.status === st).length;
       return [all.length, count('fertig'), count('vorschau'), count('geplant')].join('/');
     });
-    assert.equal(offlineMap, '20/10/3/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 10, Vorschau 3, geplant 7)');
+    assert.equal(offlineMap, '20/11/2/7', 'engine-map.json offline aus der App-Hülle (20 Bausteine: fertig 11, Vorschau 2, geplant 7)');
     assert.match(hint, /antwortet nicht/);
     const rows = await buildRows(page);
     assert.deepEqual(rows.map((r) => [r.short, r.unavailable]), [['aaa1111', false], ['bbb2222', true], ['ccc3333', true]]);

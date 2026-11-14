@@ -14,7 +14,7 @@
         { "name": "Physik", "detail": "Jolt", "status": "geplant" },
         { "name": "ECS", "detail": "EnTT", "status": "geplant" },
         { "name": "Audio", "detail": "miniaudio", "status": "geplant" },
-        { "name": "UI", "detail": "RmlUi, Umzug läuft", "status": "vorschau" },
+        { "name": "UI", "detail": "RmlUi, Spielmenüs", "status": "fertig" },
         { "name": "Debug-UI", "detail": "Dear ImGui", "status": "fertig" },
         { "name": "Profiler", "detail": "Tracy, nur nativ", "status": "fertig" },
         { "name": "Asset-System", "detail": "Katalog, Streaming", "status": "geplant" }
