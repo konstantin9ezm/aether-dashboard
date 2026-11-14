@@ -1840,6 +1840,7 @@ describe('Zeitleiste mit Dashboard-PRs', () => {
   ];
   // Erwartete Reihenfolge (Merge- bzw. Commit-Zeit absteigend):
   const ORDER_ALL = ['DB#10', 'commit', 'PR#3', 'DB#9', 'PR#2', 'commit', 'DB#7', 'PR#1'];
+  const shown = (page) => page.$$eval('#timeline a', (as) => as.filter((a) => a.getBoundingClientRect().height > 0).length);
   const items = (page) => page.$$eval('#timeline a', (as) => as.map((a) => ({
     repo: a.dataset.repo, kind: a.dataset.kind, href: a.href, target: a.target, rel: a.rel,
     badge: a.querySelector('.ic').textContent, badgeBg: getComputedStyle(a.querySelector('.ic')).backgroundColor,
@@ -1925,29 +1926,33 @@ describe('Zeitleiste mit Dashboard-PRs', () => {
     await context.close();
   });
 
+  // Angepasst (Teil C): zugeklappt 3 statt 15 Einträge, ein Tipp zeigt alle, am Ende „Einklappen“.
+  // Ältere Einträge bleiben ausgeblendet im DOM; gezählt werden hier die sichtbaren.
   test('„Ältere anzeigen (n)“ zählt und lädt die gefilterte Liste', async () => {
     mock.reset();
     // 20 Dashboard-PRs (älter als alle aether-Einträge) + 5 aether-Einträge
     mock.dashPulls = Array.from({ length: 20 }, (_, i) => dpr(100 + i, `Dashboard-PR ${100 + i}`, `2026-10-${String(1 + i).padStart(2, '0')}T08:00:00Z`, sha('6')));
     const { context, page } = await newPage(null);
     await openProject(page);
-    assert.equal((await page.$$('#timeline a')).length, 15);
-    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (10)', 'Alle: 25 Einträge');
+    assert.equal(await shown(page), 3);
+    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (22)', 'Alle: 25 Einträge');
     await page.click('#timelineFilter button:has-text("Spiel")');
-    assert.equal((await page.$$('#timeline a')).length, 5);
-    assert.equal(await page.$('#timelineMore'), null, 'Spiel: 5 Einträge, kein Knopf');
+    assert.equal(await shown(page), 3);
+    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (2)', 'Spiel: 5 Einträge');
     await page.click('#timelineFilter button:has-text("Dashboard")');
-    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (5)', 'Dashboard: 20 Einträge');
+    assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (17)', 'Dashboard: 20 Einträge');
     await page.click('#timelineMore');
     const tl = await items(page);
     assert.equal(tl.length, 20);
+    assert.equal(await shown(page), 20, 'ein Tipp zeigt alle');
     assert.ok(tl.every((e) => e.repo === 'dashboard'), 'nachgeladen werden nur Dashboard-Einträge');
     assert.equal(tl[19].num, 'Dashboard · PR #100', 'ältester zuletzt');
     assert.equal(await page.$('#timelineMore'), null);
+    assert.equal(await text(page, '#timelineLess'), 'Einklappen');
     await page.click('#timelineFilter button:has-text("Alle")');
-    assert.equal((await page.$$('#timeline a')).length, 15);
+    assert.equal(await shown(page), 3);
     await page.click('#timelineMore');
-    assert.equal((await page.$$('#timeline a')).length, 25);
+    assert.equal(await shown(page), 25);
     await context.close();
   });
 
@@ -2105,6 +2110,7 @@ describe('Zeitleiste lädt Dashboard-PRs nach', () => {
   ];
   const ORDER_ALL = ['DB#10', 'commit', 'PR#3', 'DB#9', 'PR#2', 'DB#11', 'commit', 'DB#7', 'PR#1'];
   const ORDER_SPIEL = ['commit', 'PR#3', 'PR#2', 'commit', 'PR#1'];
+  const shown = (page) => page.$$eval('#timeline a', (as) => as.filter((a) => a.getBoundingClientRect().height > 0).length);
   const items = (page) => page.$$eval('#timeline a', (as) => as.map((a) => ({
     repo: a.dataset.repo, kind: a.dataset.kind, href: a.href,
     badge: a.querySelector('.ic').textContent, badgeBg: getComputedStyle(a.querySelector('.ic')).backgroundColor,
@@ -2249,13 +2255,15 @@ describe('Zeitleiste lädt Dashboard-PRs nach', () => {
       await page.click('#tabProject');
       await loadingShown(page);
       if (f === 'spiel') await page.click('#timelineFilter button[data-filter="spiel"]');
-      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (5)');
+      // Angepasst (Teil C): zugeklappt 3 Einträge → „Ältere anzeigen (17)“, ein Tipp zeigt alle 20.
+      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (17)');
       await page.click('#timelineMore');
-      assert.equal((await page.$$('#timeline a')).length, 20);
+      assert.equal(await shown(page), 20);
       mock.releaseDash();
       await dashSettled(page);
       const tl = await items(page);
       assert.equal(await page.$('#timelineMore'), null, `${f}: Liste bleibt aufgeklappt`);
+      assert.equal(await shown(page), tl.length, `${f}: alle Einträge sichtbar`);
       if (f === 'alle') {
         assert.equal(tl.length, 25, 'alle 25 Einträge sichtbar');
         // Ohne Verzögerung (aufgeklappt): dieselben 25 in derselben Reihenfolge.
@@ -2269,7 +2277,7 @@ describe('Zeitleiste lädt Dashboard-PRs nach', () => {
       assert.deepEqual(await chips(page), f === 'alle' ? ['Alle=true', 'Spiel=false', 'Dashboard=false'] : ['Alle=false', 'Spiel=true', 'Dashboard=false']);
       // Filterwechsel klappt wie bisher wieder ein.
       await page.click('#timelineFilter button[data-filter="alle"]');
-      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (10)');
+      assert.equal(await text(page, '#timelineMore'), 'Ältere anzeigen (22)');
       await context.close();
     }
   });

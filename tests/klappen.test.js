@@ -211,3 +211,72 @@ describe('Teil B – Build-Liste', () => {
     await context.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Teil C – Zeitleiste
+// ---------------------------------------------------------------------------
+const tlShown = (page) => page.$$eval('#timeline a', (as) => as.filter((a) => a.getBoundingClientRect().height > 0).map((a) => a.querySelector('.num').textContent));
+const tlBtn = (page) => page.$$eval('#timelineBody .klapp-breit', (bs) => bs.map((b) => ({ id: b.id, text: b.textContent, expanded: b.getAttribute('aria-expanded'), h: Math.round(b.getBoundingClientRect().height) })));
+
+describe('Teil C – Zeitleiste', () => {
+  test('je Filter 3 Einträge + „Ältere anzeigen (n)“, ein Tipp zeigt alle, „Einklappen“, Filterwechsel setzt zurück, nach Neuladen zu', async () => {
+    mock.reset();
+    mock.pulls = H.makePulls(10, 50);
+    mock.dashPulls = H.makePulls(7, 30).map((p) => ({ ...p, merged_at: new Date(Date.parse(p.merged_at) + 1800e3).toISOString() }));
+    const { context, page, log } = await H.newPage({ device: 'iPhone 13' });
+    await H.openProject(page);
+    const keysBefore = await storageKeys(page);
+    const cases = [['alle', 17, ['Dashboard · PR #30', 'PR #50', 'Dashboard · PR #29']], ['spiel', 10, ['PR #50', 'PR #49', 'PR #48']], ['dashboard', 7, ['Dashboard · PR #30', 'Dashboard · PR #29', 'Dashboard · PR #28']]];
+    for (const [f, n, first3] of cases) {
+      await page.click(`#timelineFilter button[data-filter="${f}"]`);
+      assert.deepEqual(await tlShown(page), first3, `${f}: die 3 neuesten`);
+      assert.deepEqual(await tlBtn(page), [{ id: 'timelineMore', text: `Ältere anzeigen (${n - 3})`, expanded: 'false', h: 44 }]);
+      await page.click('#timelineMore');
+      const all = await tlShown(page);
+      assert.equal(all.length, n, `${f}: ein Tipp zeigt alle`);
+      assert.deepEqual(all.slice(0, 3), first3, 'Reihenfolge unverändert');
+      assert.deepEqual(await tlBtn(page), [{ id: 'timelineLess', text: 'Einklappen', expanded: 'true', h: 44 }]);
+    }
+    // Filterwechsel im aufgeklappten Zustand → Startzustand der neuen Filteransicht
+    await page.click('#timelineFilter button[data-filter="spiel"]');
+    assert.equal((await tlShown(page)).length, 3);
+    assert.equal((await tlBtn(page))[0].text, 'Ältere anzeigen (7)');
+    // Tastatur
+    await page.focus('#timelineMore');
+    await page.keyboard.press('Space');
+    assert.equal((await tlShown(page)).length, 10);
+    // Einklappen am Ende: Knopf „Ältere anzeigen“ danach sichtbar
+    await page.$eval('#timelineLess', (b) => b.scrollIntoView({ block: 'end' }));
+    await page.click('#timelineLess');
+    assert.equal((await tlShown(page)).length, 3);
+    const more = await H.rectOf(page, '#timelineMore');
+    const vh = await page.evaluate(() => innerHeight);
+    assert.ok(more.top >= 0 && more.bottom <= vh, `„Ältere anzeigen“ sichtbar (${more.top}..${more.bottom})`);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'timelineMore');
+    await noOverflow(page, 'Zeitleiste');
+    await page.screenshot({ path: path.join(H.OUT, 'klappen-zeitleiste.png'), fullPage: true });
+    // Kein Speicher; nach Neuladen wieder 3 Einträge (Filter „Alle“)
+    await page.click('#timelineMore');
+    assert.deepEqual(await storageKeys(page), keysBefore);
+    await page.reload();
+    await page.click('#tabProject');
+    await H.waitProjectLoaded(page);
+    assert.equal((await tlShown(page)).length, 3);
+    assert.equal((await tlBtn(page))[0].text, 'Ältere anzeigen (14)');
+    // Links unverändert (neuer Tab, DB-/PR-Abzeichen)
+    const a = await page.$eval('#timeline a', (x) => [x.target, x.rel, x.querySelector('.ic').textContent]);
+    assert.deepEqual(a, ['_blank', 'noopener noreferrer', 'DB']);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('höchstens 3 Einträge: kein Knopf', async () => {
+    mock.reset();
+    mock.pulls = H.makePulls(3, 10);
+    const { context, page } = await H.newPage({});
+    await H.openProject(page);
+    assert.equal((await tlShown(page)).length, 3);
+    assert.deepEqual(await tlBtn(page), []);
+    await context.close();
+  });
+});

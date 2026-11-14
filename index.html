@@ -2287,7 +2287,8 @@
   var PROJECT_TTL = 60 * 1000;          // API-Antworten eine Minute wiederverwenden
   var WORKFLOW_ID_TTL = 30 * 60 * 1000; // Workflow-ID ändert sich praktisch nie
   var POLL_RUNNING_MS = 30 * 1000;      // laufenden Build automatisch nachladen
-  var TIMELINE_SHOW = 15;
+  // Zeitleiste zugeklappt: die neuesten TIMELINE_SHOW Einträge der Filteransicht; ein Tipp zeigt alle.
+  var TIMELINE_SHOW = 3;
   var projCache = {};
   var projGen = 0;
   var pollTimer = null;
@@ -2295,6 +2296,8 @@
   var dashOhneToken = false;
   // Filter der Zeitleiste: 'alle' | 'spiel' | 'dashboard'. Nicht gespeichert, beim Neuladen der Seite wieder „Alle“.
   var tlFilter = 'alle';
+  // Zeitleiste aufgeklappt? Nur für diese Sitzung (nie gespeichert); Filterwechsel setzt auf zugeklappt zurück.
+  var tlOffen = false;
 
   function clearProjectCache() { projCache = {}; dashOhneToken = false; }
 
@@ -3085,12 +3088,12 @@
   var TL_FILTERS = [{ id: 'alle', label: 'Alle' }, { id: 'spiel', label: 'Spiel' }, { id: 'dashboard', label: 'Dashboard' }];
 
   // Filterleiste einmal; Hinweiszeile und Liste werden aus st gezeichnet, auch wenn die Dashboard-PRs nachkommen.
-  // Filter (tlFilter) und „Ältere anzeigen“ (st.expanded) bleiben dabei erhalten.
+  // Filter (tlFilter) und Klapp-Zustand (tlOffen) bleiben dabei erhalten, auch beim Neuladen der Daten.
   function renderTimeline(box, data) {
     box.textContent = '';
     $('tlTitle').textContent = 'Zeitleiste';
     var gen = projGen;
-    var st = { aether: data.aether, all: data.items, dash: data.dash, expanded: false, note: null };
+    var st = { aether: data.aether, all: data.items, dash: data.dash, note: null };
     box._tl = st;
     var bar = el('div', 'tl-filter');
     bar.id = 'timelineFilter';
@@ -3107,7 +3110,7 @@
       b.setAttribute('aria-pressed', String(tlFilter === f.id));
       b.addEventListener('click', function () {
         tlFilter = f.id;
-        st.expanded = false;
+        tlOffen = false;
         bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x.dataset.filter === tlFilter)); });
         paintTimeline(st);
       });
@@ -3173,19 +3176,33 @@
       li.appendChild(a);
       ol.appendChild(li);
     };
-    var expanded = st && st.expanded;
-    items.slice(0, expanded ? items.length : TIMELINE_SHOW).forEach(addItem);
+    items.forEach(addItem);
     box.appendChild(ol);
-    if (!expanded && items.length > TIMELINE_SHOW) {
-      var more = mkBtn('Ältere anzeigen (' + (items.length - TIMELINE_SHOW) + ')', function () {
-        items.slice(TIMELINE_SHOW).forEach(addItem);
-        more.remove();
-        if (st) st.expanded = true;
-      });
-      more.classList.add('block', 'mt');
-      more.id = 'timelineMore';
-      box.appendChild(more);
-    }
+    applyTlKlapp(box, ol, items.length);
+  }
+
+  // Zugeklappt nur die neuesten TIMELINE_SHOW Einträge, darunter „Ältere anzeigen (n)“; aufgeklappt alle
+  // Einträge der Filteransicht und am Ende „Einklappen“. Alle Einträge sind schon geladen (je Quelle bis zu
+  // 50), es wird nichts nachgeladen; ältere bleiben nur ausgeblendet im DOM.
+  function applyTlKlapp(box, ol, n) {
+    var old = box.querySelector('.klapp-breit');
+    if (old) old.remove();
+    Array.prototype.forEach.call(ol.children, function (li, i) { li.hidden = !tlOffen && i >= TIMELINE_SHOW; });
+    if (n <= TIMELINE_SHOW) return;
+    var btn = tlOffen
+      ? klappKnopf('Einklappen', true, 'Zeitleiste einklappen', function () {
+          tlOffen = false;
+          applyTlKlapp(box, ol, n);
+          zeigeNachEinklappen($('timelineMore'), $('timelineMore'));
+        })
+      : klappKnopf('Ältere anzeigen (' + (n - TIMELINE_SHOW) + ')', false, 'Ältere Einträge anzeigen, ' + (n - TIMELINE_SHOW) + ' weitere', function () {
+          tlOffen = true;
+          applyTlKlapp(box, ol, n);
+          var a = ol.children[TIMELINE_SHOW] && ol.children[TIMELINE_SHOW].querySelector('a');
+          if (a) { try { a.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+        });
+    btn.id = tlOffen ? 'timelineLess' : 'timelineMore';
+    box.appendChild(btn);
   }
 
   // --- 3. ROADMAP.md -----------------------------------------------------------
