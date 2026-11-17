@@ -104,6 +104,36 @@
   function standElemente(wurzel) { return mitAttr(wurzel, 'data-stand'); }
   function standKennung(i) { return 'stand' + (i + 1); }
 
+  /* ---------- Stand-Datum ---------- */
+  // ISO-Tag → Text im Format des Pakets: kurz „TT.MM.JJJJ“, lang „T. Monat JJJJ“ (selbst gewählt, siehe README)
+  function formatiereStand(iso, format) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const j = m[1], mo = Number(m[2]), t = Number(m[3]);
+    return format === 'lang' ? t + '. ' + MONATE[mo - 1] + ' ' + j : zwei(t) + '.' + zwei(mo) + '.' + j;
+  }
+  // Erstes Datum im Text (kurz oder lang) → { index, laenge, iso, format } | null
+  function datumImText(text) {
+    const t = String(text || '');
+    const a = RE_KURZ.exec(t), b = RE_LANG.exec(t);
+    const kandidaten = [];
+    if (a) kandidaten.push({ index: a.index, laenge: a[0].length, j: Number(a[3]), m: Number(a[2]), t: Number(a[1]), format: 'kurz' });
+    if (b) kandidaten.push({ index: b.index, laenge: b[0].length, j: Number(b[3]), m: MONATE.indexOf(b[2]) + 1, t: Number(b[1]), format: 'lang' });
+    kandidaten.sort((x, y) => x.index - y.index);
+    for (const k of kandidaten) {
+      if (k.m >= 1 && k.m <= 12 && k.t >= 1 && k.t <= 31) return { index: k.index, laenge: k.laenge, iso: k.j + '-' + zwei(k.m) + '-' + zwei(k.t), format: k.format };
+    }
+    return null;
+  }
+  // Neuer Text eines Stand-Elements: vorhandenes Datum durch iso ersetzen (Rest des Textes bleibt), sonst nur das Datum.
+  // Format laut data-stand („kurz“/„lang“), sonst wie das vorhandene Datum.
+  function standText(alterText, format, iso) {
+    const d = datumImText(alterText);
+    const f = format === 'kurz' || format === 'lang' ? format : (d ? d.format : 'kurz');
+    if (!d) return formatiereStand(iso, f);
+    return alterText.slice(0, d.index) + formatiereStand(iso, f) + alterText.slice(d.index + d.laenge);
+  }
+
   /* ---------- Werte der Basis ---------- */
   // Werte eines Dokuments (bereinigt gelesen, wie dargestellt): text k → { wert, umbruch }, status k → wert ('' = ohne),
   // stand k → { wert, format } (nur Stand-Elemente mit reinem Text).
@@ -121,6 +151,11 @@
       const st = el.getAttribute('data-status');
       status.set(k, st === null ? '' : st);
     }
+    standElemente(wurzel).forEach((el, i) => {
+      if (!nurText(el)) return;
+      const tr = textTraeger(el);
+      stand.set(standKennung(i), { wert: textLesen(tr), format: el.getAttribute('data-stand'), umbruch: hatUmbruch(tr) });
+    });
     return { text: text, status: status, stand: stand };
   }
   function werte(dok) {
@@ -262,6 +297,14 @@
           if (e.neu) el.setAttribute('data-status', e.neu); else el.removeAttribute('data-status');
           if (o.markieren) markiere(el);
         }
+      } else if (e.art === 'stand') {
+        const m = /^stand(\d+)$/.exec(e.k);
+        const el = m ? stande[Number(m[1]) - 1] : null;
+        if (el && nurText(el)) {
+          const tr = textTraeger(el);
+          textSchreiben(tr, e.neu, hatUmbruch(tr));
+          if (o.markieren) markiere(el);
+        }
       }
     }
     return zaehlerBerechnen(wurzel, { nurVorhandene: o.nurVorhandene });
@@ -302,6 +345,22 @@
     for (const e of eintraege.values()) if (e.dok === dokId && e.art !== 'stand') return true;
     return false;
   }
+  // Stand-Einträge eines Dokuments: nach einer Änderung auf heute (heute = true), ohne Änderungen weg.
+  function standNachziehen(dokId, aufHeute) {
+    const pk = basis(), dok = dokIn(pk, dokId);
+    const mit = hatAenderungen(dokId);
+    for (const e of liste()) if (e.dok === dokId && e.art === 'stand' && (!mit || !dok)) eintraege.delete(sk(e));
+    if (!mit || !dok || !aufHeute) return;
+    const iso = heute(), zeit = jetztIso();
+    werte(dok).stand.forEach((b, k) => {
+      const key = schluessel(dokId, 'stand', k);
+      const neu = normalisiere(standText(b.wert, b.format, iso), b.umbruch);
+      const vorhanden = eintraege.get(key);
+      if (neu === b.wert) { if (vorhanden && !vorhanden.konflikt) eintraege.delete(key); return; }
+      if (vorhanden) { if (vorhanden.neu !== neu) { vorhanden.neu = neu; vorhanden.zeit = zeit; } return; }
+      eintraege.set(key, { dok: dokId, k: k, art: 'stand', alt: b.wert, neu: neu, exportiert: null, zeit: zeit, konflikt: null });
+    });
+  }
   // Eigenen Wert setzen (aus dem Vollbild). neu = Basis-Wert → Eintrag weg. → Promise<Boolean> (gespeichert)
   function setze(dokId, art, k, wert) {
     if (art !== 'text' && art !== 'status') return Promise.reject(fehler('bearbeiten', 'Unbekannte Art.', String(art)));
@@ -328,6 +387,7 @@
     } else {
       eintraege.set(key, { dok: dokId, k: k, art: art, alt: altWert, neu: neu, exportiert: null, zeit: jetztIso(), konflikt: null });
     }
+    standNachziehen(dokId, true);
     const p = speichern();
     melde({ dok: dokId });
     return p;
@@ -335,6 +395,7 @@
   // „Original“: Eintrag weg (Basis-Wert gilt); ohne weitere Änderungen auch der Stand-Eintrag.
   function original(dokId, art, k) {
     eintraege.delete(schluessel(dokId, art, k));
+    standNachziehen(dokId, false);
     const p = speichern();
     melde({ dok: dokId });
     return p;
@@ -381,7 +442,10 @@
     // Darstellung
     anwenden: anwenden,
     zaehlerBerechnen: zaehlerBerechnen,
+    formatiereStand: formatiereStand,
+    standText: standText,
     werteAus: werteAus,
+    heute: heute,
     // Bearbeiten
     setze: setze,
     original: original,
