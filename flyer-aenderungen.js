@@ -148,6 +148,14 @@
   }
 
   /* ---------- Anwenden ---------- */
+  function markiere(el) {
+    el.setAttribute(MARKE_ATTR, '');
+    if (!el.style) return;
+    el.style.setProperty('text-decoration', 'underline dashed ' + MARKE_FARBE, 'important');
+    el.style.setProperty('text-decoration-thickness', '2px', 'important');
+    el.style.setProperty('text-underline-offset', '3px', 'important');
+    el.style.setProperty('text-decoration-skip-ink', 'none', 'important');
+  }
   // Einträge eines Dokuments auf wurzel (bereinigter Klon bzw. geparstes HTML) anwenden, danach Zähler und Balken.
   // opt.markieren: geänderte Stellen markieren (nur Vollbild in Text/Status). opt.nurVorhandene: Export.
   function anwenden(wurzel, dokId, liste, opt) {
@@ -159,10 +167,12 @@
         for (const el of alleMit(wurzel, 'data-t', e.k)) {
           const tr = textTraeger(el);
           textSchreiben(tr, e.neu, hatUmbruch(tr));
+          if (o.markieren) markiere(el);
         }
       } else if (e.art === 'status') {
         for (const el of alleMit(wurzel, 'data-s', e.k)) {
           if (e.neu) el.setAttribute('data-status', e.neu); else el.removeAttribute('data-status');
+          if (o.markieren) markiere(el);
         }
       }
     }
@@ -241,6 +251,13 @@
     melde({ dok: dokId });
     return p;
   }
+  // Alle Änderungen eines Dokuments zurücknehmen (samt Stand)
+  function dokumentZuruecksetzen(dokId) {
+    for (const e of liste()) if (e.dok === dokId) eintraege.delete(sk(e));
+    const p = speichern();
+    melde({ dok: dokId });
+    return p;
+  }
   // Aktueller (eigener) Wert einer Stelle für das Bearbeitungsfeld bzw. die Auswahl
   function aktuellerWert(dokId, art, k) {
     const e = eintraege.get(schluessel(dokId, art, k));
@@ -279,6 +296,7 @@
     // Bearbeiten
     setze: setze,
     original: original,
+    dokumentZuruecksetzen: dokumentZuruecksetzen,
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
     // Abfragen

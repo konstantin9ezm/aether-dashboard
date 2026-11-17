@@ -31,6 +31,7 @@
   const O = window.AetherFlyerOnline || null;
   const E = window.AetherFlyerExport || null;
   const AE = window.AetherFlyerAenderungen || null;
+  const B = window.AetherFlyerBearbeiten || null;
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
@@ -200,6 +201,15 @@
     fehlerWeg: fehlerWeg
   });
 
+  /* ---------- Hilfen für flyer-bearbeiten.js (Teil 2) ---------- */
+  const bearbeitenHilfen = Object.freeze({
+    paket: () => (basis ? basis.paket : null),
+    onlineVersion: async () => { const o = await ladeOnline(); return o && typeof o.version === 'string' ? o.version : null; },
+    fehler: fehler,
+    fehlerWeg: fehlerWeg,
+    kopf: () => zeigeKopf()
+  });
+
   /* ---------- Änderungsschicht (Teil 2) ---------- */
   // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
   function anpasserSetzen() {
@@ -220,6 +230,9 @@
     }
     if (E && typeof E.einrichten === 'function') {
       try { Promise.resolve(E.einrichten()).catch(() => {}); } catch (e) { /* Seite läuft ohne PDF/Bild */ }
+    }
+    if (AE && B && typeof B.einrichten === 'function') {
+      try { Promise.resolve(B.einrichten(bearbeitenHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Bearbeiten */ }
     }
   }
   async function start() {

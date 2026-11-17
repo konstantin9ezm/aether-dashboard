@@ -124,6 +124,19 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 #vbZu{ margin-left:auto; }
 #vbBuehne{ flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y pinch-zoom; }
 #vbBuehne:focus{ outline:none; }
+/* Teil 2: Umschalter Ansehen | Text | Status (wie .seg im Logo-Werkzeug) */
+.seg{ display:inline-flex; flex-wrap:wrap; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; min-width:0; }
+.seg button{ border:0; border-radius:0; background:var(--chip); min-width:44px; }
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); font-weight:600; }
+/* Bearbeitungsleiste und Status-Auswahl unten im Vollbild */
+.vb-edit{ flex:none; display:flex; flex-direction:column; gap:6px; padding:8px 12px; background:var(--panel); border-top:1px solid var(--line); min-width:0; }
+.vb-edit .klein{ margin:0; }
+.vb-edit textarea{ font:inherit; font-size:16px; width:100%; min-height:88px; max-height:40vh; resize:vertical; padding:8px; border-radius:10px;
+  border:1px solid var(--line); background:var(--field); color:var(--text); }
+.vb-edit textarea:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
+.vb-edit .row{ margin:0; }
+.vb-edit button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -186,11 +199,26 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="vbWeiter" aria-label="Nächstes">›</button>
     <span id="vbTitel"></span>
     <span id="vbWarnung" class="warnung" hidden>Text zu lang</span>
+    <div id="vbModus" class="seg" role="group" aria-label="Modus" hidden>
+      <button type="button" data-modus="ansehen" aria-pressed="true">Ansehen</button><button type="button" data-modus="text" aria-pressed="false">Text</button><button type="button" data-modus="status" aria-pressed="false">Status</button>
+    </div>
+    <button type="button" id="vbReset" hidden>Dokument zurücksetzen</button>
     <button type="button" id="vbPdf" hidden>PDF</button>
     <button type="button" id="vbBild" hidden>Bild</button>
     <button type="button" id="vbZu" aria-label="Schließen">✕</button>
   </div>
   <div id="vbBuehne" class="buehne"></div>
+  <div id="vbEdit" class="vb-edit" hidden>
+    <label for="vbEditFeld" id="vbEditLabel" class="klein"></label>
+    <textarea id="vbEditFeld" rows="3" spellcheck="true"></textarea>
+    <div class="row"><button type="button" id="vbEditOk" class="primary">Übernehmen</button><button type="button" id="vbEditAb">Abbrechen</button><button type="button" id="vbEditOrig">Original</button></div>
+  </div>
+  <div id="vbStatus" class="vb-edit" hidden>
+    <span id="vbStatusLabel" class="klein"></span>
+    <div class="row" role="group" aria-label="Status">
+      <button type="button" data-status="ok">fertig</button><button type="button" data-status="run">läuft gerade</button><button type="button" data-status="next">als Nächstes</button><button type="button" data-status="plan">geplant</button><button type="button" data-status="">ohne Status</button><button type="button" id="vbStatusAb">Abbrechen</button>
+    </div>
+  </div>
 </div>
 
 <div id="druck" aria-hidden="true"></div>
@@ -209,6 +237,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 <script src="flyer-online.js"></script>
 <script src="flyer-export.js"></script>
 <script src="flyer-aenderungen.js"></script>
+<script src="flyer-bearbeiten.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>
