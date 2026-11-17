@@ -30,7 +30,7 @@ const SHA_B = 'bbbbbbb000000000000000000000000000000002';
 const SHA_C = 'ccccccc000000000000000000000000000000003';
 const SHA_D = 'ddddddd000000000000000000000000000000004';
 const EVIL = 'https://evil.example';
-const MODULE = ['flyer-paket.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer.js'];
+const MODULE = ['flyer-paket.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer.js'];
 const FLYER_DATEIEN = ['flyer.html', ...MODULE];
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -937,7 +937,7 @@ describe('Flyer: Import und Ansicht', () => {
       });
       assert.deepEqual(ig, { t: [['h1', 't1'], ['text', 't2']], aet: 1, s: 'ok', z: '2', stand: 'lang', fill: 'url(#ig-verlauf)' }, 'Infografik: Markierungen und lokaler Verlauf url(#…)');
       assert.doesNotMatch(await page.$eval('#flyerDokRegeln', (s) => s.textContent), /evil\.example|@import/);
-      assert.equal(await page.evaluate(() => document.scripts.length), 7, 'nur die sieben eigenen Skripte');
+      assert.equal(await page.evaluate(() => document.scripts.length), 9, 'nur die neun eigenen Skripte');
       assert.ok(!log.urls.some((u) => u.includes('evil.example')), 'nichts von evil.example angefragt');
       assert.deepEqual(log.fremd, []);
       // Je eingeschleustem Handler (onerror, onload) höchstens eine Meldung vom Parsen; ein überlebender Handler käme dazu
@@ -1124,8 +1124,9 @@ describe('Flyer: Online-Prüfung', () => {
       const st = await speicher(page);
       assertKeinToken(st, 'nach Online-Laden');
       const db = st.idb.filter((e) => e.db === 'aether-flyer');
-      assert.deepEqual(db.map((e) => e.store).sort(), ['basis', 'online']);
-      assert.equal(db[0].version, 1, 'DB_VERSION 1');
+      assert.deepEqual(db.map((e) => e.store).sort(), ['aenderungen', 'basis', 'online']);
+      assert.equal(db[0].version, 2, 'DB_VERSION 2 (Teil 2)');
+      assert.deepEqual(db.find((e) => e.store === 'aenderungen').schluessel, [], 'Änderungsschicht leer');
       const online = db.find((e) => e.store === 'online');
       assert.deepEqual(online.schluessel, ['stand']);
       assert.deepEqual(Object.keys(online.werte[0]).sort(), ['geprueft', 'sha', 'stand', 'version']);
@@ -1845,36 +1846,36 @@ describe('Flyer: Offline, Speicher, Module, Layout', () => {
 
   test('fehlt ein optionales Modul (Online, Export), bleiben seine Knöpfe verborgen; Import und Ansicht laufen', async () => {
     await mitSeite({ withToken: false }, async ({ context, page, log }) => {
-      await context.route(/\/flyer-(online|export)\.js$/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: '// im Test zurückgenommen\n' }));
+      await context.route(/\/flyer-(online|export|bearbeiten)\.js$/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: '// im Test zurückgenommen\n' }));
       await oeffneFlyer(page);
-      assert.deepEqual(await page.evaluate(() => [typeof window.AetherFlyerOnline, typeof window.AetherFlyerExport]), ['undefined', 'undefined']);
-      for (const id of ['btnOnline', 'btnAllePdf', 'vbPdf', 'vbBild']) assert.ok(await page.isHidden('#' + id), `#${id} verborgen`);
+      assert.deepEqual(await page.evaluate(() => [typeof window.AetherFlyerOnline, typeof window.AetherFlyerExport, typeof window.AetherFlyerBearbeiten]), ['undefined', 'undefined', 'undefined']);
+      for (const id of ['btnOnline', 'btnAllePdf', 'vbPdf', 'vbBild', 'btnExport', 'btnSichern', 'btnEinspielen', 'btnVerwerfen', 'vbModus', 'onlineStellen']) assert.ok(await page.isHidden('#' + id), `#${id} verborgen`);
       assert.equal(await text(page, '#status'), 'noch kein Paket');
       await importiere(page, testPaket());
       assert.equal(await text(page, '#status'), 'offline bereit · Stand 17.11.2026');
       assert.equal((await kacheln(page)).length, 3);
       await page.click('#kacheln .kachel[data-id="T1"]');
       assert.equal(await zaehler(page), '1 / 3');
-      for (const id of ['vbPdf', 'vbBild']) assert.ok(await page.isHidden('#' + id), `#${id} verborgen`);
+      for (const id of ['vbPdf', 'vbBild', 'vbModus']) assert.ok(await page.isHidden('#' + id), `#${id} verborgen`);
       await page.keyboard.press('Escape');
       assert.deepEqual(log.errors, []);
     });
   });
 
-  test('IndexedDB: „versionchange“ schließt die Verbindung (Upgrade wie in Teil 2 nicht blockiert), Paket danach weiter lesbar', async () => {
+  test('IndexedDB: „versionchange“ schließt die Verbindung (Upgrade auf eine neuere Version nicht blockiert), Paket danach weiter lesbar', async () => {
     await mitSeite({ withToken: false }, async ({ page, log }) => {
       await oeffneFlyer(page);
       await importiere(page, testPaket());   // Verbindung der Seite ist jetzt offen
       const upgrade = await page.evaluate(() => new Promise((resolve) => {
         let blockiert = false;
         const uhr = setTimeout(() => resolve({ zeitlimit: true, blockiert }), 5000);
-        const r = indexedDB.open('aether-flyer', 2);
+        const r = indexedDB.open('aether-flyer', 3);
         r.onblocked = () => { blockiert = true; };
-        r.onupgradeneeded = (ev) => { if (ev.oldVersion < 2) r.result.createObjectStore('aenderungen'); };
+        r.onupgradeneeded = (ev) => { if (ev.oldVersion < 3) r.result.createObjectStore('kuenftig'); };
         r.onsuccess = () => { clearTimeout(uhr); const db = r.result; const st = [...db.objectStoreNames].sort(); db.close(); resolve({ blockiert, version: db.version, stores: st }); };
         r.onerror = () => { clearTimeout(uhr); resolve({ fehler: String(r.error) }); };
       }));
-      assert.deepEqual(upgrade, { blockiert: false, version: 2, stores: ['aenderungen', 'basis', 'online'] }, 'Upgrade nicht blockiert');
+      assert.deepEqual(upgrade, { blockiert: false, version: 3, stores: ['aenderungen', 'basis', 'kuenftig', 'online'] }, 'Upgrade nicht blockiert');
       // Die Seite liest und schreibt weiter (öffnet die neuere Version, solange basis und online darin liegen)
       assert.equal(await page.evaluate(() => window.AetherFlyer.gespeichert().then((g) => g && g.paket.version)), VERSION);
       await importiere(page, testPaket({ version: '2026-11-17.2' }));
@@ -2145,10 +2146,12 @@ describe('Flyer: Dateien', () => {
       assert.doesNotMatch(t, /\.innerHTML\s*=|insertAdjacentHTML|outerHTML\s*=|document\.write/, `${d}: kein innerHTML & Co.`);
       assert.doesNotMatch(t, /localStorage\.setItem/, `${d}: Token wird nie geschrieben`);
       const urls = [...t.matchAll(/https?:\/\/[^\s'"<>);]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
-      assert.deepEqual(urls.filter((u) => u !== 'https://api.github.com'), [], `${d}: nur die GitHub-API`);
+      // Teil 2: in flyer.html zusätzlich genau der Upload-Link der Hilfe „Online stellen“ (Navigation, kein Abruf)
+      const erlaubt = d === 'flyer.html' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether/upload/main/docs/flyer'] : ['https://api.github.com'];
+      assert.deepEqual(urls.filter((u) => !erlaubt.includes(u)), [], `${d}: nur die GitHub-API`);
     }
     // Module: IIFE mit 'use strict', genau ein window.AetherFlyerX = Object.freeze(…)
-    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer.js': 'AetherFlyer' };
+    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer-aenderungen.js': 'AetherFlyerAenderungen', 'flyer-bearbeiten.js': 'AetherFlyerBearbeiten', 'flyer.js': 'AetherFlyer' };
     for (const [d, n] of Object.entries(namen)) {
       const t = lies(d);
       const code = t.replace(/^(\s*\/\/[^\n]*\n)*/, '');
@@ -2158,10 +2161,10 @@ describe('Flyer: Dateien', () => {
       assert.match(t, new RegExp(`window\\.${n} = Object\\.freeze\\(`), `${d}: Object.freeze`);
       assert.doesNotMatch(t, /^\s*(import|export)\s/m, `${d}: keine ES-Module`);
     }
-    // Speicher: DB_VERSION 1 und Hinweis auf Teil 2
+    // Speicher: DB_VERSION 2, Migration legt nur den Store „aenderungen“ an (Teil 2)
     const sp = lies('flyer-speicher.js');
-    assert.match(sp, /DB_VERSION = 1\b/);
-    assert.match(sp, /\/\/ Teil 2: if \(alt < 2\) db\.createObjectStore\('aenderungen'/);
+    assert.match(sp, /DB_VERSION = 2\b/);
+    assert.match(sp, /if \(alt < 1\) \{ db\.createObjectStore\('basis'\); db\.createObjectStore\('online'\); \}\s*\n\s*if \(alt < 2\) db\.createObjectStore\('aenderungen'\);/);
     // Nur lesende Anfragen an die API
     assert.doesNotMatch(lies('flyer-online.js'), /method:\s*'(POST|PUT|PATCH|DELETE)'/i);
   });
