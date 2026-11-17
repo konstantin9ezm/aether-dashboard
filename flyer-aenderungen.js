@@ -407,6 +407,14 @@
     melde({ dok: dokId });
     return p;
   }
+  // „Alle Änderungen verwerfen“ (Rückfrage stellt die Oberfläche)
+  function verwerfen() {
+    const doks = Array.from(new Set(liste().map((e) => e.dok)));
+    eintraege.clear();
+    const p = speichern();
+    melde({ doks: doks });
+    return p;
+  }
   // Aktueller (eigener) Wert einer Stelle für das Bearbeitungsfeld bzw. die Auswahl
   function aktuellerWert(dokId, art, k) {
     const e = eintraege.get(schluessel(dokId, art, k));
@@ -557,6 +565,71 @@
   }
   function letzteFassung() { return exporte.length ? exporte[exporte.length - 1] : null; }
 
+  /* ---------- Sicherung (Teil G) ---------- */
+  function sicherung() {
+    const pk = basis();
+    return {
+      format: SICHERUNG_FORMAT,
+      version: SICHERUNG_VERSION,
+      paketFassung: pk ? String(pk.version) : '',
+      gesichert: jetztIso(),
+      eintraege: liste().map(rein)
+    };
+  }
+  function istTextOderNull(v) { return v === null || typeof v === 'string'; }
+  // Inhalt einer Sicherungsdatei prüfen → Liste der Einträge; wirft AppError (dann ändert sich nichts)
+  function pruefeSicherung(text) {
+    if (typeof text !== 'string') throw fehler('format', 'Datei ist kein gültiges JSON.', 'Die Datei enthält keinen Text.');
+    if (text.length > MAX_SICHERUNG_BYTES) throw fehler('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
+    let o;
+    try { o = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw fehler('format', 'Datei ist kein gültiges JSON.', 'Die Datei lässt sich nicht als JSON lesen.'); }
+    if (!istObjekt(o) || o.format !== SICHERUNG_FORMAT) throw fehler('format', 'Keine Änderungs-Sicherung.', 'Erwartet wird format „' + SICHERUNG_FORMAT + '“.');
+    if (typeof o.version !== 'number' || !Number.isInteger(o.version) || o.version < 1) throw fehler('format', 'Sicherung fehlerhaft.', 'version muss eine ganze Zahl ab 1 sein.');
+    if (o.version > SICHERUNG_VERSION) throw fehler('zuneu', 'Sicherung zu neu', 'Die Sicherung hat Version ' + o.version + '; diese Seite kennt Version ' + SICHERUNG_VERSION + '. Bitte das Dashboard aktualisieren.');
+    if (o.paketFassung !== undefined && typeof o.paketFassung !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', 'paketFassung muss ein Text sein.');
+    if (o.gesichert !== undefined && typeof o.gesichert !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', 'gesichert muss ein Text sein.');
+    if (!Array.isArray(o.eintraege)) throw fehler('format', 'Sicherung fehlerhaft.', 'eintraege muss eine Liste sein.');
+    if (o.eintraege.length > MAX_EINTRAEGE) throw fehler('format', 'Sicherung fehlerhaft.', 'Zu viele Einträge.');
+    const gesehen = new Set();
+    return o.eintraege.map((e, i) => {
+      const wo = 'Eintrag ' + (i + 1) + ': ';
+      if (!istObjekt(e)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'kein Objekt.');
+      if (typeof e.dok !== 'string' || !e.dok) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'dok fehlt.');
+      if (typeof e.k !== 'string' || !e.k) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'k fehlt.');
+      if (ARTEN.indexOf(e.art) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'art muss text, status oder stand sein.');
+      if (typeof e.neu !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'neu muss ein Text sein.');
+      if (!istTextOderNull(e.alt) || !istTextOderNull(e.exportiert)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'alt und exportiert müssen Text oder null sein.');
+      if (e.zeit !== undefined && typeof e.zeit !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'zeit muss ein Text sein.');
+      if (e.art === 'status' && e.neu && STATUS.indexOf(e.neu) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannter Status.');
+      if (e.art === 'stand' && !/^stand\d+$/.test(e.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannte Stand-Kennung.');
+      const key = schluessel(e.dok, e.art, e.k);
+      if (gesehen.has(key)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');
+      gesehen.add(key);
+      return { dok: e.dok, k: e.k, art: e.art, alt: e.alt === undefined ? null : e.alt, neu: e.neu,
+        exportiert: e.exportiert === undefined ? null : e.exportiert, zeit: typeof e.zeit === 'string' && e.zeit ? e.zeit : jetztIso(), konflikt: null };
+    });
+  }
+  // Eingespielte Einträge gegen die aktuelle Basis einordnen (Regeln wie beim Abgleich); vorhandene eigene Einträge
+  // gehen vor. → { uebernommen, verworfen, konflikte, doks }
+  function einspielen(text) {
+    let neue;
+    try { neue = pruefeSicherung(text); } catch (e) { return Promise.reject(e); }
+    const pk = basis();
+    if (!pk) return Promise.reject(fehler('einspielen', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.'));
+    const aus = { uebernommen: 0, verworfen: 0, konflikte: 0, doks: new Set() };
+    const kandidaten = neue.filter((e) => { if (eintraege.has(sk(e))) { aus.verworfen++; return false; } return true; });
+    const r = abgleichRechnen(pk, kandidaten);
+    aus.verworfen += r.entfallen;
+    for (const n of r.neu) {
+      eintraege.set(sk(n), n);
+      aus.doks.add(n.dok);
+      if (n.konflikt) aus.konflikte++; else aus.uebernommen++;
+    }
+    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+    const ergebnis = { uebernommen: aus.uebernommen, verworfen: aus.verworfen, konflikte: aus.konflikte, doks: Array.from(aus.doks) };
+    return speichern().then(() => { melde({ doks: ergebnis.doks, eingespielt: true }); return ergebnis; });
+  }
+
   /* ---------- Abfragen ---------- */
   function fuerDok(dokId) {
     const r = [];
@@ -592,6 +665,7 @@
     setze: setze,
     original: original,
     dokumentZuruecksetzen: dokumentZuruecksetzen,
+    verwerfen: verwerfen,
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
     abgleichen: abgleichen,
@@ -601,6 +675,8 @@
     naechsteFassung: (onlineVersion) => naechsteFassung(bekannteFassungen(basis(), onlineVersion)),
     markiereExportiert: markiereExportiert,
     letzteFassung: letzteFassung,
+    sicherung: sicherung,
+    einspielen: einspielen,
     // Abfragen
     alle: () => liste().map(rein),
     fuerDok: fuerDok,

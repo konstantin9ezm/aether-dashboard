@@ -250,6 +250,37 @@
     } catch (e) { meldung('Kopieren nicht möglich'); }
   }
 
+  /* ---------- Sicherung (Teil G) ---------- */
+  function sichern(ev) {
+    const g = G();
+    if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
+    const s = AE().sicherung();
+    const datei = new File([JSON.stringify(s, null, 2)], DATEI_SICHERUNG, { type: 'application/json' });
+    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge gesichert'));
+  }
+  async function einspielen(datei) {
+    let text;
+    try { text = await datei.text(); } catch (e) { throw new (G().AppError)('datei', 'Datei ließ sich nicht lesen.', String((e && e.message) || e || '')); }
+    const r = await AE().einspielen(text);
+    try { h.fehlerWeg(); } catch (e) { /* egal */ }
+    await neuDarstellen(r.doks);
+    meldung(r.uebernommen + ' Änderungen eingespielt' + (r.konflikte ? ', ' + r.konflikte + ' Konflikte' : '') + (r.verworfen ? ', ' + r.verworfen + ' schon vorhanden' : ''));
+    return r;
+  }
+  async function verwerfen() {
+    const n = AE().alle().length;
+    if (!n) { meldung('Keine Änderungen'); return false; }
+    let ja = false;
+    try { ja = window.confirm('Alle Änderungen verwerfen? Das lässt sich nicht rückgängig machen.'); } catch (e) { ja = false; }
+    if (!ja) return false;
+    const doks = Array.from(new Set(AE().alle().map((e) => e.dok)));
+    leisteZu(false);
+    await AE().verwerfen();
+    await neuDarstellen(doks);
+    knopfReset();
+    meldung('Alle Änderungen verworfen');
+    return true;
+  }
   async function dokumentZuruecksetzen() {
     const d = offenesDok();
     if (!d || !AE().hatAenderungen(d.id)) return false;
@@ -337,6 +368,18 @@
     $('vbReset').addEventListener('click', () => { dokumentZuruecksetzen(); });
     window.addEventListener('keydown', tasteFenster, true);
     $('btnExport').addEventListener('click', exportieren);
+    $('btnSichern').addEventListener('click', sichern);
+    $('btnEinspielen').addEventListener('click', () => { $('dateiEinspielen').click(); });
+    $('dateiEinspielen').addEventListener('change', async () => {
+      const eingabe = $('dateiEinspielen'), knopf = $('btnEinspielen');
+      const datei = eingabe.files && eingabe.files[0];
+      if (!datei) return;
+      knopf.disabled = true;
+      try { await einspielen(datei); } catch (e) {
+        if (e && e.kind === 'zuneu') { try { h.fehler('Sicherung zu neu', e.text, false); } catch (x) { /* egal */ } } else fehlerZeigen(e);
+      } finally { eingabe.value = ''; knopf.disabled = false; }
+    });
+    $('btnVerwerfen').addEventListener('click', () => { verwerfen(); });
     $('hilfeKopieren').addEventListener('click', kopieren);
     $('konflikteZeigen').addEventListener('click', () => { listeOffen = !listeOffen; konflikteZeigen(); });
     // Vollbild: beim Schließen zurück auf „Ansehen“; beim Blättern Leiste zu
@@ -360,6 +403,9 @@
     modus: () => modus,
     setzeModus: (m) => setzeModus(m),
     exportieren: exportieren,
+    sichern: sichern,
+    einspielen: einspielen,
+    verwerfen: verwerfen,
     konflikteZeigen: konflikteZeigen,
     onlineVersion: () => onlineVersion
   });
