@@ -3,15 +3,22 @@
 // Gespeichert wird nur, was unten steht (Felder werden einzeln übernommen): nie das Token, nie API-Antworten im Ganzen.
 // Alle Funktionen liefern ein Promise, das immer endet (Zeitlimit) und nie scheitert: fehlt IndexedDB oder geht etwas
 // schief, gibt es null bzw. false. Die Verbindung wird erst beim ersten Zugriff geöffnet und schließt bei
-// „versionchange“, damit eine neuere Seite (Teil 2) die Datenbank aufrüsten kann.
+// „versionchange“, damit eine neuere Seite die Datenbank aufrüsten kann.
+// Version 2 (Teil 2): Store „aenderungen“ mit der Änderungsschicht (eigene Texte, Status, Stand je Dokument) und einem
+// Meta-Eintrag (bisher exportierte Fassungen). Die Migration 1 → 2 legt nur den Store an; basis und online bleiben.
 (function () {
   'use strict';
 
   var DB_NAME = 'aether-flyer';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var STORES = Object.freeze(['basis', 'online']);
   var SCHLUESSEL_BASIS = 'aktuell';  // Store basis:  { paket, quelle:'online'|'import', sha:String|null, uebernommen:ISO }
   var SCHLUESSEL_ONLINE = 'stand';   // Store online: { sha, version, stand, geprueft:ISO } – zuletzt bekannte Online-Datei
+  // Store aenderungen: je Eintrag Schlüssel „e:<dok>\n<art>\n<k>“ → { dok, k, art, alt, neu, exportiert, zeit, konflikt }
+  // (konflikt: null oder { online } – offener Konflikt aus dem Abgleich), dazu „meta“ → { exporte: [Fassung …] }.
+  var STORE_AENDERUNGEN = 'aenderungen';
+  var SCHLUESSEL_META = 'meta';
+  var ARTEN = ['text', 'status', 'stand'];
   // Selbst gewählt: Öffnen höchstens 5 s, ein Lese-/Schreibvorgang höchstens 10 s (Paket kann einige MB haben).
   var ZEIT_OEFFNEN_MS = 5000;
   var ZEIT_VORGANG_MS = 10000;
@@ -41,7 +48,7 @@
       req.onupgradeneeded = function (ev) {
         var db = req.result, alt = ev.oldVersion;
         if (alt < 1) { db.createObjectStore('basis'); db.createObjectStore('online'); }
-        // Teil 2: if (alt < 2) db.createObjectStore('aenderungen', …) – Änderungsschicht; DB_VERSION auf 2.
+        if (alt < 2) db.createObjectStore('aenderungen');   // Teil 2: Änderungsschicht (basis und online bleiben)
       };
       req.onsuccess = function () {
         clearTimeout(timer);
@@ -172,6 +179,69 @@
     } catch (err) { return false; }
   }
 
+  // ---------------------------------------------------------------------------
+  // Änderungsschicht (Teil 2)
+  // ---------------------------------------------------------------------------
+  function textOderLeer(v) { return typeof v === 'string' ? v : null; }
+  // Nur die bekannten Felder, nur Text-Werte (exportiert, alt dürfen null sein); sonst null.
+  function eintragSauber(e) {
+    if (!istObjekt(e) || typeof e.dok !== 'string' || !e.dok || typeof e.k !== 'string' || !e.k || ARTEN.indexOf(e.art) < 0) return null;
+    if (typeof e.neu !== 'string') return null;
+    var k = istObjekt(e.konflikt) && typeof e.konflikt.online === 'string' ? { online: e.konflikt.online } :
+      (istObjekt(e.konflikt) && e.konflikt.fehlt === true ? { fehlt: true } : null);
+    return {
+      dok: e.dok, k: e.k, art: e.art,
+      alt: textOderLeer(e.alt), neu: e.neu, exportiert: textOderLeer(e.exportiert),
+      zeit: textOderNull(e.zeit) || jetztIso(), konflikt: k
+    };
+  }
+  function eintragSchluessel(e) { return 'e:' + e.dok + '\n' + e.art + '\n' + e.k; }
+
+  // → { eintraege: [...], exporte: [...] } | null (ohne Store oder ohne IndexedDB)
+  async function ladeAenderungen() {
+    try {
+      var db = await datenbank();
+      if (!db || !db.objectStoreNames.contains(STORE_AENDERUNGEN)) return null;
+      var r = await vorgang(STORE_AENDERUNGEN, 'readonly', function (s) {
+        var alle = { werte: null, schluessel: null };
+        var a = s.getAll(), b = s.getAllKeys();
+        a.onsuccess = function () { alle.werte = a.result; };
+        b.onsuccess = function () { alle.schluessel = b.result; };
+        return { get result() { return alle; } };
+      });
+      if (!r.ok || !r.wert || !Array.isArray(r.wert.werte) || !Array.isArray(r.wert.schluessel)) return null;
+      var eintraege = [], exporte = [];
+      r.wert.schluessel.forEach(function (sl, i) {
+        var w = r.wert.werte[i];
+        if (sl === SCHLUESSEL_META) {
+          if (istObjekt(w) && Array.isArray(w.exporte)) exporte = w.exporte.filter(function (f) { return typeof f === 'string' && f; });
+          return;
+        }
+        var e = typeof sl === 'string' && sl.indexOf('e:') === 0 ? eintragSauber(w) : null;
+        if (e) eintraege.push(e);
+      });
+      return { eintraege: eintraege, exporte: exporte };
+    } catch (e) { return null; }
+  }
+
+  // Ersetzt die ganze Änderungsschicht in einer Transaktion (alles oder nichts) → true|false.
+  // stand = { eintraege: [...], exporte: [...] }
+  async function speichereAenderungen(stand) {
+    try {
+      if (!istObjekt(stand) || !Array.isArray(stand.eintraege)) return false;
+      var eintraege = stand.eintraege.map(eintragSauber).filter(Boolean);
+      var exporte = (Array.isArray(stand.exporte) ? stand.exporte : []).filter(function (f) { return typeof f === 'string' && f; });
+      var db = await datenbank();
+      if (!db || !db.objectStoreNames.contains(STORE_AENDERUNGEN)) return false;
+      var r = await vorgang(STORE_AENDERUNGEN, 'readwrite', function (s) {
+        s.clear();
+        eintraege.forEach(function (e) { s.put(e, eintragSchluessel(e)); });
+        return s.put({ exporte: exporte }, SCHLUESSEL_META);
+      });
+      return r.ok === true;
+    } catch (err) { return false; }
+  }
+
   // Dauerhaften Speicher anfragen (damit der Browser das Paket nicht bei Platzmangel löscht) → true, wenn dauerhaft
   async function persistAnfragen() {
     try {
@@ -190,6 +260,8 @@
     speichereBasis: speichereBasis,
     ladeOnline: ladeOnline,
     speichereOnline: speichereOnline,
+    ladeAenderungen: ladeAenderungen,
+    speichereAenderungen: speichereAenderungen,
     persistAnfragen: persistAnfragen
   });
 })();

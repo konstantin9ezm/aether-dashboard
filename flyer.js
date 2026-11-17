@@ -8,7 +8,10 @@
 // Token: gehört dem Dashboard (localStorage „aether.githubToken“), wird hier nur gelesen und nur an flyer-online.js
 // weitergereicht – nie geschrieben, nie gespeichert (auch nicht in IndexedDB), nie in Adressen, Meldungen oder Logs.
 // Kopfzeile #status: „offline bereit · Stand TT.MM.JJJJ“ (Paket liegt auf dem Gerät), „Stand TT.MM.JJJJ · nicht
-// offline gespeichert“ (Speichern schlug fehl) oder „noch kein Paket“.
+// offline gespeichert“ (Speichern schlug fehl) oder „noch kein Paket“; dazu „· n Änderungen nicht exportiert“ (Teil 2).
+// Teil 2: Änderungsschicht (AetherFlyerAenderungen) – beim Start vor der ersten Anzeige geladen und über
+// AetherFlyerAnsicht.setzeAnpasser in jede Darstellung gelegt; jede Übernahme (Import, online) gleicht sie genau einmal
+// mit dem neuen Paket ab. Bearbeiten, Export und Sicherung richtet AetherFlyerBearbeiten ein (optional wie die übrigen).
 // window.AetherFlyer: Schnittstelle für die Tests und Teil 2 (siehe unten).
 (function () {
   'use strict';
@@ -27,6 +30,7 @@
   const A = window.AetherFlyerAnsicht || null;
   const O = window.AetherFlyerOnline || null;
   const E = window.AetherFlyerExport || null;
+  const AE = window.AetherFlyerAenderungen || null;
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
@@ -66,9 +70,11 @@
   /* ---------- Anzeige ---------- */
   function zeigeKopf() {
     const p = basis && basis.paket;
-    $('status').textContent = !p ? 'noch kein Paket'
+    const n = AE && p ? AE.nichtExportiert() : 0;
+    $('status').textContent = (!p ? 'noch kein Paket'
       : gesichert ? 'offline bereit · Stand ' + datum(p.stand)
-      : 'Stand ' + datum(p.stand) + ' · nicht offline gespeichert';
+      : 'Stand ' + datum(p.stand) + ' · nicht offline gespeichert') +
+      (n > 0 ? ' · ' + n + (n === 1 ? ' Änderung' : ' Änderungen') + ' nicht exportiert' : '');
   }
   function zeigeInfo() {
     const p = basis && basis.paket;
@@ -194,6 +200,19 @@
     fehlerWeg: fehlerWeg
   });
 
+  /* ---------- Änderungsschicht (Teil 2) ---------- */
+  // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
+  function anpasserSetzen() {
+    if (!AE || !A || typeof A.setzeAnpasser !== 'function') return;
+    AE.einrichten({ paket: () => (basis ? basis.paket : null) });
+    A.setzeAnpasser((wurzel, dok, ort) => {
+      let markieren = false;
+      try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
+      AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren });
+    });
+    document.addEventListener('flyer:aenderungen', () => { zeigeKopf(); });
+  }
+
   /* ---------- Start ---------- */
   function einrichtenOptional() {
     if (O && typeof O.einrichten === 'function') {
@@ -205,6 +224,9 @@
   }
   async function start() {
     persistAnfragen();
+    anpasserSetzen();
+    // Änderungsschicht zuerst in die Reihe: eine frühe Übernahme (Import) gleicht erst danach ab
+    if (AE) reihe = reihe.then(() => AE.laden()).catch(() => {});
     const b = await ladeBasis();
     if (b && b.paket) {
       try {

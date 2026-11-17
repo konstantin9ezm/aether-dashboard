@@ -8,7 +8,10 @@
 // skaliert nur (immer per transform, damit offsetHeight bei der Schriftanpassung unverändert bleibt).
 // Schriftanpassung: --s von 1.42 in Schritten von 0.02 bis höchstens 0.80 verkleinern, bis .body nicht mehr überläuft;
 // .fill-Flächen unter 90 px werden ausgeblendet (Klasse „off“). „Text zu lang“, wenn es bei 0.80 noch überläuft.
-// darstellen(dok, ziel, optionen) ist die Schnittstelle für Teil 2 (Änderungsschicht über optionen.anpassen).
+// darstellen(dok, ziel, optionen) ist die Schnittstelle für Teil 2 (Änderungsschicht über optionen.anpassen): flyer.js
+// setzt per setzeAnpasser(fn) die Änderungsschicht; Kacheln und Vollbild (hier) sowie Druck und Bild (flyer-export.js,
+// über optionen(dok, ort)) stellen damit dieselben Änderungen dar. aktualisiere(id) stellt Kachel und Vollbild eines
+// Dokuments nach einer Änderung neu dar (samt Schriftanpassung, Bildlaufposition im Vollbild bleibt).
 // Kein Speicher: nichts wird im Browser abgelegt, nichts aus dem Netz geladen.
 (function () {
   'use strict';
@@ -61,6 +64,7 @@
   let oeffner = null;                                   // Kachel, von der aus das Vollbild geöffnet wurde
   let wisch = null;                                     // Anfang einer Wischbewegung { x, y }
   let eingerichtet = false;
+  let anpasser = null;                                  // Teil 2: (wurzel, dok, ort) → Änderungsschicht anwenden
 
   /* ---------- Hilfen ---------- */
   function leeren(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -262,6 +266,16 @@
     return { s: s, zuLang: zuLang };
   }
 
+  /* ---------- Änderungsschicht (Teil 2) ---------- */
+  // fn(wurzel, dok, ort) mit ort 'kachel' | 'vollbild' | 'druck' | 'bild'; null = ohne Änderungsschicht
+  function setzeAnpasser(fn) { anpasser = typeof fn === 'function' ? fn : null; }
+  // Optionen für darstellen: Änderungsschicht dieses Dokuments am Ort ort (Fehler darin stören die Darstellung nicht)
+  function optionen(dok, ort) {
+    if (!anpasser) return undefined;
+    const fn = anpasser;
+    return { anpassen: (wurzel) => { try { fn(wurzel, dok, ort); } catch (e) { /* Basis bleibt sichtbar */ } } };
+  }
+
   /* ---------- Darstellung (Schnittstelle für Teil 2) ---------- */
   // Neues div.flyer-host mit Shadow Root (Paket-CSS + Klon der bereinigten Wurzel) an ziel (muss im Dokument liegen).
   // optionen.anpassen(wurzel) läuft vor dem Einsetzen. fertig: nach Schriften und Schriftanpassung (nur Flyer).
@@ -337,15 +351,42 @@
       k.append(bild, span('kachel-id', String(dok.id)), span('kachel-titel', String(dok.titel)), warnung);
       k.addEventListener('click', () => { oeffne(i); });
       ziel.appendChild(k);
-      let d;
-      try { d = darstellen(dok, bild); } catch (e) { return Promise.resolve(null); }   // Dokument ohne Inhalt: leere Kachel
-      kachelSkalen.set(bild, { host: d.host, breite: nennBreite(dok, d.host) });
-      if (dok.art !== 'infografik') kachelFlyer.push({ wurzel: d.wurzel, warnung: warnung });
-      if (kachelBeobachter) kachelBeobachter.observe(bild);
-      return d.fertig.then((r) => { if (gen === generation) warnung.hidden = !r.zuLang; return r; });
+      return kachelBild(dok, bild, warnung, gen);
     });
     alleKachelnSkalieren();
     return Promise.all(warten);
+  }
+
+  // Dokument in ein Kachelbild darstellen (auch zum Neu-Darstellen nach einer Änderung) → Promise (Ergebnis von fertig)
+  function kachelBild(dok, bild, warnung, gen) {
+    let d;
+    try { d = darstellen(dok, bild, optionen(dok, 'kachel')); } catch (e) { return Promise.resolve(null); }   // Dokument ohne Inhalt: leere Kachel
+    kachelSkalen.set(bild, { host: d.host, breite: nennBreite(dok, d.host) });
+    if (dok.art !== 'infografik') kachelFlyer.push({ wurzel: d.wurzel, warnung: warnung });
+    if (kachelBeobachter) kachelBeobachter.observe(bild);
+    return d.fertig.then((r) => { if (gen === generation) warnung.hidden = !r.zuLang; return r; });
+  }
+  // Teil 2: Kachel und (falls offen) Vollbild eines Dokuments neu darstellen, z. B. nach einer Änderung. Meldet danach
+  // 'flyer:aktualisiert' (flyer-export.js bereitet das Bild neu vor). Promise: wenn beide fertig angepasst sind.
+  function aktualisiere(id) {
+    const warten = [];
+    const dok = aktPaket ? aktPaket.dokumente.find((d) => d && d.id === id) : null;
+    const k = dok ? kachelFuer(id) : null;
+    const bild = k ? k.querySelector('.kachel-bild') : null;
+    if (dok && bild) {
+      for (const h of Array.from(bild.querySelectorAll('.flyer-host'))) {
+        const w = hostWurzeln.get(h);
+        if (w) kachelFlyer = kachelFlyer.filter((e) => e.wurzel !== w);
+        h.remove();
+      }
+      if (kachelBeobachter) kachelBeobachter.unobserve(bild);
+      kachelSkalen.delete(bild);
+      const warnung = k.querySelector('.kachel-warnung');
+      warten.push(kachelBild(dok, bild, warnung, generation));
+      skaliereKachel(bild);
+    }
+    if (vb && vb.dok && vb.dok.id === id) warten.push(vollbildNeu());
+    return Promise.all(warten).then((r) => { melde('flyer:aktualisiert', { id: id }); return r; });
   }
 
   /* ---------- Chips ---------- */
@@ -422,7 +463,7 @@
   }
 
   // Dokument Nummer index der aktuellen Liste im Vollbild zeigen (auch zum Blättern). Promise: Ergebnis von fertig.
-  function oeffne(index) {
+  function oeffne(index, behalteScroll) {
     einrichten();
     const i = Number(index);
     const fenster = $('vollbild'), buehne = $('vbBuehne');
@@ -445,11 +486,14 @@
     huelle.style.position = 'relative';
     huelle.style.overflow = 'hidden';
     buehne.appendChild(huelle);
+    // Neu-Darstellung desselben Dokuments (Teil 2): Bildlaufposition behalten
+    const scroll = behalteScroll === true && !warZu ? buehne.scrollTop : 0;
     buehne.scrollTop = 0;
     let d = null;
-    try { d = darstellen(dok, huelle); } catch (e) { d = null; }   // Dokument ohne Inhalt: leere Bühne
+    try { d = darstellen(dok, huelle, optionen(dok, 'vollbild')); } catch (e) { d = null; }   // Dokument ohne Inhalt: leere Bühne
     vb = { index: i, dok: dok, host: d ? d.host : null, wurzel: d ? d.wurzel : null, huelle: huelle };
     skaliereVollbild();
+    if (scroll) buehne.scrollTop = scroll;
     if (vbBeobachter) { vbBeobachter.observe(buehne); if (d) vbBeobachter.observe(d.host); }
     if (warZu) {
       // Fokus in den Dialog: auf die Bühne (dann scrollen ↑/↓/Leertaste sie).
@@ -462,9 +506,15 @@
       if (nummer === vbNummer && vb) {
         if (warnung) warnung.hidden = !r.zuLang;
         skaliereVollbild();   // Höhe kann sich mit Schrift und Anpassung geändert haben
+        if (scroll) buehne.scrollTop = scroll;
       }
       return r;
     });
+  }
+  // Teil 2: offenes Vollbild-Dokument neu darstellen (Änderung, Wechsel Ansehen/Text/Status), Bildlauf bleibt
+  function vollbildNeu() {
+    if (!vb) return Promise.resolve(null);
+    return oeffne(vb.index, true);
   }
   function blaettere(richtung) {
     if (!vb) return;
@@ -606,6 +656,12 @@
     aktuelleListe: () => liste.slice(),
     aktuelleKategorie: () => kategorie,
     offenesDokument: () => (vb ? vb.dok : null),
-    paket: () => aktPaket
+    paket: () => aktPaket,
+    // Teil 2
+    setzeAnpasser: setzeAnpasser,
+    optionen: optionen,
+    aktualisiere: aktualisiere,
+    vollbildNeu: vollbildNeu,
+    vollbildHost: () => (vb ? vb.host : null)
   });
 })();
