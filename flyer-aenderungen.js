@@ -147,6 +147,94 @@
     return typeof v === 'string' ? v : v.wert;
   }
 
+  /* ---------- Zähler und Balken ---------- */
+  function zahl(v) { return String(Math.round(v * 10000) / 10000); }
+  // Deklaration name im style-Attribut ersetzen, wenn vorhanden (Rest des Attributs bleibt wörtlich) → true, wenn ersetzt
+  function ersetzeVar(el, nameVar, wert) {
+    const s = el.getAttribute && el.getAttribute('style');
+    if (s === null || s === undefined || s.indexOf(nameVar) < 0) return false;
+    let ersetzt = false;
+    const teile = s.split(';').map((d) => {
+      const i = d.indexOf(':');
+      if (i < 0 || d.slice(0, i).trim() !== nameVar) return d;
+      ersetzt = true;
+      const vorne = d.slice(0, i + 1), wertTeil = d.slice(i + 1);
+      const lead = /^\s*/.exec(wertTeil)[0], wichtig = /\s*!important\s*$/i.exec(wertTeil);
+      return vorne + lead + wert + (wichtig ? wichtig[0] : '');
+    });
+    if (ersetzt) el.setAttribute('style', teile.join(';'));
+    return ersetzt;
+  }
+  function zaehlerText(z, x, y) {
+    // Vorhandene Stelle „x von y“ (nicht in einem Listenpunkt des Blocks) ersetzen …
+    const doc = z.ownerDocument;
+    const gaenger = doc.createTreeWalker(z, 4);
+    while (gaenger.nextNode()) {
+      const n = gaenger.currentNode;
+      let p = n.parentNode, inPunkt = false;
+      while (p && p !== z) { if (p.nodeType === 1 && p.hasAttribute('data-s')) { inPunkt = true; break; } p = p.parentNode; }
+      if (inPunkt) continue;
+      const m = ZAEHLER_RE.exec(n.data);
+      if (!m) continue;
+      n.data = n.data.slice(0, m.index) + x + m[2] + 'von' + m[3] + y + (m[5] !== undefined ? m[5] : '') + n.data.slice(m.index + m[0].length);
+      return;
+    }
+    // … sonst nur in einen leeren Träger schreiben (nie eine Überschrift überschreiben)
+    const tr = textTraeger(z);
+    if (!tr.firstElementChild && !tr.textContent.trim()) tr.textContent = x + ' von ' + y + ' fertig';
+  }
+  // Für jeden Block (data-block mit data-zaehler): y = Listenpunkte (data-s) im Block (alle Elemente mit demselben
+  // data-block-Wert), x = davon data-status="ok"; Text „x von y fertig“, --anteil = x/y, --anteil-laeuft = (ok+run)/y,
+  // y = 0 → 0. Die Variablen werden am Zähler und an den Block-Elementen gesetzt und überall im Block ersetzt, wo das
+  // Paket sie schon im style-Attribut setzt. nurVorhandene (Export): nur vorhandene Werte ersetzen, nichts hinzufügen.
+  function zaehlerBerechnen(wurzel, opt) {
+    const nurVorhandene = !!(opt && opt.nurVorhandene);
+    const bloecke = new Map();
+    for (const el of mitAttr(wurzel, 'data-block')) {
+      const w = el.getAttribute('data-block');
+      if (!bloecke.has(w)) bloecke.set(w, []);
+      bloecke.get(w).push(el);
+    }
+    const ergebnis = [];
+    for (const z of mitAttr(wurzel, 'data-zaehler')) {
+      const zw = z.getAttribute('data-zaehler');
+      let wert = null;
+      if (zw && bloecke.has(zw)) wert = zw;
+      else if (z.hasAttribute('data-block')) wert = z.getAttribute('data-block');
+      else {
+        const a = z.parentElement ? z.parentElement.closest('[data-block]') : null;
+        if (a) wert = a.getAttribute('data-block');
+      }
+      if (wert === null) continue;
+      const els = bloecke.get(wert) || [];
+      const punkte = new Set();
+      for (const b of els) {
+        if (b.hasAttribute('data-s')) punkte.add(b);
+        for (const p of b.querySelectorAll('[data-s]')) punkte.add(p);
+      }
+      let ok = 0, run = 0;
+      for (const p of punkte) {
+        const st = p.getAttribute('data-status');
+        if (st === 'ok') ok++; else if (st === 'run') run++;
+      }
+      const y = punkte.size;
+      const anteil = y ? ok / y : 0, laeuft = y ? (ok + run) / y : 0;
+      zaehlerText(z, ok, y);
+      const a = zahl(anteil), l = zahl(laeuft);
+      const ziele = [z].concat(els);
+      for (const el of ziele) {
+        const da = ersetzeVar(el, '--anteil', a), dl = ersetzeVar(el, '--anteil-laeuft', l);
+        if (!nurVorhandene && el.style) {
+          if (!da) el.style.setProperty('--anteil', a);
+          if (!dl) el.style.setProperty('--anteil-laeuft', l);
+        }
+        for (const d of el.querySelectorAll('[style]')) { ersetzeVar(d, '--anteil', a); ersetzeVar(d, '--anteil-laeuft', l); }
+      }
+      ergebnis.push({ block: wert, x: ok, y: y, anteil: a, laeuft: l });
+    }
+    return ergebnis;
+  }
+
   /* ---------- Anwenden ---------- */
   function markiere(el) {
     el.setAttribute(MARKE_ATTR, '');
@@ -176,7 +264,7 @@
         }
       }
     }
-    return [];
+    return zaehlerBerechnen(wurzel, { nurVorhandene: o.nurVorhandene });
   }
 
   /* ---------- Speichern ---------- */
@@ -292,6 +380,7 @@
     laden: laden,
     // Darstellung
     anwenden: anwenden,
+    zaehlerBerechnen: zaehlerBerechnen,
     werteAus: werteAus,
     // Bearbeiten
     setze: setze,
