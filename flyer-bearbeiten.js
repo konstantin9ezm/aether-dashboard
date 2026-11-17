@@ -263,6 +263,50 @@
     return true;
   }
 
+  /* ---------- Konflikte (Teil F) ---------- */
+  function wertText(art, v) {
+    if (v === null || v === undefined) return '–';
+    if (art === 'status') return STATUS_NAMEN[v] || v;
+    return v === '' ? '(leer)' : v;
+  }
+  function konflikteZeigen() {
+    const liste = AE().konflikte();
+    const banner = $('konflikte'), box = $('konfliktListe');
+    if (!banner || !box) return;
+    banner.hidden = !liste.length;
+    $('konflikteText').textContent = liste.length + (liste.length === 1 ? ' Konflikt' : ' Konflikte') + ' nach dem Abgleich mit der neuen Fassung';
+    if (!liste.length) listeOffen = false;
+    $('konflikteZeigen').textContent = listeOffen ? 'Ausblenden' : 'Anzeigen';
+    $('konflikteZeigen').setAttribute('aria-expanded', String(listeOffen));
+    box.hidden = !listeOffen;
+    leeren(box);
+    if (!listeOffen) return;
+    for (const k of liste) {
+      const karte = el('div', undefined, 'konflikt');
+      karte.setAttribute('data-schluessel', k.schluessel);
+      karte.appendChild(el('b', k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
+      const dl = el('dl');
+      const zeile = (t, v) => { dl.appendChild(el('dt', t)); const dd = el('dd', v); dl.appendChild(dd); return dd; };
+      zeile('Basis', wertText(k.art, k.basis)).className = 'k-basis';
+      zeile('Meins', wertText(k.art, k.meins)).className = 'k-meins';
+      zeile('Online', k.fehlt ? 'nicht mehr im Paket' : wertText(k.art, k.online)).className = 'k-online';
+      karte.appendChild(dl);
+      const row = el('div', undefined, 'row');
+      const meins = el('button', 'Meins behalten'); meins.type = 'button'; meins.setAttribute('data-wahl', 'meins');
+      const online = el('button', 'Online übernehmen'); online.type = 'button'; online.setAttribute('data-wahl', 'online');
+      const waehle = async (wahl) => {
+        meins.disabled = online.disabled = true;
+        await AE().entscheide(k.schluessel, wahl);
+        await neuDarstellen([k.dok]);
+      };
+      meins.addEventListener('click', () => { waehle('meins'); });
+      online.addEventListener('click', () => { waehle('online'); });
+      row.append(meins, online);
+      karte.appendChild(row);
+      box.appendChild(karte);
+    }
+  }
+
   /* ---------- Einrichten ---------- */
   function knoepfeZeigen() {
     const n = AE().alle().length;
@@ -294,6 +338,7 @@
     window.addEventListener('keydown', tasteFenster, true);
     $('btnExport').addEventListener('click', exportieren);
     $('hilfeKopieren').addEventListener('click', kopieren);
+    $('konflikteZeigen').addEventListener('click', () => { listeOffen = !listeOffen; konflikteZeigen(); });
     // Vollbild: beim Schließen zurück auf „Ansehen“; beim Blättern Leiste zu
     document.addEventListener('flyer:vollbild', (e) => {
       const d = e && e.detail;
@@ -301,11 +346,12 @@
       if (offen && d && d.dok && offen.dok.id !== d.dok.id) leisteZu(false);
       knopfReset();
     });
-    document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); knopfReset(); });
+    document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); konflikteZeigen(); knopfReset(); });
     document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); });
     document.addEventListener('flyer:onlinefassung', (e) => { const v = e && e.detail && e.detail.version; if (typeof v === 'string' && v) onlineVersion = v; });
     knoepfeZeigen();
     hilfeZeigen();
+    konflikteZeigen();
     return Promise.resolve(h.onlineVersion()).then((v) => { if (typeof v === 'string' && v && !onlineVersion) onlineVersion = v; }).catch(() => {});
   }
 
@@ -314,6 +360,7 @@
     modus: () => modus,
     setzeModus: (m) => setzeModus(m),
     exportieren: exportieren,
+    konflikteZeigen: konflikteZeigen,
     onlineVersion: () => onlineVersion
   });
 })();

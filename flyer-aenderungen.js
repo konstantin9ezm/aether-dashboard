@@ -415,6 +415,75 @@
     return v === undefined ? null : v;
   }
 
+  /* ---------- Abgleich (Teil F) ---------- */
+  // Ein Eintrag gegen den Wert r eines neuen Pakets: → 'entfaellt' | 'bleibt' (alt := r) | 'konflikt'
+  function einordnen(e, r) {
+    if (r === undefined) return 'konflikt';
+    if (e.art === 'stand') {
+      if (r === e.neu) return 'entfaellt';
+      const dr = datumImText(r), dn = datumImText(e.neu);
+      if (dr && dn) return dr.iso >= dn.iso ? 'entfaellt' : 'bleibt';   // das spätere Datum gewinnt
+      return 'bleibt';
+    }
+    if (r === e.neu) return 'entfaellt';
+    if (r === e.alt || (e.exportiert !== null && r === e.exportiert)) return 'bleibt';
+    return 'konflikt';
+  }
+  // Abgleich bei jeder Übernahme eines neuen Pakets R (aus flyer.js uebernehme, genau einmal je Übernahme).
+  // Idempotent: derselbe Abgleich noch einmal ändert nichts. → { entfallen, behalten, konflikte, doks }
+  function abgleichRechnen(paketR, liste_) {
+    const aus = { entfallen: 0, behalten: 0, konflikte: 0, doks: new Set(), neu: [] };
+    for (const e of liste_) {
+      const r = wertIn(paketR, e.dok, e.art, e.k);
+      const was = einordnen(e, r);
+      if (was === 'entfaellt') { aus.entfallen++; aus.doks.add(e.dok); continue; }
+      const n = kopie(e);
+      if (was === 'bleibt') { n.alt = r; n.konflikt = null; aus.behalten++; }
+      else { n.konflikt = r === undefined ? { fehlt: true } : { online: r }; aus.konflikte++; }
+      if (n.alt !== e.alt || !!n.konflikt !== !!e.konflikt) aus.doks.add(e.dok);
+      aus.neu.push(n);
+    }
+    return aus;
+  }
+  function abgleichen(paketR) {
+    if (!eintraege.size) return Promise.resolve({ entfallen: 0, behalten: 0, konflikte: 0, doks: [] });
+    const aus = abgleichRechnen(paketR, liste());
+    const vorher = JSON.stringify(liste().map(kopie));
+    eintraege.clear();
+    for (const n of aus.neu) eintraege.set(sk(n), n);
+    // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
+    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+    const ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
+    if (JSON.stringify(liste().map(kopie)) === vorher) return Promise.resolve(ergebnis);
+    return speichern().then(() => { melde({ doks: ergebnis.doks, abgleich: true }); return ergebnis; });
+  }
+  // Offene Konflikte für die Liste
+  function konflikte() {
+    const pk = basis();
+    return liste().filter((e) => e.konflikt).map((e) => {
+      const d = dokIn(pk, e.dok);
+      return {
+        schluessel: sk(e), dok: e.dok, titel: d ? String(d.titel) : '', art: e.art, k: e.k,
+        basis: e.alt, meins: e.neu, online: e.konflikt.fehlt ? null : e.konflikt.online, fehlt: !!e.konflikt.fehlt
+      };
+    });
+  }
+  // „Meins behalten“ (Eintrag bleibt, alt := Online-Wert) oder „Online übernehmen“ (Eintrag entfällt)
+  function entscheide(key, wahl) {
+    const e = eintraege.get(key);
+    if (!e || !e.konflikt) return Promise.resolve(false);
+    if (wahl === 'meins') {
+      if (typeof e.konflikt.online === 'string') e.alt = e.konflikt.online;
+      e.konflikt = null;
+    } else if (wahl === 'online') {
+      eintraege.delete(key);
+      standNachziehen(e.dok, false);
+    } else return Promise.resolve(false);
+    const p = speichern();
+    melde({ dok: e.dok });
+    return p;
+  }
+
   /* ---------- Export (Teil E) ---------- */
   function versionTag(v) {
     const m = /^(\d{4}-\d{2}-\d{2})\.(\d+)$/.exec(String(v || '').trim());
@@ -525,6 +594,9 @@
     dokumentZuruecksetzen: dokumentZuruecksetzen,
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
+    abgleichen: abgleichen,
+    konflikte: konflikte,
+    entscheide: entscheide,
     exportPaket: exportPaket,
     naechsteFassung: (onlineVersion) => naechsteFassung(bekannteFassungen(basis(), onlineVersion)),
     markiereExportiert: markiereExportiert,

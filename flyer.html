@@ -137,6 +137,14 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .vb-edit textarea:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
 .vb-edit .row{ margin:0; }
 .vb-edit button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* Konflikte nach einem Abgleich */
+.konfliktliste{ display:flex; flex-direction:column; gap:8px; margin:0 0 12px; }
+.konflikt{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; font-size:14px; overflow-wrap:anywhere; min-width:0; }
+.konflikt b{ display:block; }
+.konflikt dl{ display:grid; grid-template-columns:auto 1fr; gap:2px 8px; margin:6px 0; }
+.konflikt dt{ color:var(--muted); }
+.konflikt dd{ margin:0; white-space:pre-wrap; min-width:0; }
+.konflikt .row{ margin:0; }
 /* Hilfe „Online stellen“ */
 .hilfe{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:0 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
 .hilfe summary{ cursor:pointer; min-height:44px; display:flex; align-items:center; font-weight:600; font-size:15px; }
@@ -194,6 +202,8 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
+  <div id="konflikte" class="banner" role="status" hidden><span id="konflikteText"></span> <button type="button" id="konflikteZeigen" aria-expanded="false" aria-controls="konfliktListe">Anzeigen</button></div>
+  <div id="konfliktListe" class="konfliktliste" hidden></div>
   <details id="onlineStellen" class="hilfe" hidden>
     <summary>Online stellen</summary>
     <ol>

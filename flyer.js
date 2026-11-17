@@ -137,6 +137,8 @@
   async function uebernehmeJetzt(paket, opt) {
     P.pruefe(paket);
     if (opt.nurWennLeer === true && basis && basis.paket) return 'schonDa';
+    // Teil 2: Änderungsschicht genau einmal mit dem neuen Paket abgleichen (Konflikte zeigt flyer-bearbeiten.js)
+    if (AE) { try { await AE.abgleichen(paket); } catch (e) { /* Schicht bleibt, wie sie war */ } }
     const eintrag = {
       paket: paket,
       quelle: opt.quelle === 'online' ? 'online' : 'import',
