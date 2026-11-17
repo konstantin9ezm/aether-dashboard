@@ -49,6 +49,10 @@
   // Selbst gewählt: so lange nach window.print() auf „beforeprint“ warten, bevor die Home-Bildschirm-App einen
   // Hinweis zeigt.
   const DRUCK_HINWEIS_MS = 2500;
+  // Selbst gewählt: Blob-URL eines Downloads 60 s nach dem Klick freigeben (Safari fragt beim Download erst nach; so
+  // lange muss die URL gelten). Tests setzen window.AETHER_TEST_FLYER_FREIGABE_MS vor dem Laden.
+  const FREIGABE_MS = (typeof window.AETHER_TEST_FLYER_FREIGABE_MS === 'number' && window.AETHER_TEST_FLYER_FREIGABE_MS >= 0)
+    ? window.AETHER_TEST_FLYER_FREIGABE_MS : 60000;
   const XHTML = 'http://www.w3.org/1999/xhtml';
   // Verweise auf fonts/… in url(…)/src(…) (bereinigeCss lässt nur data:, fonts/ ohne „..“ und – in fill, stroke,
   // clip-path, filter, marker* – #… stehen).
@@ -82,6 +86,14 @@
   function optionenFuer(dok, ort) {
     const a = A();
     return a && typeof a.optionen === 'function' ? a.optionen(dok, ort) : undefined;
+  }
+  // Datei über eine Blob-URL herunterladen; die URL wird nach FREIGABE_MS freigegeben (kein Speicherleck).
+  function herunterladenUndFreigeben(datei) {
+    const url = URL.createObjectURL(datei);
+    try { G().herunterladen(url, datei.name); } finally {
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* egal */ } }, FREIGABE_MS);
+    }
+    return url;
   }
   function homeBildschirmApp() {
     try { return navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; }
@@ -480,7 +492,7 @@
       return;
     }
     if (g.kannHerunterladen()) {
-      g.herunterladen(URL.createObjectURL(d.datei), d.datei.name);
+      herunterladenUndFreigeben(d.datei);
       meldung('Bild wird heruntergeladen' + zusatz);
       return;
     }
@@ -598,6 +610,7 @@
     druckeAlle: druckeAlle,
     druckeEins: druckeEins,
     bildVorbereiten: bildVorbereiten,
-    bildDatei: bildDatei
+    bildDatei: bildDatei,
+    herunterladenUndFreigeben: herunterladenUndFreigeben
   });
 })();

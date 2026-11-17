@@ -137,6 +137,13 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .vb-edit textarea:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
 .vb-edit .row{ margin:0; }
 .vb-edit button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* Hilfe „Online stellen“ */
+.hilfe{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:0 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
+.hilfe summary{ cursor:pointer; min-height:44px; display:flex; align-items:center; font-weight:600; font-size:15px; }
+.hilfe ol{ margin:0 0 8px; padding-left:1.4em; }
+.hilfe li{ margin:0 0 6px; }
+.hilfe a{ color:var(--accent); font-weight:600; display:inline-flex; align-items:center; min-height:44px; }
+.hilfe code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -182,10 +189,22 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="btnImport">Paket importieren</button>
     <input type="file" id="dateiImport" hidden>
     <button type="button" id="btnAllePdf" hidden>Alle als PDF</button>
+    <button type="button" id="btnExport" hidden>Paket exportieren</button>
   </div>
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
+  <details id="onlineStellen" class="hilfe" hidden>
+    <summary>Online stellen</summary>
+    <ol>
+      <li>„Paket exportieren“ – Fassung: <b id="hilfeFassung">noch nicht exportiert</b></li>
+      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether/upload/main/docs/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether/upload/main/docs/flyer</a></li>
+      <li>Datei <code>aether-flyer-paket.json</code> auswählen (ersetzt die alte).</li>
+      <li>Commit-Nachricht: <code id="hilfeCommit">Flyer-Paket … [skip ci]</code> <button type="button" id="hilfeKopieren">Kopieren</button></li>
+      <li>„Commit directly to the main branch“ wählen, „Commit changes“.</li>
+    </ol>
+    <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
+  </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
   <nav id="chips" class="chips" aria-label="Kategorien"></nav>
   <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>

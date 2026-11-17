@@ -109,6 +109,8 @@
   }
   async function merkeOnline(o) {
     if (!S || !o) return false;
+    // Teil 2: bekannte Online-Fassung für die Zählung der Export-Fassung (flyer-bearbeiten.js)
+    try { document.dispatchEvent(new CustomEvent('flyer:onlinefassung', { detail: { version: o.version } })); } catch (e) { /* egal */ }
     try { return (await S.speichereOnline({ sha: o.sha, version: o.version, stand: o.stand })) === true; } catch (e) { return false; }
   }
   // Dauerhaften Speicher anfragen (der Browser löscht das Paket dann nicht bei Platzmangel); Fehler sind egal.

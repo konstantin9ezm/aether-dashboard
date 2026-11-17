@@ -159,6 +159,97 @@
     if (!e.repeat) leisteZu();
   }
 
+  /* ---------- Weitergabe (wie beim Bild) ---------- */
+  function dialogMitLink(datei, titel, beiKlick) {
+    const m = $('modal'), box = $('mInhalt');
+    if (!m || !box) return false;
+    $('mTitel').textContent = titel;
+    $('mText').textContent = 'Die Datei ließ sich nicht direkt weitergeben. Link antippen (bzw. lange drücken) und sichern.';
+    leeren(box);
+    const url = URL.createObjectURL(datei);
+    const a = el('a', datei.name);
+    a.href = url; a.download = datei.name;
+    a.addEventListener('click', () => { if (beiKlick) beiKlick(); });
+    box.appendChild(a);
+    m.hidden = false;
+    // Blob-URL freigeben, sobald der Dialog zu ist
+    const zu = $('mZu');
+    const frei = () => { setTimeout(() => { try { URL.revokeObjectURL(url); } catch (x) { /* egal */ } }, 1000); zu.removeEventListener('click', frei); };
+    if (zu) { zu.addEventListener('click', frei); zu.focus(); }
+    return true;
+  }
+  // Datei weitergeben; nachher() nur, wenn sie wirklich weitergegeben wurde (Teilen erfolgreich, Download gestartet,
+  // Link im Dialog angetippt). Muss synchron in der Klick-Behandlung laufen (Nutzergeste für navigator.share).
+  function weitergeben(datei, titel, nachher) {
+    const g = G();
+    const files = [datei];
+    if (g.kannTeilen(files)) {
+      navigator.share({ files: files, title: titel })
+        .then(() => { if (nachher) nachher('geteilt'); })
+        .catch((e) => {
+          if (e && e.name === 'AbortError') return;
+          if (g.kannHerunterladen()) { herunterladen(datei); if (nachher) nachher('heruntergeladen'); return; }
+          dialogMitLink(datei, titel, () => { if (nachher) nachher('dialog'); });
+        });
+      return 'teilen';
+    }
+    if (g.kannHerunterladen()) { herunterladen(datei); if (nachher) nachher('heruntergeladen'); return 'download'; }
+    dialogMitLink(datei, titel, () => { if (nachher) nachher('dialog'); });
+    return 'dialog';
+  }
+  function herunterladen(datei) {
+    const ex = EX();
+    if (ex && typeof ex.herunterladenUndFreigeben === 'function') { ex.herunterladenUndFreigeben(datei); return; }
+    const url = URL.createObjectURL(datei);
+    G().herunterladen(url, datei.name);
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (x) { /* egal */ } }, 60000);
+  }
+
+  /* ---------- Export (Teil E) ---------- */
+  function exportieren(ev) {
+    const g = G();
+    if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
+    let r;
+    try { r = AE().exportPaket(onlineVersion); } catch (e) { fehlerZeigen(e); return; }
+    try { h.fehlerWeg(); } catch (e) { /* egal */ }
+    const datei = new File([r.text], DATEI_PAKET, { type: 'application/json' });
+    weitergeben(datei, 'Aether Flyer-Paket ' + r.fassung, (wie) => {
+      AE().markiereExportiert(r.fassung).then(() => {
+        hilfeZeigen();
+        meldung('Paket ' + r.fassung + (wie === 'heruntergeladen' ? ' wird heruntergeladen' : ' exportiert'));
+      });
+    });
+  }
+  function hilfeZeigen() {
+    const f = AE().letzteFassung();
+    $('hilfeFassung').textContent = f || 'noch nicht exportiert';
+    $('hilfeCommit').textContent = COMMIT(f || '<Fassung>');
+    $('hilfeKopieren').disabled = !f;
+  }
+  function kopieren() {
+    const f = AE().letzteFassung();
+    if (!f) return;
+    const t = COMMIT(f);
+    const ok = () => meldung('Kopiert: ' + t);
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(t).then(ok, () => auswaehlen());
+        return;
+      }
+    } catch (e) { /* weiter unten */ }
+    auswaehlen();
+  }
+  // Ohne Zwischenablage: Text markieren (zum Kopieren per Menü)
+  function auswaehlen() {
+    try {
+      const r = document.createRange();
+      r.selectNodeContents($('hilfeCommit'));
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      meldung('Text markiert – bitte kopieren');
+    } catch (e) { meldung('Kopieren nicht möglich'); }
+  }
+
   async function dokumentZuruecksetzen() {
     const d = offenesDok();
     if (!d || !AE().hatAenderungen(d.id)) return false;
@@ -201,6 +292,8 @@
     $('vbStatusAb').addEventListener('click', () => leisteZu());
     $('vbReset').addEventListener('click', () => { dokumentZuruecksetzen(); });
     window.addEventListener('keydown', tasteFenster, true);
+    $('btnExport').addEventListener('click', exportieren);
+    $('hilfeKopieren').addEventListener('click', kopieren);
     // Vollbild: beim Schließen zurück auf „Ansehen“; beim Blättern Leiste zu
     document.addEventListener('flyer:vollbild', (e) => {
       const d = e && e.detail;
@@ -210,13 +303,17 @@
     });
     document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); knopfReset(); });
     document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); });
+    document.addEventListener('flyer:onlinefassung', (e) => { const v = e && e.detail && e.detail.version; if (typeof v === 'string' && v) onlineVersion = v; });
     knoepfeZeigen();
-    return Promise.resolve();
+    hilfeZeigen();
+    return Promise.resolve(h.onlineVersion()).then((v) => { if (typeof v === 'string' && v && !onlineVersion) onlineVersion = v; }).catch(() => {});
   }
 
   window.AetherFlyerBearbeiten = Object.freeze({
     einrichten: einrichten,
     modus: () => modus,
     setzeModus: (m) => setzeModus(m),
+    exportieren: exportieren,
+    onlineVersion: () => onlineVersion
   });
 })();

@@ -415,6 +415,79 @@
     return v === undefined ? null : v;
   }
 
+  /* ---------- Export (Teil E) ---------- */
+  function versionTag(v) {
+    const m = /^(\d{4}-\d{2}-\d{2})\.(\d+)$/.exec(String(v || '').trim());
+    return m ? { tag: m[1], n: m[2].replace(/^0+(?=\d)/, '') } : null;
+  }
+  function groesser(a, b) { return a.length !== b.length ? a.length > b.length : a > b; }
+  // Nächste Fassung „<heute>.<n>“: n = 1 bzw. eins mehr als die höchste bekannte Fassung desselben Tags
+  function naechsteFassung(bekannte) {
+    const tag = heute();
+    let n = '0';
+    for (const v of bekannte) {
+      const t = versionTag(v);
+      if (t && t.tag === tag && groesser(t.n, n)) n = t.n;
+    }
+    // Ziffernfolge + 1 (ohne Rundung, auch bei sehr langen Zahlen)
+    const z = n.split('').map(Number);
+    let i = z.length - 1;
+    while (i >= 0) { if (z[i] < 9) { z[i]++; break; } z[i] = 0; i--; }
+    if (i < 0) z.unshift(1);
+    return tag + '.' + z.join('');
+  }
+  function bekannteFassungen(pk, onlineVersion) {
+    return [pk && pk.version, onlineVersion].concat(exporte).filter((v) => typeof v === 'string' && v);
+  }
+  // Markierungen eines HTML-Textes (Werte in Reihenfolge) – Export muss sie unverändert erhalten
+  function markierungen(html) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + String(html), 'text/html');
+    const b = doc.body;
+    const m = {};
+    for (const a of ['data-t', 'data-s', 'data-block', 'data-zaehler', 'data-stand']) m[a] = mitAttr(b, a).map((el) => el.getAttribute(a));
+    m['ae-t'] = b.querySelectorAll('ae-t').length;
+    return JSON.stringify(m);
+  }
+  function htmlMitAenderungen(html, dokId, eigene) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + String(html), 'text/html');
+    anwenden(doc.body, dokId, eigene, { nurVorhandene: true });
+    return doc.body.innerHTML;
+  }
+  // Paket = Basis + Änderungsschicht. → { paket, fassung, text } oder wirft (AppError) – dann wird nichts ausgegeben.
+  function exportPaket(onlineVersion) {
+    const pk = basis();
+    if (!pk) throw fehler('export', 'Kein Paket zum Exportieren.', 'Erst ein Paket laden oder importieren.');
+    const fassung = naechsteFassung(bekannteFassungen(pk, onlineVersion));
+    const neu = JSON.parse(JSON.stringify(pk));
+    const proDok = new Map();
+    for (const e of eintraege.values()) {
+      if (!proDok.has(e.dok)) proDok.set(e.dok, []);
+      proDok.get(e.dok).push(e);
+    }
+    for (const d of neu.dokumente) {
+      const eigene = proDok.get(d.id);
+      if (!eigene || !eigene.length) continue;
+      const vorher = markierungen(d.html);
+      d.html = htmlMitAenderungen(d.html, d.id, eigene);
+      if (markierungen(d.html) !== vorher) throw fehler('export', 'Export fehlgeschlagen.', 'Dokument ' + d.id + ': Markierungen wären verändert worden.');
+    }
+    neu.version = fassung;
+    neu.stand = heute();
+    try { P().pruefe(neu); } catch (e) {
+      throw fehler('export', 'Export fehlgeschlagen.', 'Das Ergebnis ist kein gültiges Paket: ' + [e && e.title, e && e.text].filter(Boolean).join(' '));
+    }
+    return { paket: neu, fassung: fassung, text: JSON.stringify(neu, null, 2) };
+  }
+  // Nach erfolgreicher Weitergabe: exportiert := neu für alle Einträge, Fassung merken
+  function markiereExportiert(fassung) {
+    for (const e of eintraege.values()) e.exportiert = e.neu;
+    if (typeof fassung === 'string' && fassung) exporte = exporte.filter((f) => f !== fassung).concat([fassung]).slice(-MAX_EXPORTE);
+    const p = speichern();
+    melde({ exportiert: fassung });
+    return p;
+  }
+  function letzteFassung() { return exporte.length ? exporte[exporte.length - 1] : null; }
+
   /* ---------- Abfragen ---------- */
   function fuerDok(dokId) {
     const r = [];
@@ -452,6 +525,10 @@
     dokumentZuruecksetzen: dokumentZuruecksetzen,
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
+    exportPaket: exportPaket,
+    naechsteFassung: (onlineVersion) => naechsteFassung(bekannteFassungen(basis(), onlineVersion)),
+    markiereExportiert: markiereExportiert,
+    letzteFassung: letzteFassung,
     // Abfragen
     alle: () => liste().map(rein),
     fuerDok: fuerDok,
