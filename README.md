@@ -240,8 +240,11 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 
 **Ablauf beim Start**
 
-1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`
-   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`), die Logo-Seite (`logo.html`) samt Schriften (`fonts/`) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
+1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`,
+   den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`), die Logo-Seite (`logo.html`) samt Schriften (`fonts/`),
+   die Flyer-Seite (`flyer.html` mit den Modulen `flyer.js`, `flyer-paket.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
+   `flyer-online.js`, `flyer-export.js`; nur Programmcode, das Paket liegt in IndexedDB, siehe
+   [Flyer & Infografiken](#flyer--infografiken)) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
    `ONLINE_CHECK_TIMEOUT_MS = 30 s`. Antwortet GitHub, wird die Liste lokal gespeichert
@@ -256,7 +259,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
    wiederholt; gelingt sie, verschwindet der Hinweis.
 5. Die **Projektansicht** zeigt offline nur „Offline – Projektansicht nicht verfügbar“ statt vier Fehlerkarten.
    „Aktualisieren“ wiederholt die Online-Prüfung und lädt bei Erfolg die Ansicht. Die Karte **Tools** bleibt
-   sichtbar; Screen-Editor und Logo-Seite starten offline, „Messflug“ und „WebGPU-Check“ sind ausgegraut („nur online“).
+   sichtbar; Screen-Editor, Logo-Seite und Flyer-Seite starten offline, „Messflug“ und „WebGPU-Check“ sind ausgegraut
+   („nur online“).
 
 **Speicherort und Umfang**
 
@@ -270,6 +274,9 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 - Der Token liegt nur im `localStorage` (`aether.githubToken`), nie im Service-Worker-Cache oder in gespeicherten
   Antworten. Der Service Worker beantwortet ausschließlich Anfragen an den eigenen Ursprung (die Seite selbst);
   alles andere geht unverändert ins Netz.
+- Das Flyer-Paket liegt nicht im Cache-Storage, sondern in IndexedDB `aether-flyer` (zuletzt übernommenes Paket und
+  zuletzt bekannte Online-Datei, ohne Token); damit öffnet die Flyer-Seite offline mit dem gespeicherten Stand. Die
+  Online-Prüfung der Flyer-Seite (api.github.com) kommt wie alle API-Anfragen nie in einen Cache.
 
 **Grenzen**
 
@@ -287,6 +294,7 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 - „Cache leeren“ entfernt Build-Dateien, Build-Index und die gespeicherte Liste; die Seite selbst bleibt offline
   öffnbar.
 - „Token löschen“ entfernt zusätzlich die vom Service Worker gespeicherte Seite (kompletter Neuanfang).
+- Das Flyer-Paket (IndexedDB `aether-flyer`) bleibt bei beiden stehen; es enthält kein Token.
 - Alles inklusive Service Worker: Safari → Einstellungen → Safari → Erweitert → Website-Daten (bzw. in der
   Home-Bildschirm-App die App löschen und neu hinzufügen).
 
@@ -415,10 +423,12 @@ die Breite nicht, rutschen sie in die nächste Zeile (kein waagerechtes Scrollen
 2. **Messflug ›** – öffnet den Workflow `profile.yml` im Repo aether auf GitHub (neuer Tab,
    `rel="noopener noreferrer"`).
 3. **Logo ›** – öffnet `logo.html` im selben Fenster, auch offline (siehe „Logo-Werkzeug“).
-4. **WebGPU-Check ›** – öffnet `webgpu-check.html` im selben Fenster (das Symbol in der Kopfzeile bleibt).
+4. **Flyer ›** – öffnet `flyer.html` im selben Fenster, auch offline (siehe [Flyer & Infografiken](#flyer--infografiken)).
+5. **WebGPU-Check ›** – öffnet `webgpu-check.html` im selben Fenster (das Symbol in der Kopfzeile bleibt).
 
 Offline sind „Messflug“ und „WebGPU-Check“ ausgegraut mit „nur online“ (GitHub ist nicht erreichbar, der
-WebGPU-Check liegt nicht in der App-Hülle). Kommt das Netz zurück, sind sie wieder aktiv.
+WebGPU-Check liegt nicht in der App-Hülle). Kommt das Netz zurück, sind sie wieder aktiv. „Screen-Editor ›“, „Logo ›“
+und „Flyer ›“ bleiben offline aktiv (ihre Seiten liegen in der App-Hülle).
 
 ## Screen-Editor
 
@@ -684,6 +694,202 @@ liegen nur die unveränderten Originaldateien im Repo (kein Teilsatz). Orbitron 
 variable Datei verfügbar; die statischen Originale stammen aus dem Quell-Repo, das Google Fonts dafür angibt
 (`ofl/orbitron/METADATA.pb`). Der Teilsatz „latin“ enthält die Buchstaben von „Aether“ (geprüft in den Tests).
 
+## Flyer & Infografiken
+
+Seite `flyer.html` (Kopfzeile „‹ Dashboard“ zurück zur Projektansicht `./#projekt`, Titel „Flyer & Infografiken“,
+rechts der Stand). Sie zeigt die Dokumente eines Flyer-Pakets – Flyer (DIN A4) und Infografiken –, läuft offline,
+prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter. **Bearbeiten, Abhaken,
+Änderungsschicht, Abgleich und Export folgen in Teil 2** (eigener Auftrag); in Teil 1 wird nur angezeigt.
+
+**Bedienung**
+
+- **Kopfzeile:** „offline bereit · Stand `<TT.MM.JJJJ>`“ (Paket liegt auf dem Gerät), „Stand `<TT.MM.JJJJ>` · nicht offline
+  gespeichert“ (Speichern schlug fehl, z. B. ohne IndexedDB) oder „noch kein Paket“. Darunter die Paket-Zeile
+  „`<Titel>` · Version `<version>` · `<n>` Dokumente“ (ohne `titel` im Paket „Flyer-Paket“); ohne Paket „Noch kein Paket –
+  „Online prüfen“ oder „Paket importieren“.“
+- **Ansehen:** Kategorie-Chips „Alle“ und je eine Kategorie aus `paket.kategorien` (nur Kategorien mit Dokumenten,
+  Reihenfolge des Pakets; die Wahl wird nicht gespeichert). Kacheln sind die verkleinerte Live-Darstellung des
+  Dokuments (per `transform` auf Kachelbreite skaliert) mit Id und Titel. Antippen öffnet das **Vollbild**: Dokument auf
+  Bildschirmbreite skaliert, oben „‹“, „n / Anzahl“, „›“, „Id · Titel“, „PDF“, „Bild“ und „✕“. Blättern per ‹/›,
+  Wischen (waagerecht, mindestens 50 px; nicht mit zwei Fingern oder hineingezoomt) oder ←/→, am Ende ohne Umlauf.
+  Esc, Backspace oder ✕ schließen (Fokus zurück auf die Kachel); eine gehaltene Taste schließt nur einmal. Die Tasten
+  wirken nur bei offenem Vollbild, nie solange ein Eingabefeld den Fokus hat (jedes `input` außer Knöpfen – `button`,
+  `submit`, `reset`, `image`, `file` – und dem Kontrollkästchen, also auch Datum, Zeit, Zahl, Regler, Farbe und
+  Auswahlknopf; dazu `textarea`, `select`, `contenteditable`, auch in Shadow Roots) und nie mit Cmd, Strg oder Alt.
+- **Schriftanpassung** (jeder Flyer bei jeder Anzeige: Kachel, Vollbild, Druck, Bild; erst wenn die Paket-Schriften
+  geladen sind, höchstens 5 s Wartezeit – kommen sie später doch noch, werden Kacheln, Vollbild und Druck mit der
+  echten Schrift neu angepasst, „Text zu lang“ neu gesetzt und das Bild neu vorbereitet): `--s` ab 1,42 in Schritten
+  von 0,02 verkleinern, solange `.body` überläuft
+  (`scrollHeight > clientHeight + 1`), höchstens bis 0,80. Danach bekommt jedes `.fill` die Klasse `off`, wenn es
+  niedriger als 90 px ist (`offsetHeight`, unabhängig von der Skalierung), sonst wird `off` entfernt. Läuft es bei
+  0,80 noch über, steht „Text zu lang“ an Kachel und Vollbild.
+- **PDF:** „PDF“ im Vollbild (ein Dokument) und „Alle als PDF (n)“ (Chip „Alle“: alle Flyer des Pakets; sonst alle
+  Dokumente der gewählten Kategorie) öffnen den Druckdialog (`window.print`, dort „Als PDF sichern“; iPad: Teilen-Menü).
+  Je Flyer genau eine A4-Seite ohne Rand (`@page{size:A4 !important;margin:0 !important}`, gegen `@page`-Regeln des
+  Pakets); Infografiken werden per `zoom` auf Seitenbreite skaliert und dürfen über mehrere Seiten gehen. Die
+  `@media print`-Regeln des Paket-CSS gelten. Die Seite fügt im Druck nur Seiten-Container hinzu (Lage, Größe,
+  Seitenumbruch, `contain:paint` als Rahmen) – keine `box-shadow`, kein `background-clip:text`, kein `filter`, keine
+  Verläufe mit Transparenz (die PDF-Ansicht von iPhone/iPad zeichnet so etwas als Fläche). Drucken
+  ohne Knopf (Strg+P, Teilen-Menü → Drucken) bereitet über `beforeprint` das offene Vollbild-Dokument vor, sonst die
+  gezeigte Liste.
+- **Bild:** PNG des offenen Dokuments in doppelter Auflösung (Flyer 1588 × 2246 px), Name `aether-<Id>.png`. Ohne
+  Bibliothek: SVG mit `foreignObject` (als `data:`-URL) → Bild → Canvas → PNG, die Schriften (`fonts/…`) als
+  `data:`-URL eingebettet. Das Bild wird beim Öffnen und Blättern vorbereitet und beim Antippen synchron gezeichnet
+  (sonst „Einen Moment – das Bild wird vorbereitet“). Über 16 777 216 Pixel (Canvas-Grenze von Safari auf iPhone/iPad)
+  wird es proportional verkleinert, mit Meldung. Weg wie im Logo-Werkzeug: Teilen-Dialog (`navigator.share` mit Datei),
+  sonst Download, sonst ein Dialog „Lange drücken und sichern.“; nur per Antippen (Nutzergeste), auch offline.
+- **Online prüfen:** siehe unten. Kein Token oder offline: nur ein kleiner Hinweis, kein Fehler; die Seite läuft mit
+  dem gespeicherten Stand.
+- **Paket importieren:** Dateiauswahl ohne `accept` (sonst graut iOS die Datei in der Dateien-App aus); den Inhalt
+  prüft die Seite selbst. Erfolg: „Paket importiert (Version `<version>`, `<n>` Dokumente)“, das gespeicherte Paket wird
+  ersetzt; Banner und „Aktuell …“ der Online-Prüfung gehörten zum vorigen Paket, deshalb wird danach neu geprüft. Kein
+  JSON, falsches Format, fehlerhaftes oder zu neues Paket → Fehlerbox, nichts überschrieben.
+
+**Online-Datei:** `docs/flyer/aether-flyer-paket.json` im Repo aether (`konstantin9ezm/aether`, Zweig `main`), gelesen
+über die GitHub-API mit dem Token des Dashboards (`localStorage` `aether.githubToken`, nur gelesen) über `githubApi` aus
+`gemeinsam.js`, Fehlertexte wie im Logo-Werkzeug. Nur lesende GET-Anfragen, jede mit Zeitlimit 15 s (danach
+abgebrochen), nie zwei Prüfungen gleichzeitig.
+
+1. Ordnerliste `contents/docs/flyer?ref=main` (kleine JSON-Antwort). 404 → „Noch keine Online-Version.“ (kein Fehler).
+   Fehlt die Datei, liegen dort aber andere `.json`-Dateien: „In docs/flyer liegt keine Datei mit genau dem Namen
+   aether-flyer-paket.json (gefunden: …)“.
+2. sha der Datei gleich dem des gespeicherten Pakets → „Aktuell (Version `<version>`) · geprüft `<HH:MM>` Uhr“, nichts
+   geladen. Ist die sha schon aus einer früheren Prüfung samt Version bekannt, entscheidet die Seite ohne Download –
+   außer bei einem importierten Paket mit derselben Version (das kann genau diese Datei sein: dann wird geladen und
+   verglichen). Sonst lädt sie die Datei (`contents/…`, `Accept: application/vnd.github.raw+json`, geht auch über 1 MB)
+   und prüft das Format.
+3. Ohne lokales Paket wird sie sofort übernommen („Paket geladen (Version …)“) – außer es wurde inzwischen eines
+   importiert (auch wenn dessen Speichern noch läuft): Dann bleibt der Import, und die Online-Fassung wird wie unten
+   angeboten. Sonst Banner „Neue Version online: `<version>` (Stand `<TT.MM.JJJJ>`)“ mit „Laden“; ist sie älter als das
+   gespeicherte Paket (Vergleich Datum, dann Zähler n der Version `JJJJ-MM-TT.n`): „Online liegt eine ältere Version
+   (`<version>`)“ mit „Trotzdem laden“. Laden ersetzt das gespeicherte Paket. Gleicher Inhalt wie das gespeicherte Paket
+   (z. B. vorher importiert): kein Banner, nur die sha wird übernommen.
+   „Laden“ übernimmt genau die angebotene Fassung: Liegt sie nicht schon im Speicher (Banner nach Neuladen ohne
+   Download), wird sie über ihren sha geladen (`git/blobs/<sha>`, raw – nicht „was gerade auf main liegt“); gibt es sie
+   nicht mehr, prüft die Seite neu. Vor dem Übernehmen vergleicht sie noch einmal mit dem gespeicherten Paket: Ist die
+   Online-Fassung inzwischen älter (z. B. neueres Paket importiert), erscheint „Online liegt eine ältere Version …“ mit
+   „Trotzdem laden“, statt sie zu übernehmen.
+4. Wann: beim Öffnen, per „Online prüfen“, beim `online`-Ereignis und alle 10 Minuten, solange die Seite offen ist.
+5. Hinweise statt Fehler: „Ohne Token keine Online-Prüfung – gezeigt wird der gespeicherte Stand.“ (dann keine
+   API-Anfrage) und „Offline – gezeigt wird der gespeicherte Stand.“ (auch bei Zeitlimit). Token abgelehnt oder fehlende
+   Rechte: Fehlerbox mit „Token eingeben ›“. Kaputte Online-Datei: „Online-Datei ist kein gültiges Flyer-Paket.“; zu neu:
+   „Paket zu neu: Online-Version `<version>` braucht ein neueres Dashboard.“ – beide Male bleibt das gespeicherte Paket.
+
+**Paket-Format** (`formatVersion` 1; hier nur Platzhalter):
+
+```json
+{
+  "format": "aether-flyer-paket", "formatVersion": 1, "version": "2026-11-17.2", "stand": "2026-11-17", "titel": "…",
+  "css": { "flyer": "<CSS>", "infografik": "<CSS>" },
+  "kategorien": [{ "id": "kat1", "name": "…" }],
+  "dokumente": [
+    { "id": "F1", "art": "flyer", "kategorie": "kat1", "titel": "…", "breite": 794, "hoehe": 1123, "html": "<section class=\"page …\" style=\"--s:…\">…</section>" },
+    { "id": "I1", "art": "infografik", "kategorie": "kat1", "titel": "…", "breite": 1080, "hoehe": null, "html": "<section class=\"ig …\">…</section>" }
+  ]
+}
+```
+
+- `format` muss genau „aether-flyer-paket“ sein (sonst „Kein Aether-Flyer-Paket.“). Pflicht sind `formatVersion` (ganze
+  Zahl ab 1), `version` (Text), `stand` (Datum `JJJJ-MM-TT`), `css` (Objekt; `flyer`/`infografik` als Text),
+  `kategorien` (Liste von `{ id, name }`) und `dokumente` (mindestens eins; `id` eindeutig, `art` „flyer“ oder
+  „infografik“, `kategorie`, `titel`, `breite` > 0, `hoehe` > 0 oder `null`, `html`). `titel` des Pakets ist optional.
+  Sonst „Paket fehlerhaft.“ mit dem Grund (z. B. „Dokument 3: art fehlt“).
+- `formatVersion` > 1: „Paket zu neu“ („Das Paket hat formatVersion n; diese Seite kennt Version 1. Bitte das Dashboard
+  aktualisieren.“), nichts wird überschrieben. Unbekannte Felder werden ignoriert (sie bleiben im gespeicherten Paket).
+- Flyer: Wurzel `<section class="page …" style="--s:<Wert>">`, 794 × 1123 px, Inhalt in `.body`; `--s` skaliert die
+  Schrift, `.fill` ist ein Füllbild. Infografik: Wurzel `<section class="ig …">`, 1080 px breit, Höhe frei.
+- Das Aussehen kommt allein aus dem Paket-CSS (die Seite baut nichts nach und überschreibt nichts). Es verweist mit
+  `fonts/jost/…` auf die Schrift Jost (liegt in `fonts/jost/` und in der App-Hülle).
+- Markierungen im HTML – in Teil 1 nur erhalten und angezeigt, Bearbeiten und Abhaken folgen in Teil 2:
+
+  | Markierung | Bedeutung |
+  |---|---|
+  | `data-t="t<n>"` | editierbarer Text, eindeutig je Dokument |
+  | `<ae-t>` | Textstück ohne eigene Gestaltung |
+  | `data-s="s<n>"` mit `data-status` | Status-Element; `ok`, `run`, `next` oder `plan` (fehlt = ohne Status) |
+  | `data-block` mit `data-zaehler` | Block mit abhakbaren Listeneinträgen und seine Überschrift |
+  | `data-stand="kurz"` / `"lang"` | Datum des Dokuments |
+
+**Speicher:** IndexedDB `aether-flyer`, Version 1, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
+'online'|'import', sha, uebernommen }`, das zuletzt übernommene Paket) und `online` (Schlüssel `stand`: `{ sha, version,
+stand, geprueft }`, die zuletzt bekannte Online-Datei). Kein Token, keine API-Antworten im Ganzen, kein
+`localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
+Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Teil 2 ergänzt eine
+Ablage für die Änderungsschicht (Version 2): Die Verbindung schließt bei `versionchange`, damit das Upgrade nicht
+blockiert wird, und eine ältere Seite liest eine neuere Datenbank weiter, solange `basis` und `online` darin liegen.
+
+**Bereinigung und CSP:** Paket-Inhalte kommen nie als HTML-Text ins Dokument, sondern über `DOMParser`, Bereinigung und
+`document.importNode`; bereinigt wird ähnlich wie beim fremden SVG im Logo-Werkzeug.
+
+- HTML: `script`, `iframe`, `object`, `embed`, `link`, `meta`, `base`, `form` (dazu `frame`, `frameset`, `applet`,
+  `template`, `portal`, `noscript`, `fencedframe`, `handler`, `listener`) fallen samt Inhalt weg, ebenso SVG-Animationen,
+  die `href`, `src` oder `on…` setzen, und Kommentare. Alle `on…`-Attribute, `srcset`, `srcdoc`, `autofocus` und
+  `xml:base` werden entfernt. `href`, `src`, `xlink:href` (und andere Verweis-Attribute wie `action`, `poster`) bleiben
+  nur mit „#…“ oder `data:image/…`, an Links (`a`, `area`) nur mit „#…“. Andere Attribute mit `url(…)` (z. B. `fill`,
+  `filter`, `mask`) nur mit „#…“ oder `data:`.
+- CSS (Paket-CSS, `<style>` und `style`-Attribute): Kommentare und `@import` fallen weg; `url()`, `src()`,
+  `image-set()`, `image()` und `cross-fade()` (auch mit Herstellerpräfix) nur mit `data:…` oder `fonts/…` (ohne „..“),
+  sonst wird die ganze Funktion zu `none`. „#…“ (lokaler Verweis, z. B. SVG-Verlauf `fill:url(#g)`) nur in den
+  Eigenschaften `fill`, `stroke`, `clip-path`, `filter` und `marker…` – dort lädt der Browser nichts; in anderen
+  (`background-image`, `content`, `border-image`, `list-style-image` …) würde Chromium für `url(#x)` die Seite selbst
+  noch einmal holen. Ein eigener CSS-Leser nach CSS Syntax Level 3 erkennt dabei auch Escapes (`\75 rl(` = `url(`).
+- Die Markierungen `data-t`, `data-s`, `data-status`, `data-block`, `data-zaehler`, `data-stand` und `<ae-t>` bleiben.
+- Die Content-Security-Policy von `flyer.html` sichert zusätzlich: Skripte nur vom eigenen Ursprung (kein
+  Inline-Skript), Bilder nur eigen, `data:` oder `blob:`, Schriften nur eigen oder `data:`, Verbindungen nur eigen und
+  `https://api.github.com`, keine Frames und Objekte, kein Formular-Versand, kein `<base>`. Nichts aus dem Paket lädt
+  etwas aus dem Netz.
+
+**Isolation (Shadow DOM):** Jedes Dokument steht in einem eigenen Shadow Root (`div.flyer-host`), gewählt statt
+`iframe srcdoc`, weil es leicht genug für alle Kacheln ist (das echte Paket hat 38 Dokumente) und sich im Druck
+seitenweise umbrechen lässt. Shadow-CSS = `:host{all:initial;display:block}` mit den eigenen Variablen der Seite
+(`--bg`, `--text`, `--accent` …) auf `initial` (`all` setzt Variablen nicht zurück; sonst sähe ein Paket mit
+`var(--bg, …)` je nach Hell/Dunkel der Seite anders aus) + bereinigtes Paket-CSS mit `:root`, `html` und `body` →
+`:host` + neutraler Host-Kasten (`margin`, `padding`, `border` 0). So wirkt das Paket-CSS nur im Dokument und nichts
+von der Seite hinein. Jedes Dokument liegt zusätzlich in einem Rahmen mit `contain:paint` (Kachelbild, Vollbild-Hülle,
+Druckseite): Eine `:host`-Regel des Pakets mit `!important` (sie schlägt aus dem Shadow Root heraus Lage und
+`transform` des Hosts) oder ein `position:fixed` im Dokument bleibt darin – kein Dokument legt sich über die Seite und
+ihre Knöpfe, und im Druck erscheint es nur auf den Seiten seines Dokuments. `@font-face` und `@page` wirken im Shadow
+Root nicht (Chromium ignoriert `@font-face` dort), deshalb stehen sie zusätzlich im Dokument
+(`<style id="flyerDokRegeln">`), auch aus `@media`, `@supports` und `@layer` (samt Hülle), als letzte Regel
+`@page{size:A4 !important;margin:0 !important}`. Nicht übernommen werden `@page` mit Seitenauswahl (`:first`, `:left`,
+`:right`, `:blank`, Namen – sie würden die A4-Regel über die Spezifität aushebeln) und `@font-face` mit einem
+Schriftnamen, den die Seite selbst nutzt (Avenir Next, Futura, Segoe UI, system-ui, -apple-system, Menlo …; sie
+änderten sonst Kopfzeile und Knöpfe – Bildschirm, Druck und Bild gleich). Auch beim Drucken mehrerer Dokumente bleibt
+jedes in seinem eigenen Shadow Root.
+
+**Module** (in dieser Reihenfolge eingebunden, jedes setzt genau ein eingefrorenes `window.Aether…`-Objekt):
+
+| Datei | Inhalt |
+|---|---|
+| `gemeinsam.js` | gemeinsame Hilfsfunktionen (`githubApi`, `AppError`, `meldung`, `mitGeste`, `kannTeilen`, `herunterladen`, Zeitlimit) |
+| `flyer-paket.js` | `AetherFlyerPaket`: Format lesen und prüfen, Versionen vergleichen, Datum, Bereinigung von HTML und CSS, CSS für Shadow Root und Dokument aufteilen |
+| `flyer-speicher.js` | `AetherFlyerSpeicher`: IndexedDB `aether-flyer`, `persist()` |
+| `flyer-ansicht.js` | `AetherFlyerAnsicht`: Chips, Kacheln, Vollbild, Tasten und Wischen, Schriftanpassung; `darstellen(dok, ziel, optionen)` stellt ein Dokument dar (für Teil 2 mit der Änderungsschicht über `optionen.anpassen`) |
+| `flyer-online.js` | `AetherFlyerOnline`: Online-Prüfung |
+| `flyer-export.js` | `AetherFlyerExport`: PDF (Druck) und Bild |
+| `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile; Schnittstelle für Tests und Teil 2 |
+
+Fehlt eines der Module Ansicht, Online oder Export, bleiben seine Knöpfe verborgen und der Rest läuft weiter.
+
+**Testschalter:** Setzt man vor dem Laden `window.AETHER_TEST_FLYER_INTERVALL_MS` (positive Zahl), gilt dieses
+Intervall statt der 10 Minuten; `window.AETHER_TEST_FLYER_SCHRIFT_FRIST_MS` ersetzt die 5 s Wartezeit auf die
+Paket-Schriften; `window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) verkürzt das Zeitlimit der Anfragen. Das nutzen nur die E2E-Tests. **Testschnittstelle:** `window.AetherFlyer` (`bereit`, `stand`, `paket`,
+`uebernehme`, `fehler`, `fehlerWeg`, `gespeichert`) und die Modul-Objekte.
+
+**Grenzen**
+
+- Auf iPhone/iPad (Safari) noch nicht am Gerät geprüft; die Tests laufen in Chromium. „Bild“ erscheint nur, wenn beim
+  Start eine Selbstprobe gelingt (kleines SVG mit `foreignObject` → Canvas → Pixel lesen → `toDataURL`). Gibt der
+  Browser das Bild beim echten Zeichnen nicht heraus (Canvas „tainted“), erscheint „Dieser Browser gibt das Bild nicht
+  heraus – „Bild“ ist hier nicht verfügbar“ und der Knopf bleibt aus. „PDF“ ist davon nicht betroffen.
+- `window.print` in der Home-Bildschirm-App: iOS öffnete dort lange gar keinen Druckdialog; ob das heute noch gilt, ist
+  unsicher. Kommt nach 2,5 s kein `beforeprint`, erscheint „Falls sich kein Druckdialog öffnet: das Dashboard in Safari
+  öffnen und dort drucken.“
+- Ältere Safari-Fassungen beachten `@page size` nicht; iOS druckt dann im Papierformat der Region (in Deutschland A4),
+  der Flyer passt mit 210 × 297 mm trotzdem auf eine Seite.
+- Wie überall braucht der erste Start Internet, damit die Seite in der App-Hülle liegt; das Paket kommt online oder per
+  Import.
+
 ## WebGPU-Check
 
 Eigenständige Seite zum Prüfen der eigenen Geräte (iPad, iPhone; Safari und Home-Bildschirm-App):
@@ -743,7 +949,8 @@ als `cfg` an `githubApi`. Was **nicht** hineingehört: Token lesen oder speicher
 Teilen-Ablauf mit seinen Meldungen). Die Datei wird nicht ins Spiel-iframe geladen; `webgpu-check.html` bleibt
 bewusst eigenständig. Sie gehört zur App-Hülle in `sw.js` und wird von `pages.yml` veröffentlicht – ohne sie starten
 die drei Seiten offline nicht. `tests/gemeinsam.test.js` prüft, dass keine der Funktionen in den HTML-Dateien erneut
-definiert wird.
+definiert wird. Auch `flyer.html` bindet die Datei ein (vor den Flyer-Modulen, siehe
+[Flyer & Infografiken](#flyer--infografiken)).
 
 ## Ein- und Ausklappen
 
@@ -907,7 +1114,7 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   werden): `AETHER_GEGENPROBE=iframe-attr|mailto|pflicht|safari-os node --test tests/webgpu-check.test.js`.
 
 - `tests/screen-editor.test.js` – Tools-Karte und Screen-Editor (Headless Chromium): Lage der Karte zwischen
-  Stand-Zeile und Build-Ampel, Ziele der Knöpfe („Logo ›“ aktiv, auch offline), Umbruch ohne waagerechtes Scrollen bei
+  Stand-Zeile und Build-Ampel, Ziele der Knöpfe („Logo ›“ und „Flyer ›“ aktiv, auch offline), Umbruch ohne waagerechtes Scrollen bei
   320–1400 px; offline Karte sichtbar, Messflug/WebGPU-Check ausgegraut, Editor startet aus dem Service Worker; keine
   externen Anfragen, three.js-Prüfsumme; keine Überlappung von Bühne, Trennleisten, unterem Bereich und Bedienfeld
   (402×874, 874×402, 1194×834, 834×1194, 1280×800, 360×700, 600×800 je Untereinander/Nebeneinander und
@@ -965,6 +1172,48 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   Screen-Editor und Logo-Seite starten offline wie bisher; kein Token in einem Cache; nicht im Spiel-iframe.
   Gegenproben (von Hand, müssen rot werden): `'gemeinsam.js'` aus `SHELL` in `sw.js` entfernen → Offline-Test rot;
   eine Kopie einer Funktion (z. B. `mitGeste`) zurück in `logo.html` → Quelltextprüfung rot.
+- `tests/flyer.test.js` – Flyer & Infografiken mit Mock-API (Ordnerliste, Datei und `git/blobs/<sha>` wie GitHub, Datei
+  nur mit Accept raw) und einem Mini-Paket nur aus Platzhaltern (2 Flyer, 1 Infografik mit SVG-Beschriftung, alle sechs
+  Markierungen mit Werten wie im Paket-Format: `data-t="t1"`, `data-s="s1"` mit `data-status="run"`/`"ok"`,
+  `data-block`/`data-zaehler`, `data-stand="kurz"`/`"lang"`):
+  ohne Paket; Import (Kopfzeile, Paket-Zeile, 3 Kacheln als Shadow-DOM-Vorschau auf Kachelbreite, Paket-CSS nur im
+  Shadow Root, Chips nur für Kategorien mit Dokumenten, gespeichert ohne Token, unbekannte Felder bleiben, nach Neuladen
+  da); Import-Fehler (kein JSON, falsches Format, fehlerhaft, zu neu: nichts überschrieben); Vollbild „1 / 3“, ←/→ und
+  ‹/› ohne Umlauf, Wischen, Esc/Backspace, Tasten wirkungslos mit Fokus in einem Eingabefeld (Text, Datum, Zeit,
+  Zahl, Regler, Farbe, Auswahlknopf, Auswahlliste, `textarea`, `contenteditable`, im Shadow Root) und mit
+  Strg/Cmd/Alt, auf Knöpfen und Kontrollkästchen blättern die Pfeile; Schriftanpassung (kurz → `--s` 1.42, lang →
+  zwischen 0.80 und 1.42 ohne Hinweis, sehr lang → 0.80 und „Text zu lang“ an Kachel und Vollbild, `.fill` unter
+  90 px `off` – 88 px aus, 92 px bleibt –, Überlauf genau ab `clientHeight + 2`); Schriften erst nach der Frist
+  (Kacheln, Vollbild und Druck danach mit der echten Schrift angepasst, „Text zu lang“ neu); Bereinigung (`script`, `onerror`, `javascript:`-Link,
+  externe `url()` in CSS und `style`, `\75 rl(`, `image-set`, `@import`, `link`, `iframe`, externe Bilder, SVG-`set`:
+  nichts ausgeführt, nichts von außen angefragt, nichts davon im Shadow-DOM, Markierungen bleiben); Paket-Funktionen
+  (Format, Versionsvergleich, Datum, CSS bereinigen und zerlegen, Wurzel-Selektoren); Online-Prüfung (ohne lokales
+  Paket sofort geladen, Token nur im Header, gleicher sha → keine Datei-Anfrage, neuer sha → Banner, „Laden“ ersetzt
+  das Paket auch nach Neuladen, ältere Version → „Trotzdem laden“, 404, falscher Dateiname, offline, abgelehntes
+  Token, kaputte Datei, ohne Token keine Anfrage, formatVersion 2, nie zwei Prüfungen gleichzeitig, Intervall,
+  Zeitlimit; nach einem Import neu bewertet, „Laden“ übernimmt keine inzwischen ältere Fassung, Import derselben Datei →
+  „Aktuell“ ohne Banner, „Laden“ nach Neuladen lädt genau die angebotene Fassung über `git/blobs/<sha>`, Import
+  während des ersten Online-Ladens bleibt); PDF per `page.pdf` (eine A4-Seite je Flyer, Infografik über zwei Seiten,
+  auch über `beforeprint` ohne Knopf; Seiten ohne Rand laut Content-Stream, `position:fixed` nur auf der Seite seines
+  Flyers, `@page :first`/`:left`/`!important` des Pakets ändern A4 nicht, Druck-Container ohne `box-shadow`, `filter`,
+  Hintergrund o. Ä.); Isolation (`:host`-Regel mit `!important` im Paket-CSS bzw. als `<style>` bleibt im Kachelbild,
+  ✕ bleibt bedienbar; Seiten-Variablen wirken nicht ins Dokument, hell wie dunkel; `@font-face` mit Schriftnamen der
+  Seite ändert die Seite nicht, `@font-face` aus `@layer`/`@supports`/`@media` wirkt; `url(#…)` außerhalb von
+  `fill`/`stroke`/`clip-path`/`filter`/`marker` lädt nichts); Bild (PNG 1588 × 2246 bzw. 2160 × doppelte Höhe über den Teilen-Dialog, Pixel aus dem Paket-CSS, nur mit
+  Nutzergeste, über 16 777 216 Pixel verkleinert, Selbstprobe scheitert bzw. Canvas „tainted“ → „Bild“ aus); offline
+  aus der App-Hülle samt Schriften, „Flyer ›“ offline aktiv, Token in keinem Cache und nicht in IndexedDB; fehlende
+  Module; IndexedDB-Upgrade auf Version 2 nicht blockiert; ohne IndexedDB; Layout 320–1400 px (Kacheln und Vollbild,
+  Tippflächen ≥ 44 × 44 px, Neu-Skalieren); Dateien (`sw.js`, `pages.yml`, Tools-Knopf, Skripte, CSP, kein
+  `innerHTML` & Co., kein `localStorage.setItem`, `contain:paint` um jedes Dokument, Variablen- und Schriftliste in
+  `flyer-paket.js` passend zu `flyer.html`). Gegenproben (von Hand, müssen rot werden): in `flyer-paket.js`
+  `'script'` aus `WEG_ELEMENTE` nehmen, das Entfernen der `on*`-Attribute abschalten oder jedes Ziel erlauben (auch
+  „#…“ überall) → Bereinigung rot; in `flyer-online.js` den sha-Vergleich (`sha === lokal.basisSha`) abschalten →
+  „gleicher sha“ rot; in `flyer-ansicht.js` den Überlauf nie melden, `.fill` nie ausblenden, `FILL_MIN_PX` auf 60 oder
+  die Toleranz auf `+ 50` setzen → Schriftanpassung rot; `spaeteSchriften` leeren → „Schriften erst nach der Frist“
+  rot; `'flyer.html'` aus `SHELL` in `sw.js` entfernen → Offline-Test rot; `contain:paint` in `flyer.html` entfernen →
+  Isolation und PDF rot; `!important` aus der eigenen `@page`-Regel nehmen oder `margin:10mm` setzen → PDF rot;
+  `box-shadow` an `.druck-seite` → PDF rot; in `flyer.js` `nachImport` nicht aufrufen oder `nurWennLeer` übergehen
+  bzw. in `flyer-online.js` „Laden“ über den Pfad statt den sha laden → jeweilige Online-Gegenbeispiele rot.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
@@ -975,6 +1224,7 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
-`gemeinsam.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
+`gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
+`flyer-online.js` und `flyer-export.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

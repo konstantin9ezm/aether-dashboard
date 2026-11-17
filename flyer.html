@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="theme-color" content="#0b0e14">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>Aether – Flyer</title>
+<!--
+  Flyer & Infografiken: zeigt die Dokumente eines Flyer-Pakets (aether-flyer-paket.json, Format „aether-flyer-paket“)
+  als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js.
+  Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem Repo aether (docs/flyer, Zweig main, gelesen über
+  die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt) und liegt danach in
+  IndexedDB „aether-flyer“ (ohne Token), damit die Seite offline startet (App-Hülle in sw.js).
+  Paket-Inhalte werden nie als HTML-Text eingesetzt: bereinigt (flyer-paket.js, DOMParser) und je Dokument in einem
+  eigenen Shadow Root dargestellt (flyer-ansicht.js). Das Aussehen der Dokumente kommt allein aus dem Paket-CSS;
+  die Regeln hier gelten nur für die Seite selbst. Die CSP oben sichert zusätzlich, dass nichts aus dem Paket
+  etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API).
+  Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-speicher.js, flyer-ansicht.js,
+  flyer-online.js, flyer-export.js, flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  (Ansicht, Online, Export), bleiben seine Bedienelemente verborgen.
+-->
+<style>
+:root{
+  color-scheme: light;
+  --bg:#e9e6f6; --panel:#f6f5fc; --line:#cdc7e8; --text:#1b1838; --muted:#5b5680;
+  --accent:#6a59df; --accent-ink:#ffffff; --sel:#f0951a; --sel-ink:#1c1206;
+  --field:#ffffff; --danger:#b8402b; --chip:#e4e0f6; --warn-bg:#fff3dc; --warn-line:#e7b45c; --warn-text:#a14f00;
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+    --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+    --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040; --warn-bg:#2a2210; --warn-line:#7a5b22; --warn-text:#ffa02e;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#070914; --panel:#0f1325; --line:#283051; --text:#ebe9ff; --muted:#9b98c4;
+  --accent:#8c7cf0; --accent-ink:#0b0920; --sel:#ffa02e; --sel-ink:#1c1206;
+  --field:#0a0d1c; --danger:#ff7c5e; --chip:#1a2040; --warn-bg:#2a2210; --warn-line:#7a5b22; --warn-text:#ffa02e;
+}
+*,*::before,*::after{ box-sizing:inherit; }
+[hidden]{ display:none !important; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0; min-height:100%; background:var(--bg); color:var(--text);
+  font-family:"Avenir Next", "Futura", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size:16px; line-height:1.4; overflow-x:hidden;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+}
+/* Vollbild offen: die Seite dahinter scrollt nicht mit */
+body:has(#vollbild:not([hidden])){ overflow:hidden; }
+/* Kopfzeile: auf schmalen Bildschirmen rutscht der Stand in eine zweite Zeile */
+.kopf{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:8px 16px; background:var(--panel); border-bottom:1px solid var(--line); min-width:0; }
+.kopf .titel{ font-size:15px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto; }
+.kopf .status{ margin-left:auto; font-size:13px; color:var(--muted); text-align:right; min-width:0; overflow-wrap:anywhere; }
+.zurueck{
+  display:flex; flex:none; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:8px 14px;
+  border-radius:10px; background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:16px; text-decoration:none;
+}
+button{
+  font:inherit; font-size:15px; min-height:44px; min-width:44px; padding:6px 14px; border-radius:10px;
+  border:1px solid var(--line); background:var(--chip); color:var(--text); cursor:pointer;
+}
+button.primary{ background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:500; }
+button:disabled{ opacity:.45; cursor:default; }
+button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
+.inhalt{ padding:16px; max-width:1400px; margin:0 auto; min-width:0; }
+/* Werkzeugleiste: Knöpfe brechen um statt waagerecht zu scrollen */
+.leiste{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; min-width:0; }
+.leiste button{ flex:0 1 auto; max-width:100%; }
+.paketinfo{ font-size:14px; color:var(--muted); margin:0 0 10px; overflow-wrap:anywhere; }
+.paketinfo:empty{ margin:0; }
+.banner{
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0 0 10px; padding:8px 12px;
+  border:1px solid var(--accent); border-radius:10px; background:var(--panel); font-size:15px; overflow-wrap:anywhere;
+}
+.banner #bannerText{ flex:1 1 12em; min-width:0; }
+.klein{ font-size:13px; color:var(--muted); margin:0 0 10px; overflow-wrap:anywhere; }
+.klein:empty{ margin:0; }
+/* Fehlerbox wie #hinweis im Logo-Werkzeug */
+.hinweis{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
+.hinweis b{ display:block; }
+.hinweis a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; font-weight:600; }
+/* Kategorie-Chips (gewählt wie .seg im Logo-Werkzeug) */
+.chips{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; min-width:0; }
+.chips:empty{ margin:0; }
+.chips button{ border-radius:999px; font-size:14px; padding:6px 14px; max-width:100%; overflow-wrap:anywhere; }
+.chips button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+.leer{ color:var(--muted); font-size:15px; text-align:center; margin:24px 0; overflow-wrap:anywhere; }
+/* Kacheln: Vorschau (Host per transform auf Kachelbreite skaliert), Id, Titel, Warnung */
+.kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.kachel{
+  display:flex; flex-direction:column; align-items:stretch; gap:4px; min-width:0; min-height:44px; padding:8px;
+  border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); text-align:left; font-size:14px;
+}
+.kachel-bild{ position:relative; overflow:hidden; aspect-ratio:794/1123; background:#fff0; border-radius:4px; }
+/* Rahmen um jedes dargestellte Dokument (Kachel, Vollbild, Druckseite): contain:paint schneidet ab und fängt auch
+   position:fixed aus dem Dokument ein – eine :host-Regel des Pakets (auch mit !important, die schlägt aus dem Shadow
+   Root heraus Host-Lage und transform) kann so nicht über die Seite und ihre Knöpfe ragen, und im Druck bleibt ein
+   fixed-Element auf der Seite seines Dokuments. Zeichnet nichts (keine Fläche, kein Effekt). */
+.kachel-bild, .vb-huelle, .druck-seite{ contain:paint; }
+.kachel-id{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; color:var(--muted); }
+.kachel-titel{ font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
+.kachel-warnung{ font-size:13px; }
+/* Darstellungs-Host (Größe und Skalierung setzt flyer-ansicht.js) */
+.flyer-host{ position:absolute; left:0; top:0; transform-origin:0 0; }
+.warnung{ color:var(--warn-text); font-weight:600; }
+/* Vollbild */
+.vollbild{
+  position:fixed; inset:0; z-index:20; background:var(--bg); display:flex; flex-direction:column;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+}
+.vollbild[hidden]{ display:none; }
+.vb-leiste{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); min-width:0; flex:none; }
+#vbZaehler{ font-variant-numeric:tabular-nums; white-space:nowrap; text-align:center; min-width:3.5em; font-size:15px; }
+#vbTitel{ flex:1 1 8em; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600; }
+#vbWarnung{ font-size:14px; white-space:nowrap; }
+#vbZu{ margin-left:auto; }
+#vbBuehne{ flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y pinch-zoom; }
+#vbBuehne:focus{ outline:none; }
+/* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
+#modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
+#modal[hidden]{ display:none; }
+.dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
+.dlg h2{ margin:0 0 6px; font-size:18px; font-weight:600; overflow-wrap:anywhere; }
+.dlg p{ margin:0 0 10px; color:var(--muted); font-size:15px; }
+.dlg img{ display:block; width:100%; height:auto; border-radius:6px; border:1px solid var(--line); background:#ffffff; -webkit-touch-callout:default; margin-bottom:12px; }
+.dlg a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; font-weight:600; }
+.row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+.row.grow > *{ flex:1 1 0; }
+#toast{
+  position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%);
+  background:var(--text); color:var(--panel); padding:8px 14px; border-radius:999px; font-size:14px; max-width:calc(100% - 32px);
+  opacity:0; transition:opacity .2s; pointer-events:none; z-index:30;
+}
+#toast.on{ opacity:1; }
+@media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
+/* ---------- Druck (flyer-export.js füllt #druck) ----------
+   Nur Seiten-Container, nichts, was als Fläche gezeichnet wird (keine box-shadow, kein background-clip:text,
+   kein filter, keine Verläufe mit Transparenz): iPhone/iPad zeigen so etwas in der PDF-Ansicht als Fläche. */
+#druck{ display:none; }
+.druck-seite{ position:relative; overflow:hidden; width:210mm; }
+.druck-flyer{ height:297mm; }
+.druck-seite + .druck-seite{ break-before:page; }
+@media print{
+  /* Helle Seite auch bei dunklem Systemdesign (sonst wäre der Seitenhintergrund dunkel) */
+  :root{ color-scheme:light !important; }
+  body{ padding:0; margin:0; background:none; }
+  body > :not(#druck){ display:none !important; }
+  #druck{ display:block; }
+}
+</style>
+</head>
+<body>
+<header class="kopf">
+  <a class="zurueck" id="zumDashboard" href="./#projekt">‹ Dashboard</a>
+  <span class="titel">Flyer &amp; Infografiken</span>
+  <span id="status" class="status" role="status"></span>
+</header>
+<main class="inhalt" id="inhalt">
+  <div class="leiste" role="group" aria-label="Paket">
+    <button type="button" id="btnOnline" hidden>Online prüfen</button>
+    <button type="button" id="btnImport">Paket importieren</button>
+    <input type="file" id="dateiImport" hidden>
+    <button type="button" id="btnAllePdf" hidden>Alle als PDF</button>
+  </div>
+  <p id="paketInfo" class="paketinfo"></p>
+  <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
+  <p id="onlineHinweis" class="klein" role="status"></p>
+  <div id="fehler" class="hinweis" role="alert" hidden></div>
+  <nav id="chips" class="chips" aria-label="Kategorien"></nav>
+  <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>
+  <div id="kacheln" class="kacheln"></div>
+</main>
+
+<div id="vollbild" class="vollbild" role="dialog" aria-modal="true" aria-labelledby="vbTitel" hidden>
+  <div class="vb-leiste">
+    <button type="button" id="vbZurueck" aria-label="Voriges">‹</button>
+    <span id="vbZaehler"></span>
+    <button type="button" id="vbWeiter" aria-label="Nächstes">›</button>
+    <span id="vbTitel"></span>
+    <span id="vbWarnung" class="warnung" hidden>Text zu lang</span>
+    <button type="button" id="vbPdf" hidden>PDF</button>
+    <button type="button" id="vbBild" hidden>Bild</button>
+    <button type="button" id="vbZu" aria-label="Schließen">✕</button>
+  </div>
+  <div id="vbBuehne" class="buehne"></div>
+</div>
+
+<div id="druck" aria-hidden="true"></div>
+
+<div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitel">
+  <h2 id="mTitel"></h2><p id="mText"></p>
+  <div id="mInhalt"></div>
+  <div class="row grow"><button type="button" id="mZu" class="primary">Schließen</button></div>
+</div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="gemeinsam.js"></script>
+<script src="flyer-paket.js"></script>
+<script src="flyer-speicher.js"></script>
+<script src="flyer-ansicht.js"></script>
+<script src="flyer-online.js"></script>
+<script src="flyer-export.js"></script>
+<script src="flyer.js"></script>
+</body>
+</html>

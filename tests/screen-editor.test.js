@@ -76,7 +76,7 @@ const inside = (a, b, tol = 0.5) => a.x0 >= b.x0 - tol && a.x1 <= b.x1 + tol && 
 // Tools-Karte
 // ---------------------------------------------------------------------------
 describe('Tools-Karte', () => {
-  test('liegt zwischen Stand-Zeile und Build-Ampel; Ziele der Knöpfe; Logo aktiv', async () => {
+  test('liegt zwischen Stand-Zeile und Build-Ampel; Ziele der Knöpfe; Logo und Flyer aktiv', async () => {
     const { context, page, log } = await newPage();
     await page.goto(baseUrl + '#projekt');
     await page.waitForSelector('#projectView:not([hidden])');
@@ -97,10 +97,10 @@ describe('Tools-Karte', () => {
 
     const btns = await page.$$eval('#tools > *', (es) => es.map((e) => ({ id: e.id, tag: e.tagName, text: e.textContent.replace(/\s+/g, ' ').trim(),
       href: e.getAttribute('href'), target: e.getAttribute('target'), rel: e.getAttribute('rel'), disabled: e.disabled === true, aria: e.getAttribute('aria-disabled'), cls: e.className })));
-    assert.deepEqual(btns.map((b) => b.text), ['Screen-Editor ›', 'Messflug ›', 'Logo ›', 'WebGPU-Check ›']);
-    assert.deepEqual(btns.map((b) => b.cls), ['btn', 'btn', 'btn', 'btn'], 'Knopfstil wie „Aktualisieren“');
+    assert.deepEqual(btns.map((b) => b.text), ['Screen-Editor ›', 'Messflug ›', 'Logo ›', 'Flyer ›', 'WebGPU-Check ›']);
+    assert.deepEqual(btns.map((b) => b.cls), ['btn', 'btn', 'btn', 'btn', 'btn'], 'Knopfstil wie „Aktualisieren“');
     assert.equal(await page.getAttribute('#projReload', 'class'), 'btn');
-    const [ed, prof, logo, gpu] = btns;
+    const [ed, prof, logo, flyer, gpu] = btns;
     assert.deepEqual([ed.tag, ed.href, ed.target], ['A', 'screen-editor.html', null], 'Screen-Editor im selben Fenster');
     assert.deepEqual([prof.tag, prof.href, prof.target], ['A', PROFILE_URL, '_blank'], 'Messflug in neuem Tab');
     assert.deepEqual(prof.rel.split(/\s+/).sort(), ['noopener', 'noreferrer']);
@@ -108,6 +108,9 @@ describe('Tools-Karte', () => {
     assert.deepEqual([logo.tag, logo.href, logo.target, logo.disabled, logo.aria], ['A', 'logo.html', null, false, null], 'Logo: aktiv wie Screen-Editor, selbes Fenster');
     assert.equal(Number(await page.$eval('#toolLogo', (e) => getComputedStyle(e).opacity)), 1, 'Logo nicht ausgegraut');
     assert.ok(!(await page.$('#toolLogo .tool-note')), 'kein Zusatz „geplant“');
+    assert.deepEqual([flyer.id, flyer.tag, flyer.href, flyer.target, flyer.disabled, flyer.aria], ['toolFlyer', 'A', 'flyer.html', null, false, null], 'Flyer: aktiv wie Logo, selbes Fenster');
+    assert.equal(Number(await page.$eval('#toolFlyer', (e) => getComputedStyle(e).opacity)), 1, 'Flyer nicht ausgegraut');
+    assert.ok(!(await page.$('#toolFlyer .tool-note')), 'Flyer ohne Zusatz');
     // „Logo ›“ öffnet die Logo-Seite im selben Fenster, „Zum Dashboard“ führt zurück
     await page.click('#toolLogo');
     await page.waitForURL(/logo\.html$/);
@@ -195,6 +198,7 @@ describe('Tools-Karte', () => {
     }
     assert.equal(await page.getAttribute('#toolEditor', 'href'), 'screen-editor.html', 'Screen-Editor bleibt offline aktiv');
     assert.deepEqual(await page.$eval('#toolLogo', (a) => [a.getAttribute('href'), a.getAttribute('aria-disabled'), a.textContent.trim()]), ['logo.html', null, 'Logo ›'], 'Logo bleibt offline aktiv');
+    assert.deepEqual(await page.$eval('#toolFlyer', (a) => [a.getAttribute('href'), a.getAttribute('aria-disabled'), a.textContent.trim(), Number(getComputedStyle(a).opacity), getComputedStyle(a).pointerEvents]), ['flyer.html', null, 'Flyer ›', 1, 'auto'], 'Flyer bleibt offline aktiv (wie Logo)');
     await page.screenshot({ path: path.join(OUT, 'tools-offline.png') });
 
     // Screen-Editor startet ohne Netz aus dem Service Worker (Seite und three.js)
