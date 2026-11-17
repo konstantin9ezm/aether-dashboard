@@ -18,8 +18,9 @@
   die Regeln hier gelten nur für die Seite selbst. Die CSP oben sichert zusätzlich, dass nichts aus dem Paket
   etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API).
   Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-speicher.js, flyer-ansicht.js,
-  flyer-online.js, flyer-export.js, flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
-  (Ansicht, Online, Export), bleiben seine Bedienelemente verborgen.
+  flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
+  Export, Abgleich, Sicherung, Teil 2), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
 :root{
@@ -123,6 +124,34 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 #vbZu{ margin-left:auto; }
 #vbBuehne{ flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y pinch-zoom; }
 #vbBuehne:focus{ outline:none; }
+/* Teil 2: Umschalter Ansehen | Text | Status (wie .seg im Logo-Werkzeug) */
+.seg{ display:inline-flex; flex-wrap:wrap; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; min-width:0; }
+.seg button{ border:0; border-radius:0; background:var(--chip); min-width:44px; }
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); font-weight:600; }
+/* Bearbeitungsleiste und Status-Auswahl unten im Vollbild */
+.vb-edit{ flex:none; display:flex; flex-direction:column; gap:6px; padding:8px 12px; background:var(--panel); border-top:1px solid var(--line); min-width:0; }
+.vb-edit .klein{ margin:0; }
+.vb-edit textarea{ font:inherit; font-size:16px; width:100%; min-height:88px; max-height:40vh; resize:vertical; padding:8px; border-radius:10px;
+  border:1px solid var(--line); background:var(--field); color:var(--text); }
+.vb-edit textarea:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
+.vb-edit .row{ margin:0; }
+.vb-edit button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* Konflikte nach einem Abgleich */
+.konfliktliste{ display:flex; flex-direction:column; gap:8px; margin:0 0 12px; }
+.konflikt{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; font-size:14px; overflow-wrap:anywhere; min-width:0; }
+.konflikt b{ display:block; }
+.konflikt dl{ display:grid; grid-template-columns:auto 1fr; gap:2px 8px; margin:6px 0; }
+.konflikt dt{ color:var(--muted); }
+.konflikt dd{ margin:0; white-space:pre-wrap; min-width:0; }
+.konflikt .row{ margin:0; }
+/* Hilfe „Online stellen“ */
+.hilfe{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:0 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
+.hilfe summary{ cursor:pointer; min-height:44px; display:flex; align-items:center; font-weight:600; font-size:15px; }
+.hilfe ol{ margin:0 0 8px; padding-left:1.4em; }
+.hilfe li{ margin:0 0 6px; }
+.hilfe a{ color:var(--accent); font-weight:600; display:inline-flex; align-items:center; min-height:44px; }
+.hilfe code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -168,10 +197,28 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="btnImport">Paket importieren</button>
     <input type="file" id="dateiImport" hidden>
     <button type="button" id="btnAllePdf" hidden>Alle als PDF</button>
+    <button type="button" id="btnExport" hidden>Paket exportieren</button>
+    <button type="button" id="btnSichern" hidden>Änderungen sichern</button>
+    <button type="button" id="btnEinspielen" hidden>Änderungen einspielen</button>
+    <input type="file" id="dateiEinspielen" hidden>
+    <button type="button" id="btnVerwerfen" hidden>Alle Änderungen verwerfen</button>
   </div>
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
+  <div id="konflikte" class="banner" role="status" hidden><span id="konflikteText"></span> <button type="button" id="konflikteZeigen" aria-expanded="false" aria-controls="konfliktListe">Anzeigen</button></div>
+  <div id="konfliktListe" class="konfliktliste" hidden></div>
+  <details id="onlineStellen" class="hilfe" hidden>
+    <summary>Online stellen</summary>
+    <ol>
+      <li>„Paket exportieren“ – Fassung: <b id="hilfeFassung">noch nicht exportiert</b></li>
+      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether/upload/main/docs/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether/upload/main/docs/flyer</a></li>
+      <li>Datei <code>aether-flyer-paket.json</code> auswählen (ersetzt die alte).</li>
+      <li>Commit-Nachricht: <code id="hilfeCommit">Flyer-Paket … [skip ci]</code> <button type="button" id="hilfeKopieren">Kopieren</button></li>
+      <li>„Commit directly to the main branch“ wählen, „Commit changes“.</li>
+    </ol>
+    <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
+  </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
   <nav id="chips" class="chips" aria-label="Kategorien"></nav>
   <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>
@@ -185,11 +232,26 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="vbWeiter" aria-label="Nächstes">›</button>
     <span id="vbTitel"></span>
     <span id="vbWarnung" class="warnung" hidden>Text zu lang</span>
+    <div id="vbModus" class="seg" role="group" aria-label="Modus" hidden>
+      <button type="button" data-modus="ansehen" aria-pressed="true">Ansehen</button><button type="button" data-modus="text" aria-pressed="false">Text</button><button type="button" data-modus="status" aria-pressed="false">Status</button>
+    </div>
+    <button type="button" id="vbReset" hidden>Dokument zurücksetzen</button>
     <button type="button" id="vbPdf" hidden>PDF</button>
     <button type="button" id="vbBild" hidden>Bild</button>
     <button type="button" id="vbZu" aria-label="Schließen">✕</button>
   </div>
   <div id="vbBuehne" class="buehne"></div>
+  <div id="vbEdit" class="vb-edit" hidden>
+    <label for="vbEditFeld" id="vbEditLabel" class="klein"></label>
+    <textarea id="vbEditFeld" rows="3" spellcheck="true"></textarea>
+    <div class="row"><button type="button" id="vbEditOk" class="primary">Übernehmen</button><button type="button" id="vbEditAb">Abbrechen</button><button type="button" id="vbEditOrig">Original</button></div>
+  </div>
+  <div id="vbStatus" class="vb-edit" hidden>
+    <span id="vbStatusLabel" class="klein"></span>
+    <div class="row" role="group" aria-label="Status">
+      <button type="button" data-status="ok">fertig</button><button type="button" data-status="run">läuft gerade</button><button type="button" data-status="next">als Nächstes</button><button type="button" data-status="plan">geplant</button><button type="button" data-status="">ohne Status</button><button type="button" id="vbStatusAb">Abbrechen</button>
+    </div>
+  </div>
 </div>
 
 <div id="druck" aria-hidden="true"></div>
@@ -207,6 +269,8 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 <script src="flyer-ansicht.js"></script>
 <script src="flyer-online.js"></script>
 <script src="flyer-export.js"></script>
+<script src="flyer-aenderungen.js"></script>
+<script src="flyer-bearbeiten.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

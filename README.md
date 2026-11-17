@@ -243,7 +243,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 1. Der Service Worker `sw.js` liefert die Seite selbst (`index.html`, `manifest.json`, Icons), `engine-map.json`,
    den Screen-Editor (`screen-editor.html`, `vendor/three-r128.min.js`), die Logo-Seite (`logo.html`) samt Schriften (`fonts/`),
    die Flyer-Seite (`flyer.html` mit den Modulen `flyer.js`, `flyer-paket.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
-   `flyer-online.js`, `flyer-export.js`; nur Programmcode, das Paket liegt in IndexedDB, siehe
+   `flyer-online.js`, `flyer-export.js`, `flyer-aenderungen.js`, `flyer-bearbeiten.js`; nur Programmcode, das Paket und
+   die Änderungen liegen in IndexedDB, siehe
    [Flyer & Infografiken](#flyer--infografiken)) und `gemeinsam.js` aus dem Cache `aether-shell-v1`, wenn das Netz nicht antwortet. Online holt er immer die aktuelle Seite vom Server
    („Netz zuerst, sonst Cache“) und frischt den Cache dabei auf. Anfragen an `api.github.com` fasst er nie an.
 2. Die Seite prüft **zuerst online**, ob es neue Builds gibt (`index.json`). Dafür gilt das Zeitlimit
@@ -274,8 +275,8 @@ Das Dashboard lässt sich auch ohne Internet öffnen und startet dann den zuletz
 - Der Token liegt nur im `localStorage` (`aether.githubToken`), nie im Service-Worker-Cache oder in gespeicherten
   Antworten. Der Service Worker beantwortet ausschließlich Anfragen an den eigenen Ursprung (die Seite selbst);
   alles andere geht unverändert ins Netz.
-- Das Flyer-Paket liegt nicht im Cache-Storage, sondern in IndexedDB `aether-flyer` (zuletzt übernommenes Paket und
-  zuletzt bekannte Online-Datei, ohne Token); damit öffnet die Flyer-Seite offline mit dem gespeicherten Stand. Die
+- Das Flyer-Paket liegt nicht im Cache-Storage, sondern in IndexedDB `aether-flyer` (zuletzt übernommenes Paket,
+  zuletzt bekannte Online-Datei und die eigenen Änderungen, ohne Token); damit öffnet die Flyer-Seite offline mit dem gespeicherten Stand. Die
   Online-Prüfung der Flyer-Seite (api.github.com) kommt wie alle API-Anfragen nie in einen Cache.
 
 **Grenzen**
@@ -698,13 +699,16 @@ variable Datei verfügbar; die statischen Originale stammen aus dem Quell-Repo, 
 
 Seite `flyer.html` (Kopfzeile „‹ Dashboard“ zurück zur Projektansicht `./#projekt`, Titel „Flyer & Infografiken“,
 rechts der Stand). Sie zeigt die Dokumente eines Flyer-Pakets – Flyer (DIN A4) und Infografiken –, läuft offline,
-prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter. **Bearbeiten, Abhaken,
-Änderungsschicht, Abgleich und Export folgen in Teil 2** (eigener Auftrag); in Teil 1 wird nur angezeigt.
+prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter. Texte und Status lassen sich im Vollbild
+selbst ändern (Teil 2): Die Änderungen liegen offline auf dem Gerät über dem übernommenen Paket, werden als neue
+Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboard schreibt selbst nie in ein Repo.
 
 **Bedienung**
 
 - **Kopfzeile:** „offline bereit · Stand `<TT.MM.JJJJ>`“ (Paket liegt auf dem Gerät), „Stand `<TT.MM.JJJJ>` · nicht offline
-  gespeichert“ (Speichern schlug fehl, z. B. ohne IndexedDB) oder „noch kein Paket“. Darunter die Paket-Zeile
+  gespeichert“ (Speichern schlug fehl, z. B. ohne IndexedDB) oder „noch kein Paket“; solange es nicht exportierte
+  Änderungen gibt, dazu „· `<n>` Änderungen nicht exportiert“ (bei einer: „· 1 Änderung nicht exportiert“; gezählt werden
+  Text- und Status-Änderungen, der Stand folgt ihnen von selbst). Darunter die Paket-Zeile
   „`<Titel>` · Version `<version>` · `<n>` Dokumente“ (ohne `titel` im Paket „Flyer-Paket“); ohne Paket „Noch kein Paket –
   „Online prüfen“ oder „Paket importieren“.“
 - **Ansehen:** Kategorie-Chips „Alle“ und je eine Kategorie aus `paket.kategorien` (nur Kategorien mit Dokumenten,
@@ -744,6 +748,64 @@ prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter.
   prüft die Seite selbst. Erfolg: „Paket importiert (Version `<version>`, `<n>` Dokumente)“, das gespeicherte Paket wird
   ersetzt; Banner und „Aktuell …“ der Online-Prüfung gehörten zum vorigen Paket, deshalb wird danach neu geprüft. Kein
   JSON, falsches Format, fehlerhaftes oder zu neues Paket → Fehlerbox, nichts überschrieben.
+
+**Bearbeiten (Teil 2)** – nur im Vollbild, Umschalter „Ansehen | Text | Status“ (Standard „Ansehen“, Tippflächen ≥ 44 px;
+beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verhält sich alles wie oben (Wischen, Tasten).
+
+- **Text:** Antippen eines Textes (`data-t`) öffnet unten eine Leiste mit mehrzeiligem Feld (vorbelegt mit dem aktuellen
+  Text), „Übernehmen“, „Abbrechen“ und „Original“ (zurück auf den Wert des Pakets, Eintrag gelöscht). Cmd/Strg+Enter =
+  Übernehmen, Esc = Abbrechen (das Vollbild bleibt offen). Solange das Feld den Fokus hat, blättern ←/→ nicht und
+  Backspace löscht nur Zeichen. Leerer Text ist erlaubt. Der Text wird immer als Text eingesetzt (Textknoten, nie HTML);
+  steht im Element ein `<ae-t>`, kommt er dorthin (übrige Gestaltung bleibt); enthält es weitere Markierungen, bleiben
+  diese stehen und nur sein eigener Text wird ersetzt. Zeilenumbrüche nur, wenn das Element im Paket schon `<br>` hat
+  (dann als `<br>`), sonst werden sie zu Leerzeichen. Während ein neues Paket übernommen wird (Abgleich bis zum
+  Basiswechsel), sind Eingaben kurz gesperrt („Gerade wird ein neues Paket übernommen.“).
+- **Status:** Antippen eines Listenpunkts (`data-s`) öffnet die Auswahl fertig (`ok`) · läuft gerade (`run`) · als
+  Nächstes (`next`) · geplant (`plan`) · ohne Status (Attribut entfernt). Statuslinien und Legendenpunkte folgen über das
+  Paket-CSS, Zähler und Balken sofort.
+- Geänderte Stellen sind nur in „Text“ und „Status“ markiert (gestrichelte Unterlinie in Akzentfarbe), nie in „Ansehen“,
+  Kacheln, Druck und Bild. Nach jeder Änderung wird gespeichert und das Dokument neu dargestellt (Kachel und Vollbild,
+  samt Schriftanpassung und „Text zu lang“; die Bildlaufposition im Vollbild bleibt). „Dokument zurücksetzen“ (mit
+  Rückfrage) nimmt alle Änderungen des offenen Dokuments zurück.
+- **Zähler und Balken** (nach jeder Darstellung neu, Regel wie im echten Paket): Ein Block ist das nächste Element
+  mit `data-block` um die Überschrift `data-zaehler` (im Paket Attribute ohne Wert; mit Wert gehören alle Elemente mit
+  diesem `data-block`-Wert zum Block). y = Listenpunkte (`data-s`) im Block, x = davon `ok`. Der Zähler ist ein
+  `<span class="zaehler">x von y fertig</span>` als letztes Kind des `data-zaehler`-Elements – das Paket-CSS zeigt den
+  Balken nur mit `[data-zaehler]:has(> .zaehler)`. Er wird angelegt, sobald ein Listenpunkt des Blocks einen eigenen
+  Status hat (und entfällt mit „Original“); steht er schon im Paket (z. B. nach Export und Import), wird er immer neu
+  berechnet. Ein unverändertes Paket bleibt so bitgenau, wie es ist (am echten Paket geprüft: 38 Dokumente, 51 Blöcke).
+  `--anteil` = x/y und `--anteil-laeuft` = run/y (auf vier Nachkommastellen, y = 0 → 0) stehen am Zähler-Element; das
+  Paket-CSS zeichnet „läuft“ von `--anteil` bis `--anteil` + `--anteil-laeuft`. Eine vorhandene Stelle „x von y“ im Text
+  eines Zählers wird ebenso ersetzt, ein leeres Zähler-Element bekommt „x von y fertig“; eine Überschrift mit eigenem
+  Text wird nie überschrieben.
+- **Stand:** Elemente mit `data-stand` (nur reiner Text, ggf. `<ae-t>`/`<br>`; Kennung `stand1`, `stand2` … in
+  Dokumentreihenfolge) zeigen nach einer Änderung am Dokument das heutige Datum: `kurz` = `TT.MM.JJJJ`, `lang` =
+  „`T. Monat JJJJ`“ – wie im echten Paket (Flyer kurz, Infografiken lang; ein vorhandenes Datum im Text wird ersetzt,
+  der Rest bleibt). „Original“ der letzten Änderung bzw. „Dokument zurücksetzen“ nimmt den Stand zurück.
+- **Paket exportieren:** Paket = Basis + Änderungen (Markierungen bleiben; unveränderte Dokumente wörtlich, geänderte
+  über `DOMParser` neu geschrieben), `version` „`<JJJJ-MM-TT>.<n>`“ (heute; n = 1 bzw. eins mehr als die höchste bekannte
+  Fassung desselben Tags aus Basis, letzter Online-Prüfung und früheren Exporten), `stand` = heute, Dateiname immer
+  `aether-flyer-paket.json`. Besteht das Ergebnis `AetherFlyerPaket.pruefe` nicht oder fehlte eine Markierung: Fehlerbox,
+  nichts wird ausgegeben. Weitergabe wie beim Bild (Teilen-Dialog, sonst Download – die Blob-URL wird nach 60 s
+  freigegeben –, sonst ein Dialog mit Link; scheitert das Teilen, kommt wie beim Bild der Dialog). Erst nach erfolgreicher
+  Weitergabe (bzw. Antippen des Links im Dialog) gelten alle Änderungen als exportiert (Kopfzeile ohne Zusatz). Die Hilfe
+  zeigt die zuletzt exportierte Fassung auch nach dem Neuladen.
+- **Online stellen** (aufklappbare Hilfe): 1) „Paket exportieren“ (Fassung wird angezeigt), 2) Link öffnen
+  <https://github.com/konstantin9ezm/aether/upload/main/docs/flyer>, 3) Datei `aether-flyer-paket.json` auswählen
+  (ersetzt die alte), 4) Commit-Nachricht „Flyer-Paket `<Fassung>` [skip ci]“ (Knopf „Kopieren“), 5) „Commit directly to
+  the main branch“, „Commit changes“. „[skip ci]“ startet keinen CI-Lauf und kostet nichts.
+- **Abgleich** bei jeder Übernahme eines neuen Pakets R (online „Laden“, erstes Online-Laden, Import), genau einmal und
+  idempotent, für jeden Eintrag e mit r = Wert in R: r = e.neu → Eintrag entfällt; r = e.alt oder r = e.exportiert →
+  Eintrag bleibt, alt := r; Stand: das spätere Datum gewinnt; sonst – auch wenn das Dokument oder die Stelle in R fehlt –
+  Konflikt. Konflikte: Banner „`<n>` Konflikte …“ → Liste mit Dokument-Id und Titel, Basis-Wert, eigenem Wert und neuem
+  Online-Wert, je Konflikt „Meins behalten“ (Eintrag bleibt, alt := r) oder „Online übernehmen“ (Eintrag entfällt). Bis
+  zur Entscheidung gilt der eigene Wert. Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg.
+- **Änderungen sichern / einspielen / verwerfen:** „Änderungen sichern“ gibt `aether-flyer-aenderungen.json` weiter
+  (`{ "format": "aether-flyer-aenderungen", "version": 1, "paketFassung", "gesichert", "eintraege": [ … ] }`).
+  „Änderungen einspielen“ (Dateiauswahl ohne `accept`) prüft den Inhalt selbst (Format, Version, Feldtypen, höchstens
+  5 MB und 20 000 Einträge, nur Text-Werte) und ordnet die Einträge wie beim Abgleich gegen die aktuelle Basis ein;
+  vorhandene eigene Einträge gehen vor, Widersprüche kommen in die Konfliktliste. Falsches Format oder zu neue Version
+  ändern nichts (Fehlerbox). „Alle Änderungen verwerfen“ fragt vorher nach.
 
 **Online-Datei:** `docs/flyer/aether-flyer-paket.json` im Repo aether (`konstantin9ezm/aether`, Zweig `main`), gelesen
 über die GitHub-API mit dem Token des Dashboards (`localStorage` `aether.githubToken`, nur gelesen) über `githubApi` aus
@@ -800,7 +862,7 @@ abgebrochen), nie zwei Prüfungen gleichzeitig.
   Schrift, `.fill` ist ein Füllbild. Infografik: Wurzel `<section class="ig …">`, 1080 px breit, Höhe frei.
 - Das Aussehen kommt allein aus dem Paket-CSS (die Seite baut nichts nach und überschreibt nichts). Es verweist mit
   `fonts/jost/…` auf die Schrift Jost (liegt in `fonts/jost/` und in der App-Hülle).
-- Markierungen im HTML – in Teil 1 nur erhalten und angezeigt, Bearbeiten und Abhaken folgen in Teil 2:
+- Markierungen im HTML – bleiben in Darstellung und Export erhalten; bearbeitet werden sie wie oben beschrieben:
 
   | Markierung | Bedeutung |
   |---|---|
@@ -810,13 +872,16 @@ abgebrochen), nie zwei Prüfungen gleichzeitig.
   | `data-block` mit `data-zaehler` | Block mit abhakbaren Listeneinträgen und seine Überschrift |
   | `data-stand="kurz"` / `"lang"` | Datum des Dokuments |
 
-**Speicher:** IndexedDB `aether-flyer`, Version 1, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
+**Speicher:** IndexedDB `aether-flyer`, Version 2, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
 'online'|'import', sha, uebernommen }`, das zuletzt übernommene Paket) und `online` (Schlüssel `stand`: `{ sha, version,
-stand, geprueft }`, die zuletzt bekannte Online-Datei). Kein Token, keine API-Antworten im Ganzen, kein
-`localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
-Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Teil 2 ergänzt eine
-Ablage für die Änderungsschicht (Version 2): Die Verbindung schließt bei `versionchange`, damit das Upgrade nicht
-blockiert wird, und eine ältere Seite liest eine neuere Datenbank weiter, solange `basis` und `online` darin liegen.
+stand, geprueft }`, die zuletzt bekannte Online-Datei) und – seit Teil 2 – `aenderungen` (je Eintrag Schlüssel
+`e:<dok>\n<art>\n<k>`: `{ dok, k, art, alt, neu, exportiert, zeit, konflikt }`, dazu `meta`: `{ exporte }`, die bisher
+exportierten Fassungen). Die Migration 1 → 2 legt nur `aenderungen` an; `basis` und `online` bleiben erhalten. Die Basis
+bleibt immer das zuletzt übernommene Paket; dargestellt wird Basis + Änderungsschicht. Kein Token, keine API-Antworten im
+Ganzen, kein `localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
+Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Die Verbindung
+schließt bei `versionchange`, damit ein Upgrade nicht blockiert wird, und eine ältere Seite liest eine neuere Datenbank
+weiter, solange `basis` und `online` darin liegen.
 
 **Bereinigung und CSP:** Paket-Inhalte kommen nie als HTML-Text ins Dokument, sondern über `DOMParser`, Bereinigung und
 `document.importNode`; bereinigt wird ähnlich wie beim fremden SVG im Logo-Werkzeug.
@@ -866,14 +931,17 @@ jedes in seinem eigenen Shadow Root.
 | `flyer-speicher.js` | `AetherFlyerSpeicher`: IndexedDB `aether-flyer`, `persist()` |
 | `flyer-ansicht.js` | `AetherFlyerAnsicht`: Chips, Kacheln, Vollbild, Tasten und Wischen, Schriftanpassung; `darstellen(dok, ziel, optionen)` stellt ein Dokument dar (für Teil 2 mit der Änderungsschicht über `optionen.anpassen`) |
 | `flyer-online.js` | `AetherFlyerOnline`: Online-Prüfung |
-| `flyer-export.js` | `AetherFlyerExport`: PDF (Druck) und Bild |
+| `flyer-export.js` | `AetherFlyerExport`: PDF (Druck) und Bild, beide mit der Änderungsschicht |
+| `flyer-aenderungen.js` | `AetherFlyerAenderungen`: Änderungsschicht (Text, Status, Stand), Zähler und Balken, Abgleich, Export-Paket, Sicherung |
+| `flyer-bearbeiten.js` | `AetherFlyerBearbeiten`: Umschalter und Leisten im Vollbild, Konfliktliste, „Paket exportieren“, Hilfe „Online stellen“, Sichern/Einspielen/Verwerfen |
 | `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile; Schnittstelle für Tests und Teil 2 |
 
-Fehlt eines der Module Ansicht, Online oder Export, bleiben seine Knöpfe verborgen und der Rest läuft weiter.
+Fehlt eines der Module Ansicht, Online, Export oder Bearbeiten, bleiben seine Knöpfe verborgen und der Rest läuft weiter.
 
 **Testschalter:** Setzt man vor dem Laden `window.AETHER_TEST_FLYER_INTERVALL_MS` (positive Zahl), gilt dieses
 Intervall statt der 10 Minuten; `window.AETHER_TEST_FLYER_SCHRIFT_FRIST_MS` ersetzt die 5 s Wartezeit auf die
-Paket-Schriften; `window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) verkürzt das Zeitlimit der Anfragen. Das nutzen nur die E2E-Tests. **Testschnittstelle:** `window.AetherFlyer` (`bereit`, `stand`, `paket`,
+Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur Freigabe einer Download-Blob-URL;
+`window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) verkürzt das Zeitlimit der Anfragen. Das nutzen nur die E2E-Tests. **Testschnittstelle:** `window.AetherFlyer` (`bereit`, `stand`, `paket`,
 `uebernehme`, `fehler`, `fehlerWeg`, `gespeichert`) und die Modul-Objekte.
 
 **Grenzen**
@@ -889,6 +957,8 @@ Paket-Schriften; `window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) ve
   der Flyer passt mit 210 × 297 mm trotzdem auf eine Seite.
 - Wie überall braucht der erste Start Internet, damit die Seite in der App-Hülle liegt; das Paket kommt online oder per
   Import.
+- Die Tests nutzen nur Platzhalter-Pakete; Zähler-Regel und Stand-Formate wurden einmalig lokal am echten Paket
+  geprüft (es liegt nie in diesem Repo). Änderungen liegen nur auf diesem Gerät, bis sie exportiert (oder gesichert) sind.
 
 ## WebGPU-Check
 
@@ -1202,7 +1272,7 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   `fill`/`stroke`/`clip-path`/`filter`/`marker` lädt nichts); Bild (PNG 1588 × 2246 bzw. 2160 × doppelte Höhe über den Teilen-Dialog, Pixel aus dem Paket-CSS, nur mit
   Nutzergeste, über 16 777 216 Pixel verkleinert, Selbstprobe scheitert bzw. Canvas „tainted“ → „Bild“ aus); offline
   aus der App-Hülle samt Schriften, „Flyer ›“ offline aktiv, Token in keinem Cache und nicht in IndexedDB; fehlende
-  Module; IndexedDB-Upgrade auf Version 2 nicht blockiert; ohne IndexedDB; Layout 320–1400 px (Kacheln und Vollbild,
+  Module (auch Bearbeiten); IndexedDB-Upgrade auf eine neuere Version nicht blockiert; ohne IndexedDB; Layout 320–1400 px (Kacheln und Vollbild,
   Tippflächen ≥ 44 × 44 px, Neu-Skalieren); Dateien (`sw.js`, `pages.yml`, Tools-Knopf, Skripte, CSP, kein
   `innerHTML` & Co., kein `localStorage.setItem`, `contain:paint` um jedes Dokument, Variablen- und Schriftliste in
   `flyer-paket.js` passend zu `flyer.html`). Gegenproben (von Hand, müssen rot werden): in `flyer-paket.js`
@@ -1225,6 +1295,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
 `gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
-`flyer-online.js` und `flyer-export.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
+`flyer-online.js`, `flyer-export.js`, `flyer-aenderungen.js` und `flyer-bearbeiten.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

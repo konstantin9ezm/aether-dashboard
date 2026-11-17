@@ -8,7 +8,10 @@
 // Token: gehört dem Dashboard (localStorage „aether.githubToken“), wird hier nur gelesen und nur an flyer-online.js
 // weitergereicht – nie geschrieben, nie gespeichert (auch nicht in IndexedDB), nie in Adressen, Meldungen oder Logs.
 // Kopfzeile #status: „offline bereit · Stand TT.MM.JJJJ“ (Paket liegt auf dem Gerät), „Stand TT.MM.JJJJ · nicht
-// offline gespeichert“ (Speichern schlug fehl) oder „noch kein Paket“.
+// offline gespeichert“ (Speichern schlug fehl) oder „noch kein Paket“; dazu „· n Änderungen nicht exportiert“ (Teil 2).
+// Teil 2: Änderungsschicht (AetherFlyerAenderungen) – beim Start vor der ersten Anzeige geladen und über
+// AetherFlyerAnsicht.setzeAnpasser in jede Darstellung gelegt; jede Übernahme (Import, online) gleicht sie genau einmal
+// mit dem neuen Paket ab. Bearbeiten, Export und Sicherung richtet AetherFlyerBearbeiten ein (optional wie die übrigen).
 // window.AetherFlyer: Schnittstelle für die Tests und Teil 2 (siehe unten).
 (function () {
   'use strict';
@@ -27,6 +30,8 @@
   const A = window.AetherFlyerAnsicht || null;
   const O = window.AetherFlyerOnline || null;
   const E = window.AetherFlyerExport || null;
+  const AE = window.AetherFlyerAenderungen || null;
+  const B = window.AetherFlyerBearbeiten || null;
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
@@ -66,9 +71,11 @@
   /* ---------- Anzeige ---------- */
   function zeigeKopf() {
     const p = basis && basis.paket;
-    $('status').textContent = !p ? 'noch kein Paket'
+    const n = AE && p ? AE.nichtExportiert() : 0;
+    $('status').textContent = (!p ? 'noch kein Paket'
       : gesichert ? 'offline bereit · Stand ' + datum(p.stand)
-      : 'Stand ' + datum(p.stand) + ' · nicht offline gespeichert';
+      : 'Stand ' + datum(p.stand) + ' · nicht offline gespeichert') +
+      (n > 0 ? ' · ' + n + (n === 1 ? ' Änderung' : ' Änderungen') + ' nicht exportiert' : '');
   }
   function zeigeInfo() {
     const p = basis && basis.paket;
@@ -102,6 +109,8 @@
   }
   async function merkeOnline(o) {
     if (!S || !o) return false;
+    // Teil 2: bekannte Online-Fassung für die Zählung der Export-Fassung (flyer-bearbeiten.js)
+    try { document.dispatchEvent(new CustomEvent('flyer:onlinefassung', { detail: { version: o.version } })); } catch (e) { /* egal */ }
     try { return (await S.speichereOnline({ sha: o.sha, version: o.version, stand: o.stand })) === true; } catch (e) { return false; }
   }
   // Dauerhaften Speicher anfragen (der Browser löscht das Paket dann nicht bei Platzmangel); Fehler sind egal.
@@ -128,6 +137,11 @@
   async function uebernehmeJetzt(paket, opt) {
     P.pruefe(paket);
     if (opt.nurWennLeer === true && basis && basis.paket) return 'schonDa';
+    // Teil 2: Änderungsschicht genau einmal mit dem neuen Paket abgleichen (Konflikte zeigt flyer-bearbeiten.js)
+    if (AE) { AE.sperre(true); try { await AE.abgleichen(paket); } catch (e) { /* Schicht bleibt, wie sie war */ } }
+    try { return await basisWechseln(paket, opt); } finally { if (AE) AE.sperre(false); }
+  }
+  async function basisWechseln(paket, opt) {
     const eintrag = {
       paket: paket,
       quelle: opt.quelle === 'online' ? 'online' : 'import',
@@ -194,6 +208,28 @@
     fehlerWeg: fehlerWeg
   });
 
+  /* ---------- Hilfen für flyer-bearbeiten.js (Teil 2) ---------- */
+  const bearbeitenHilfen = Object.freeze({
+    paket: () => (basis ? basis.paket : null),
+    onlineVersion: async () => { const o = await ladeOnline(); return o && typeof o.version === 'string' ? o.version : null; },
+    fehler: fehler,
+    fehlerWeg: fehlerWeg,
+    kopf: () => zeigeKopf()
+  });
+
+  /* ---------- Änderungsschicht (Teil 2) ---------- */
+  // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
+  function anpasserSetzen() {
+    if (!AE || !A || typeof A.setzeAnpasser !== 'function') return;
+    AE.einrichten({ paket: () => (basis ? basis.paket : null) });
+    A.setzeAnpasser((wurzel, dok, ort) => {
+      let markieren = false;
+      try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
+      AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren });
+    });
+    document.addEventListener('flyer:aenderungen', () => { zeigeKopf(); });
+  }
+
   /* ---------- Start ---------- */
   function einrichtenOptional() {
     if (O && typeof O.einrichten === 'function') {
@@ -202,9 +238,15 @@
     if (E && typeof E.einrichten === 'function') {
       try { Promise.resolve(E.einrichten()).catch(() => {}); } catch (e) { /* Seite läuft ohne PDF/Bild */ }
     }
+    if (AE && B && typeof B.einrichten === 'function') {
+      try { Promise.resolve(B.einrichten(bearbeitenHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Bearbeiten */ }
+    }
   }
   async function start() {
     persistAnfragen();
+    anpasserSetzen();
+    // Änderungsschicht zuerst in die Reihe: eine frühe Übernahme (Import) gleicht erst danach ab
+    if (AE) reihe = reihe.then(() => AE.laden()).catch(() => {});
     const b = await ladeBasis();
     if (b && b.paket) {
       try {

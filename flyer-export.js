@@ -8,6 +8,9 @@
 // Druck: nichts hinzufügen, was die PDF-Ansicht von iPhone/iPad als Fläche zeichnet (keine box-shadow, kein
 // background-clip:text, kein filter, keine Verläufe mit Transparenz) – dieses Modul setzt im Druck nur position und zoom.
 // Kein Speicher: nichts wird im Browser abgelegt; geladen wird nur fonts/… vom eigenen Ursprung (fürs Bild).
+// Teil 2: Druck und Bild zeigen dieselbe Änderungsschicht wie Kacheln und Vollbild (AetherFlyerAnsicht.optionen mit
+// ort 'druck' bzw. 'bild'); nach einer Änderung ('flyer:aenderungen') wird ein vorbereitetes Bild verworfen und neu
+// vorbereitet. Blob-URLs eines Downloads werden nach FREIGABE_MS wieder freigegeben (weitergeben).
 //
 // Safari-Eigenheiten (iPhone/iPad), soweit bekannt und hier berücksichtigt:
 // - SVG mit foreignObject als Bild: Safari meldet „load“ teils, bevor die eingebetteten Schriften/Bilder im SVG
@@ -46,6 +49,10 @@
   // Selbst gewählt: so lange nach window.print() auf „beforeprint“ warten, bevor die Home-Bildschirm-App einen
   // Hinweis zeigt.
   const DRUCK_HINWEIS_MS = 2500;
+  // Selbst gewählt: Blob-URL eines Downloads 60 s nach dem Klick freigeben (Safari fragt beim Download erst nach; so
+  // lange muss die URL gelten). Tests setzen window.AETHER_TEST_FLYER_FREIGABE_MS vor dem Laden.
+  const FREIGABE_MS = (typeof window.AETHER_TEST_FLYER_FREIGABE_MS === 'number' && window.AETHER_TEST_FLYER_FREIGABE_MS >= 0)
+    ? window.AETHER_TEST_FLYER_FREIGABE_MS : 60000;
   const XHTML = 'http://www.w3.org/1999/xhtml';
   // Verweise auf fonts/… in url(…)/src(…) (bereinigeCss lässt nur data:, fonts/ ohne „..“ und – in fill, stroke,
   // clip-path, filter, marker* – #… stehen).
@@ -75,6 +82,19 @@
   function base64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
   // SVG-Text → data:-URL (UTF-8, base64). Keine Blob-URL: Chromium markiert das Canvas sonst als „tainted“.
   function svgDatenUrl(svg) { return 'data:image/svg+xml;base64,' + base64(new TextEncoder().encode(svg)); }
+  // Darstellungs-Optionen der Ansicht (Teil 2: Änderungsschicht) für ort 'druck' | 'bild'
+  function optionenFuer(dok, ort) {
+    const a = A();
+    return a && typeof a.optionen === 'function' ? a.optionen(dok, ort) : undefined;
+  }
+  // Datei über eine Blob-URL herunterladen; die URL wird nach FREIGABE_MS freigegeben (kein Speicherleck).
+  function herunterladenUndFreigeben(datei) {
+    const url = URL.createObjectURL(datei);
+    try { G().herunterladen(url, datei.name); } finally {
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) { /* egal */ } }, FREIGABE_MS);
+    }
+    return url;
+  }
   function homeBildschirmApp() {
     try { return navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; }
   }
@@ -137,7 +157,7 @@
         seite.setAttribute('data-id', String(dok.id));
         ziel.appendChild(seite);
         let d;
-        try { d = a.darstellen(dok, seite); } catch (e) { seite.remove(); continue; }   // Dokument ohne Inhalt
+        try { d = a.darstellen(dok, seite, optionenFuer(dok, 'druck')); } catch (e) { seite.remove(); continue; }   // Dokument ohne Inhalt
         if (art(dok) === 'infografik') {
           // Im Fluss statt absolut (sonst hätte die Seite keine Höhe und nichts bräche um); zoom statt transform,
           // damit Layout und Seitenumbruch die verkleinerte Höhe kennen.
@@ -353,10 +373,11 @@
 
   // Bild des Dokuments vorbereiten (beim Öffnen/Blättern des Vollbilds). Promise<Boolean>: true, sobald es beim
   // Antippen synchron gezeichnet werden kann. Gleiches Dokument (und Paket) → dieselbe Vorbereitung.
-  // optionen wie bei darstellen (Teil 2: Änderungsschicht).
+  // optionen wie bei darstellen; ohne optionen die Änderungsschicht der Ansicht (ort 'bild').
   function bildVorbereiten(dok, optionen) {
     const a = A();
     if (!a || !P() || !dok || !document.body) return Promise.resolve(false);
+    if (optionen === undefined) optionen = optionenFuer(dok, 'bild');
     const pk = a.paket();
     if (bild && bild.dok === dok && bild.paket === pk && bild.zustand !== 'fehler') return bild.promise;
     bildVerwerfen();
@@ -471,7 +492,7 @@
       return;
     }
     if (g.kannHerunterladen()) {
-      g.herunterladen(URL.createObjectURL(d.datei), d.datei.name);
+      herunterladenUndFreigeben(d.datei);
       meldung('Bild wird heruntergeladen' + zusatz);
       return;
     }
@@ -562,6 +583,15 @@
     window.addEventListener('beforeprint', vorDemDruck);
     window.addEventListener('afterprint', nachDemDruck);
     document.addEventListener('flyer:schriften', spaeteSchriften);
+    // Teil 2: Änderung → vorbereitetes Bild gilt nicht mehr (zeigte den alten Stand); neu vorbereiten
+    document.addEventListener('flyer:aenderungen', () => {
+      bildVerwerfen();
+      bildFehlerDok = null;
+      const a = A();
+      const offen = a ? a.offenesDokument() : null;
+      knopfBild();
+      if (bildMoeglich && offen) bildVorbereiten(offen);
+    });
     knopfAllePdf();
     probe = selbstprobe().then((ok) => {
       bildMoeglich = ok;
@@ -580,6 +610,7 @@
     druckeAlle: druckeAlle,
     druckeEins: druckeEins,
     bildVorbereiten: bildVorbereiten,
-    bildDatei: bildDatei
+    bildDatei: bildDatei,
+    herunterladenUndFreigeben: herunterladenUndFreigeben
   });
 })();
