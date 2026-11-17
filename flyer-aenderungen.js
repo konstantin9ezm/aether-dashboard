@@ -1,7 +1,8 @@
 // Änderungsschicht der Flyer-Seite (flyer.html, Teil 2): eigene Texte (data-t), Status (data-s → data-status) und das
 // Stand-Datum (data-stand) je Dokument liegen als Einträge über dem zuletzt übernommenen Paket (Basis, bleibt
 // unverändert). Dargestellt wird immer Basis + Änderungsschicht (anwenden, über optionen.anpassen der Ansicht), danach
-// werden die Zähler und Balken jedes Blocks neu berechnet (zaehlerBerechnen).
+// werden die Zähler und Balken jedes Blocks neu berechnet (zaehlerBerechnen, Regel wie im echten Paket: Zähler
+// <span class="zaehler"> im data-zaehler-Element, --anteil = ok/y, --anteil-laeuft = run/y).
 // Eintrag: { dok, k, art:'text'|'status'|'stand', alt, neu, exportiert, zeit } – alt = Wert der Basis beim Anlegen
 // (bzw. nach dem Abgleich), neu = eigener Wert, exportiert = Wert beim letzten Export (sonst null), zeit = ISO-Zeit.
 // Im Speicher kommt konflikt hinzu (null oder { online } bzw. { fehlt:true }): offener Konflikt aus dem Abgleich.
@@ -200,8 +201,15 @@
     if (ersetzt) el.setAttribute('style', teile.join(';'));
     return ersetzt;
   }
+  // Zähler-Text in ein Zähler-Element schreiben. → true, wenn es einen Zähler gab (sonst bleibt der Text unverändert)
+  //   1. Kind „.zaehler“ (Regel des Pakets, das Paket-CSS zeigt den Balken nur mit [data-zaehler]:has(> .zaehler)):
+  //      dessen Text = „x von y fertig“
+  //   2. vorhandene Stelle „x von y“ im Text (nicht in einem Listenpunkt): ersetzen, Leerraum und „fertig“ bleiben
+  //   3. leerer Träger: „x von y fertig“
+  //   sonst (Überschrift mit eigenem Text): nichts – eine Überschrift wird nie überschrieben
   function zaehlerText(z, x, y) {
-    // Vorhandene Stelle „x von y“ (nicht in einem Listenpunkt des Blocks) ersetzen …
+    const kind = Array.prototype.find.call(z.children, (c) => c.classList && c.classList.contains('zaehler'));
+    if (kind) { kind.textContent = x + ' von ' + y + ' fertig'; return 'kind'; }
     const doc = z.ownerDocument;
     const gaenger = doc.createTreeWalker(z, 4);
     while (gaenger.nextNode()) {
@@ -212,60 +220,73 @@
       const m = ZAEHLER_RE.exec(n.data);
       if (!m) continue;
       n.data = n.data.slice(0, m.index) + x + m[2] + 'von' + m[3] + y + (m[5] !== undefined ? m[5] : '') + n.data.slice(m.index + m[0].length);
-      return;
+      return 'text';
     }
-    // … sonst nur in einen leeren Träger schreiben (nie eine Überschrift überschreiben)
     const tr = textTraeger(z);
-    if (!tr.firstElementChild && !tr.textContent.trim()) tr.textContent = x + ' von ' + y + ' fertig';
+    if (!tr.firstElementChild && !tr.textContent.trim()) { tr.textContent = x + ' von ' + y + ' fertig'; return 'text'; }
+    return null;
   }
-  // Für jeden Block (data-block mit data-zaehler): y = Listenpunkte (data-s) im Block (alle Elemente mit demselben
-  // data-block-Wert), x = davon data-status="ok"; Text „x von y fertig“, --anteil = x/y, --anteil-laeuft = (ok+run)/y,
-  // y = 0 → 0. Die Variablen werden am Zähler und an den Block-Elementen gesetzt und überall im Block ersetzt, wo das
-  // Paket sie schon im style-Attribut setzt. nurVorhandene (Export): nur vorhandene Werte ersetzen, nichts hinzufügen.
+  // Block eines Zähler-Elements: data-zaehler mit Wert = data-block-Wert → alle Elemente mit diesem Wert; sonst das
+  // nächste Element mit data-block (das Element selbst oder ein Vorfahr) – mit Wert alle Elemente dieses Werts, ohne
+  // Wert (wie im echten Paket: <div data-block><h3 data-zaehler>…) genau dieses eine Element.
+  function blockVon(z, wurzel) {
+    const alle = mitAttr(wurzel, 'data-block');
+    const zw = z.getAttribute('data-zaehler');
+    if (zw) { const g = alle.filter((e) => e.getAttribute('data-block') === zw); if (g.length) return g; }
+    const el = z.hasAttribute('data-block') ? z : (z.parentElement ? z.parentElement.closest('[data-block]') : null);
+    if (!el) return null;
+    const w = el.getAttribute('data-block');
+    return w ? alle.filter((e) => e.getAttribute('data-block') === w) : [el];
+  }
+  // Für jeden Block mit Zähler (data-zaehler): y = Listenpunkte (data-s) im Block, x = davon data-status="ok";
+  // --anteil = x/y und --anteil-laeuft = run/y (Regel des Pakets: Das Paket-CSS zeichnet „läuft“ von --anteil bis
+  // --anteil + --anteil-laeuft), y = 0 → 0. Der Text „x von y fertig“ kommt in den vorhandenen Zähler (siehe zaehlerText).
+  // Hat das Zähler-Element noch keinen Zähler (Überschrift wie im echten Paket), legt anwenden ihn nur an, wenn ein
+  // Listenpunkt des Blocks einen eigenen Status hat (opt.aktiv): <span class="zaehler"> als letztes Kind – so bleibt ein
+  // unverändertes Paket bitgenau, wie es ist. Die Variablen stehen am Zähler-Element; bei Blöcken mit Wert (Zähler
+  // außerhalb) zusätzlich an den Block-Elementen. Vorhandene Deklarationen im style-Attribut im Block werden ersetzt.
+  // nurVorhandene (Export): an Block-Elementen nur vorhandene Werte ersetzen, nichts hinzufügen.
   function zaehlerBerechnen(wurzel, opt) {
     const nurVorhandene = !!(opt && opt.nurVorhandene);
-    const bloecke = new Map();
-    for (const el of mitAttr(wurzel, 'data-block')) {
-      const w = el.getAttribute('data-block');
-      if (!bloecke.has(w)) bloecke.set(w, []);
-      bloecke.get(w).push(el);
-    }
+    const aktiv = (opt && opt.aktiv) || null;
     const ergebnis = [];
     for (const z of mitAttr(wurzel, 'data-zaehler')) {
-      const zw = z.getAttribute('data-zaehler');
-      let wert = null;
-      if (zw && bloecke.has(zw)) wert = zw;
-      else if (z.hasAttribute('data-block')) wert = z.getAttribute('data-block');
-      else {
-        const a = z.parentElement ? z.parentElement.closest('[data-block]') : null;
-        if (a) wert = a.getAttribute('data-block');
-      }
-      if (wert === null) continue;
-      const els = bloecke.get(wert) || [];
+      const els = blockVon(z, wurzel);
+      if (!els) continue;
       const punkte = new Set();
       for (const b of els) {
         if (b.hasAttribute('data-s')) punkte.add(b);
         for (const p of b.querySelectorAll('[data-s]')) punkte.add(p);
       }
-      let ok = 0, run = 0;
+      let ok = 0, run = 0, eigen = false;
       for (const p of punkte) {
         const st = p.getAttribute('data-status');
         if (st === 'ok') ok++; else if (st === 'run') run++;
+        if (aktiv && aktiv.has(p)) eigen = true;
       }
       const y = punkte.size;
-      const anteil = y ? ok / y : 0, laeuft = y ? (ok + run) / y : 0;
-      zaehlerText(z, ok, y);
-      const a = zahl(anteil), l = zahl(laeuft);
-      const ziele = [z].concat(els);
-      for (const el of ziele) {
+      const a = zahl(y ? ok / y : 0), l = zahl(y ? run / y : 0);
+      let art = zaehlerText(z, ok, y);
+      if (!art && eigen) {
+        const sp = z.ownerDocument.createElement('span');
+        sp.className = 'zaehler';
+        sp.textContent = ok + ' von ' + y + ' fertig';
+        z.appendChild(sp);
+        art = 'kind';
+      }
+      if (!art) continue;   // kein Zähler im Block und nichts geändert: alles bleibt, wie es im Paket steht
+      const setze = (el, hinzu) => {
         const da = ersetzeVar(el, '--anteil', a), dl = ersetzeVar(el, '--anteil-laeuft', l);
-        if (!nurVorhandene && el.style) {
+        if (hinzu && el.style) {
           if (!da) el.style.setProperty('--anteil', a);
           if (!dl) el.style.setProperty('--anteil-laeuft', l);
         }
         for (const d of el.querySelectorAll('[style]')) { ersetzeVar(d, '--anteil', a); ersetzeVar(d, '--anteil-laeuft', l); }
-      }
-      ergebnis.push({ block: wert, x: ok, y: y, anteil: a, laeuft: l });
+      };
+      setze(z, true);
+      const mitWert = els.some((e) => e.getAttribute('data-block'));
+      for (const el of els) if (el !== z) setze(el, mitWert && !nurVorhandene);
+      ergebnis.push({ x: ok, y: y, anteil: a, laeuft: l });
     }
     return ergebnis;
   }
@@ -284,6 +305,7 @@
   function anwenden(wurzel, dokId, liste, opt) {
     const o = opt || {};
     const stande = standElemente(wurzel);
+    const aktiv = new Set();   // Listenpunkte mit eigenem Status (Zähler wird dann angelegt, siehe zaehlerBerechnen)
     for (const e of liste || []) {
       if (!e || e.dok !== dokId) continue;
       if (e.art === 'text') {
@@ -295,6 +317,7 @@
       } else if (e.art === 'status') {
         for (const el of alleMit(wurzel, 'data-s', e.k)) {
           if (e.neu) el.setAttribute('data-status', e.neu); else el.removeAttribute('data-status');
+          aktiv.add(el);
           if (o.markieren) markiere(el);
         }
       } else if (e.art === 'stand') {
@@ -307,7 +330,7 @@
         }
       }
     }
-    return zaehlerBerechnen(wurzel, { nurVorhandene: o.nurVorhandene });
+    return zaehlerBerechnen(wurzel, { nurVorhandene: o.nurVorhandene, aktiv: aktiv });
   }
 
   /* ---------- Speichern ---------- */
