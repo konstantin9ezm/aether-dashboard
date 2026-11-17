@@ -756,8 +756,10 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   Text), „Übernehmen“, „Abbrechen“ und „Original“ (zurück auf den Wert des Pakets, Eintrag gelöscht). Cmd/Strg+Enter =
   Übernehmen, Esc = Abbrechen (das Vollbild bleibt offen). Solange das Feld den Fokus hat, blättern ←/→ nicht und
   Backspace löscht nur Zeichen. Leerer Text ist erlaubt. Der Text wird immer als Text eingesetzt (Textknoten, nie HTML);
-  steht im Element ein `<ae-t>`, kommt er dorthin (übrige Gestaltung bleibt). Zeilenumbrüche nur, wenn das Element im
-  Paket schon `<br>` hat (dann als `<br>`), sonst werden sie zu Leerzeichen.
+  steht im Element ein `<ae-t>`, kommt er dorthin (übrige Gestaltung bleibt); enthält es weitere Markierungen, bleiben
+  diese stehen und nur sein eigener Text wird ersetzt. Zeilenumbrüche nur, wenn das Element im Paket schon `<br>` hat
+  (dann als `<br>`), sonst werden sie zu Leerzeichen. Während ein neues Paket übernommen wird (Abgleich bis zum
+  Basiswechsel), sind Eingaben kurz gesperrt („Gerade wird ein neues Paket übernommen.“).
 - **Status:** Antippen eines Listenpunkts (`data-s`) öffnet die Auswahl fertig (`ok`) · läuft gerade (`run`) · als
   Nächstes (`next`) · geplant (`plan`) · ohne Status (Attribut entfernt). Statuslinien und Legendenpunkte folgen über das
   Paket-CSS, Zähler und Balken sofort.
@@ -785,7 +787,9 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   Fassung desselben Tags aus Basis, letzter Online-Prüfung und früheren Exporten), `stand` = heute, Dateiname immer
   `aether-flyer-paket.json`. Besteht das Ergebnis `AetherFlyerPaket.pruefe` nicht oder fehlte eine Markierung: Fehlerbox,
   nichts wird ausgegeben. Weitergabe wie beim Bild (Teilen-Dialog, sonst Download – die Blob-URL wird nach 60 s
-  freigegeben –, sonst ein Dialog mit Link). Danach gelten alle Änderungen als exportiert (Kopfzeile ohne Zusatz).
+  freigegeben –, sonst ein Dialog mit Link; scheitert das Teilen, kommt wie beim Bild der Dialog). Erst nach erfolgreicher
+  Weitergabe (bzw. Antippen des Links im Dialog) gelten alle Änderungen als exportiert (Kopfzeile ohne Zusatz). Die Hilfe
+  zeigt die zuletzt exportierte Fassung auch nach dem Neuladen.
 - **Online stellen** (aufklappbare Hilfe): 1) „Paket exportieren“ (Fassung wird angezeigt), 2) Link öffnen
   <https://github.com/konstantin9ezm/aether/upload/main/docs/flyer>, 3) Datei `aether-flyer-paket.json` auswählen
   (ersetzt die alte), 4) Commit-Nachricht „Flyer-Paket `<Fassung>` [skip ci]“ (Knopf „Kopieren“), 5) „Commit directly to

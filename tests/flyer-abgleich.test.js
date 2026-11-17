@@ -956,3 +956,100 @@ describe('Flyer Teil 2: Speicher', () => {
     });
   });
 });
+
+describe('Flyer Teil 2: Befunde der Prüfung', () => {
+  test('Hilfe „Online stellen“ zeigt die zuletzt exportierte Fassung auch nach dem Neuladen (Kopieren aktiv)', async () => {
+    await mitSeite({ init: [ohneTeilen] }, async ({ page, log }) => {
+      await oeffneFlyer(page);
+      await importiere(page, paket());
+      await setze(page, 'T1', 'text', 't1', 'Platzhalter geändert');
+      const ex = await exportDownload(page);
+      await page.reload();
+      await oeffneFlyer(page, null);
+      await page.waitForFunction((f) => document.getElementById('hilfeFassung').textContent === f, ex.paket.version);
+      assert.equal(await text(page, '#hilfeCommit'), `Flyer-Paket ${ex.paket.version} [skip ci]`);
+      assert.equal(await page.$eval('#hilfeKopieren', (b) => b.disabled), false);
+      assert.deepEqual(log.errors, []);
+    });
+  });
+
+  test('Teilen scheitert (NotAllowedError) → Dialog mit Link statt Download ohne Geste; exportiert erst nach Antippen des Links; Blob-URL beim Schließen per Esc frei', async () => {
+    const teilenScheitert = () => {
+      navigator.canShare = () => true;
+      navigator.share = () => Promise.reject(new DOMException('Test: keine Aktivierung', 'NotAllowedError'));
+    };
+    await mitSeite({ init: [teilenScheitert, urlsMitschneiden] }, async ({ page, log }) => {
+      await oeffneFlyer(page);
+      await importiere(page, paket());
+      await setze(page, 'T1', 'text', 't1', 'Platzhalter geändert');
+      await page.click('#btnExport');
+      await page.waitForFunction(() => !document.getElementById('modal').hidden);
+      const dl = await page.evaluate(() => window.__urls.links.length);
+      assert.equal(dl, 0, 'kein Download ohne Geste');
+      assert.match(await text(page, '#status'), /1 Änderung nicht exportiert/, 'noch nicht als exportiert markiert');
+      const link = await page.$eval('#mInhalt a', (a) => [a.textContent, a.getAttribute('download'), a.href.startsWith('blob:')]);
+      assert.deepEqual(link, ['aether-flyer-paket.json', 'aether-flyer-paket.json', true]);
+      const url = await page.$eval('#mInhalt a', (a) => a.href);
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.getElementById('modal').hidden);
+      await page.waitForFunction((u) => window.__urls.frei.includes(u), url);
+      assert.match(await text(page, '#status'), /1 Änderung nicht exportiert/);
+      assert.deepEqual(log.errors, []);
+    });
+  });
+
+  test('Einspielen: Datei über 5 MB (auch in Bytes mit Mehrbyte-Zeichen) wird abgelehnt, nichts ändert sich', async () => {
+    await mitSeite({}, async ({ page, log }) => {
+      await oeffneFlyer(page);
+      await importiere(page, paket());
+      await setze(page, 'T1', 'text', 't1', 'Platzhalter geändert');
+      const vorher = await alle(page);
+      // ca. 6 MB in Bytes, aber nur ca. 2 Mio. Zeichen (dreibytige Zeichen)
+      const gross = JSON.stringify({ format: 'aether-flyer-aenderungen', version: 1, eintraege: [], fuell: '€'.repeat(2 * 1024 * 1024) });
+      await einspielen(page, gross);
+      assert.equal(await page.$eval('#fehler b', (b) => b.textContent), 'Datei zu groß.');
+      const r = await page.evaluate((t) => window.AetherFlyerAenderungen.einspielen(t).then(() => 'ok', (e) => e.title), gross);
+      assert.equal(r, 'Datei zu groß.', 'auch die Byte-Grenze im Modul');
+      assert.deepEqual(await alle(page), vorher);
+      assert.deepEqual(log.errors, []);
+    });
+  });
+
+  test('Während einer Übernahme sind Eingaben gesperrt (kein Umgehen des Abgleichs); Konflikt „dok fehlt“ behält den Titel', async () => {
+    await mitSeite({}, async ({ page, log }) => {
+      await oeffneFlyer(page);
+      await importiere(page, paket());
+      await setze(page, 'T2', 'text', 't1', 'Platzhalter meins');
+      const r = await page.evaluate(() => {
+        const ae = window.AetherFlyerAenderungen;
+        ae.sperre(true);
+        return ae.setze('T1', 'status', 's2', 'ok').then(() => 'gesetzt', (e) => e.kind).finally(() => ae.sperre(false));
+      });
+      assert.equal(r, 'gesperrt');
+      assert.equal(await page.evaluate(() => window.AetherFlyerAenderungen.geaendert('T1', 'status', 's2')), false);
+      // Übernahme ohne T2 → Konflikt „fehlt“ mit Titel aus der bisherigen Basis
+      await uebernehme(page, paket({ version: '2020-02-02.1', stand: '2020-02-02', ohneT2: true }));
+      const k = await konflikte(page);
+      assert.deepEqual(k.map((x) => [x.dok, x.art, x.k, x.titel, x.fehlt]), [['T2', 'text', 't1', 'Platzhalter zwei', true], ['T2', 'stand', 'stand1', 'Platzhalter zwei', true]]);
+      await page.click('#konflikteZeigen');
+      assert.match(await text(page, '#konfliktListe .konflikt b'), /^T2 · Platzhalter zwei/);
+      assert.deepEqual(log.errors, []);
+    });
+  });
+
+  test('data-t mit weiteren Markierungen darin: nur der eigene Text wird ersetzt, Markierungen bleiben, Export gelingt', async () => {
+    await mitSeite({ init: [ohneTeilen] }, async ({ page, log }) => {
+      await oeffneFlyer(page);
+      const pk = paket();
+      pk.dokumente[0].html = pk.dokumente[0].html.replace('<h1 data-t="t1">Platzhalter eins</h1>',
+        '<h1 data-t="t1">Platzhalter Kopf <span data-t="t9">Platzhalter innen</span></h1>');
+      await importiere(page, pk);
+      await setze(page, 'T1', 'text', 't1', 'Neu ');
+      const h = await page.$eval('#kacheln .kachel[data-id="T1"] .flyer-host', (x) => x.shadowRoot.querySelector('h1').outerHTML);
+      assert.equal(h, '<h1 data-t="t1">Neu <span data-t="t9">Platzhalter innen</span></h1>');
+      const ex = await exportDownload(page);
+      assert.match(ex.paket.dokumente[0].html, /<h1 data-t="t1">Neu <span data-t="t9">Platzhalter innen<\/span><\/h1>/);
+      assert.deepEqual(log.errors, []);
+    });
+  });
+});

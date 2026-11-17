@@ -15,7 +15,7 @@
   var SCHLUESSEL_BASIS = 'aktuell';  // Store basis:  { paket, quelle:'online'|'import', sha:String|null, uebernommen:ISO }
   var SCHLUESSEL_ONLINE = 'stand';   // Store online: { sha, version, stand, geprueft:ISO } – zuletzt bekannte Online-Datei
   // Store aenderungen: je Eintrag Schlüssel „e:<dok>\n<art>\n<k>“ → { dok, k, art, alt, neu, exportiert, zeit, konflikt }
-  // (konflikt: null oder { online } – offener Konflikt aus dem Abgleich), dazu „meta“ → { exporte: [Fassung …] }.
+  // (konflikt: null oder { online, titel } bzw. { fehlt, titel } – offener Konflikt aus dem Abgleich), dazu „meta“ → { exporte: [Fassung …] }.
   var STORE_AENDERUNGEN = 'aenderungen';
   var SCHLUESSEL_META = 'meta';
   var ARTEN = ['text', 'status', 'stand'];
@@ -189,6 +189,7 @@
     if (typeof e.neu !== 'string') return null;
     var k = istObjekt(e.konflikt) && typeof e.konflikt.online === 'string' ? { online: e.konflikt.online } :
       (istObjekt(e.konflikt) && e.konflikt.fehlt === true ? { fehlt: true } : null);
+    if (k && typeof e.konflikt.titel === 'string') k.titel = e.konflikt.titel;   // Titel des Dokuments beim Abgleich
     return {
       dok: e.dok, k: e.k, art: e.art,
       alt: textOderLeer(e.alt), neu: e.neu, exportiert: textOderLeer(e.exportiert),

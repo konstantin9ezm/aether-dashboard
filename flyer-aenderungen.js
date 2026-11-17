@@ -42,6 +42,7 @@
   let reihe = Promise.resolve();   // Speichervorgänge nacheinander
   let paketQuelle = () => null;    // → Basis-Paket (von flyer.js)
   const werteCache = new Map();    // html → { text, status, stand } der Basis (bereinigt gelesen)
+  let gesperrt = false;            // läuft gerade eine Übernahme (Abgleich bis Basiswechsel)? Dann keine Eingaben
 
   /* ---------- Hilfen ---------- */
   function fehler(kind, title, text) {
@@ -92,8 +93,17 @@
     const t = String(wert === undefined || wert === null ? '' : wert).replace(/\r\n?/g, '\n');
     return umbruch ? t : t.replace(/\n/g, ' ');
   }
-  // Text als Textknoten einsetzen (nie HTML); Zeilenumbrüche als <br>, wenn erlaubt.
+  const MARKEN_SEL = '[data-t],[data-s],[data-block],[data-zaehler],[data-stand],ae-t';
+  // Text als Textknoten einsetzen (nie HTML); Zeilenumbrüche als <br>, wenn erlaubt. Enthält der Träger weitere
+  // Markierungen, bleiben diese Elemente stehen: nur die eigenen Textknoten werden ersetzt (der erste bekommt den Text).
   function textSchreiben(traeger, wert, umbruch) {
+    if (traeger.querySelector(MARKEN_SEL)) {
+      const eigene = Array.prototype.filter.call(traeger.childNodes, (n) => n.nodeType === 3);
+      const t = normalisiere(wert, false);
+      if (eigene.length) { eigene[0].data = t; for (const n of eigene.slice(1)) n.data = ''; }
+      else traeger.insertBefore(traeger.ownerDocument.createTextNode(t), traeger.firstChild);
+      return;
+    }
     while (traeger.firstChild) traeger.removeChild(traeger.firstChild);
     const doc = traeger.ownerDocument;
     normalisiere(wert, umbruch).split('\n').forEach((teil, i) => {
@@ -144,6 +154,8 @@
       const k = el.getAttribute('data-t');
       if (!k || text.has(k)) continue;
       const tr = textTraeger(el);
+      // Mit weiteren Markierungen darin: nur die eigenen Textknoten (siehe textSchreiben)
+      if (tr.querySelector(MARKEN_SEL)) { text.set(k, { wert: Array.prototype.filter.call(tr.childNodes, (n) => n.nodeType === 3).map((n) => n.data).join(''), umbruch: false }); continue; }
       text.set(k, { wert: textLesen(tr), umbruch: hatUmbruch(tr) });
     }
     for (const el of mitAttr(wurzel, 'data-s')) {
@@ -363,6 +375,10 @@
   }
 
   /* ---------- Bearbeiten ---------- */
+  // Während einer Übernahme (flyer.js: Abgleich, Speichern der neuen Basis, Basiswechsel) sind Eingaben gesperrt –
+  // sonst würde eine Änderung gegen die alte Basis eingeordnet und den Abgleich umgehen.
+  function sperre(an) { gesperrt = an === true; }
+  function gesperrtFehler() { return Promise.reject(fehler('gesperrt', 'Gerade wird ein neues Paket übernommen.', 'Bitte gleich noch einmal versuchen.')); }
   function basis() { try { return paketQuelle() || null; } catch (e) { return null; } }
   function hatAenderungen(dokId) {
     for (const e of eintraege.values()) if (e.dok === dokId && e.art !== 'stand') return true;
@@ -386,6 +402,7 @@
   }
   // Eigenen Wert setzen (aus dem Vollbild). neu = Basis-Wert → Eintrag weg. → Promise<Boolean> (gespeichert)
   function setze(dokId, art, k, wert) {
+    if (gesperrt) return gesperrtFehler();
     if (art !== 'text' && art !== 'status') return Promise.reject(fehler('bearbeiten', 'Unbekannte Art.', String(art)));
     const dok = dokIn(basis(), dokId);
     if (!dok) return Promise.reject(fehler('bearbeiten', 'Dokument nicht im Paket.', String(dokId)));
@@ -417,6 +434,7 @@
   }
   // „Original“: Eintrag weg (Basis-Wert gilt); ohne weitere Änderungen auch der Stand-Eintrag.
   function original(dokId, art, k) {
+    if (gesperrt) return gesperrtFehler();
     eintraege.delete(schluessel(dokId, art, k));
     standNachziehen(dokId, false);
     const p = speichern();
@@ -425,6 +443,7 @@
   }
   // Alle Änderungen eines Dokuments zurücknehmen (samt Stand)
   function dokumentZuruecksetzen(dokId) {
+    if (gesperrt) return gesperrtFehler();
     for (const e of liste()) if (e.dok === dokId) eintraege.delete(sk(e));
     const p = speichern();
     melde({ dok: dokId });
@@ -432,6 +451,7 @@
   }
   // „Alle Änderungen verwerfen“ (Rückfrage stellt die Oberfläche)
   function verwerfen() {
+    if (gesperrt) return gesperrtFehler();
     const doks = Array.from(new Set(liste().map((e) => e.dok)));
     eintraege.clear();
     const p = speichern();
@@ -470,7 +490,13 @@
       if (was === 'entfaellt') { aus.entfallen++; aus.doks.add(e.dok); continue; }
       const n = kopie(e);
       if (was === 'bleibt') { n.alt = r; n.konflikt = null; aus.behalten++; }
-      else { n.konflikt = r === undefined ? { fehlt: true } : { online: r }; aus.konflikte++; }
+      else {
+        // Titel merken: aus R, sonst (Dokument in R entfernt) aus der bisherigen Basis
+        const d = dokIn(paketR, e.dok) || dokIn(basis(), e.dok);
+        n.konflikt = r === undefined ? { fehlt: true } : { online: r };
+        if (d) n.konflikt.titel = String(d.titel);
+        aus.konflikte++;
+      }
       if (n.alt !== e.alt || !!n.konflikt !== !!e.konflikt) aus.doks.add(e.dok);
       aus.neu.push(n);
     }
@@ -494,13 +520,14 @@
     return liste().filter((e) => e.konflikt).map((e) => {
       const d = dokIn(pk, e.dok);
       return {
-        schluessel: sk(e), dok: e.dok, titel: d ? String(d.titel) : '', art: e.art, k: e.k,
+        schluessel: sk(e), dok: e.dok, titel: d ? String(d.titel) : (typeof e.konflikt.titel === 'string' ? e.konflikt.titel : ''), art: e.art, k: e.k,
         basis: e.alt, meins: e.neu, online: e.konflikt.fehlt ? null : e.konflikt.online, fehlt: !!e.konflikt.fehlt
       };
     });
   }
   // „Meins behalten“ (Eintrag bleibt, alt := Online-Wert) oder „Online übernehmen“ (Eintrag entfällt)
   function entscheide(key, wahl) {
+    if (gesperrt) return gesperrtFehler();
     const e = eintraege.get(key);
     if (!e || !e.konflikt) return Promise.resolve(false);
     if (wahl === 'meins') {
@@ -548,9 +575,14 @@
     m['ae-t'] = b.querySelectorAll('ae-t').length;
     return JSON.stringify(m);
   }
+  // Elemente, die die Bereinigung samt Inhalt entfernt (wie WEG_ELEMENTE in flyer-paket.js): Die Wurzel für den Export
+  // ist wie in der Darstellung das erste Element, das die Bereinigung übrig lässt – so zählen stand1, stand2 … gleich.
+  const WEG = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'link', 'meta', 'base', 'form', 'template',
+    'portal', 'noscript', 'fencedframe', 'handler', 'listener'];
   function htmlMitAenderungen(html, dokId, eigene) {
     const doc = new DOMParser().parseFromString('<!doctype html><body>' + String(html), 'text/html');
-    anwenden(doc.body, dokId, eigene, { nurVorhandene: true });
+    const wurzel = Array.prototype.find.call(doc.body.children, (c) => WEG.indexOf(name(c)) < 0) || doc.body;
+    anwenden(wurzel, dokId, eigene, { nurVorhandene: true });
     return doc.body.innerHTML;
   }
   // Paket = Basis + Änderungsschicht. → { paket, fassung, text } oder wirft (AppError) – dann wird nichts ausgegeben.
@@ -603,7 +635,7 @@
   // Inhalt einer Sicherungsdatei prüfen → Liste der Einträge; wirft AppError (dann ändert sich nichts)
   function pruefeSicherung(text) {
     if (typeof text !== 'string') throw fehler('format', 'Datei ist kein gültiges JSON.', 'Die Datei enthält keinen Text.');
-    if (text.length > MAX_SICHERUNG_BYTES) throw fehler('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
+    if (text.length > MAX_SICHERUNG_BYTES || new TextEncoder().encode(text).length > MAX_SICHERUNG_BYTES) throw fehler('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
     let o;
     try { o = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw fehler('format', 'Datei ist kein gültiges JSON.', 'Die Datei lässt sich nicht als JSON lesen.'); }
     if (!istObjekt(o) || o.format !== SICHERUNG_FORMAT) throw fehler('format', 'Keine Änderungs-Sicherung.', 'Erwartet wird format „' + SICHERUNG_FORMAT + '“.');
@@ -635,6 +667,7 @@
   // Eingespielte Einträge gegen die aktuelle Basis einordnen (Regeln wie beim Abgleich); vorhandene eigene Einträge
   // gehen vor. → { uebernommen, verworfen, konflikte, doks }
   function einspielen(text) {
+    if (gesperrt) return gesperrtFehler();
     let neue;
     try { neue = pruefeSicherung(text); } catch (e) { return Promise.reject(e); }
     const pk = basis();
@@ -677,6 +710,7 @@
     SICHERUNG_VERSION: SICHERUNG_VERSION,
     einrichten: einrichten,
     laden: laden,
+    sperre: sperre,
     // Darstellung
     anwenden: anwenden,
     zaehlerBerechnen: zaehlerBerechnen,

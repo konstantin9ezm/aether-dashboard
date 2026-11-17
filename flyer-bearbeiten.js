@@ -172,10 +172,19 @@
     a.addEventListener('click', () => { if (beiKlick) beiKlick(); });
     box.appendChild(a);
     m.hidden = false;
-    // Blob-URL freigeben, sobald der Dialog zu ist
+    // Blob-URL freigeben, sobald der Dialog zu ist – egal wie (Schließen, Esc/Backspace in flyer-export.js)
+    const beob = new MutationObserver(() => {
+      if (!m.hidden) return;
+      beob.disconnect();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (x) { /* egal */ } }, 1000);
+    });
+    beob.observe(m, { attributes: true, attributeFilter: ['hidden'] });
     const zu = $('mZu');
-    const frei = () => { setTimeout(() => { try { URL.revokeObjectURL(url); } catch (x) { /* egal */ } }, 1000); zu.removeEventListener('click', frei); };
-    if (zu) { zu.addEventListener('click', frei); zu.focus(); }
+    if (zu) {
+      // Ohne flyer-export.js hätte „Schließen“ sonst keine Wirkung
+      zu.addEventListener('click', () => { m.hidden = true; }, { once: true });
+      zu.focus();
+    }
     return true;
   }
   // Datei weitergeben; nachher() nur, wenn sie wirklich weitergegeben wurde (Teilen erfolgreich, Download gestartet,
@@ -188,7 +197,7 @@
         .then(() => { if (nachher) nachher('geteilt'); })
         .catch((e) => {
           if (e && e.name === 'AbortError') return;
-          if (g.kannHerunterladen()) { herunterladen(datei); if (nachher) nachher('heruntergeladen'); return; }
+          // Wie beim Bild (Teil 1): Nutzergeste ist verbraucht – kein Download ohne Geste, sondern der Dialog mit Link
           dialogMitLink(datei, titel, () => { if (nachher) nachher('dialog'); });
         });
       return 'teilen';
@@ -259,6 +268,8 @@
     weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge gesichert'));
   }
   async function einspielen(datei) {
+    // Größe vor dem Lesen prüfen (eine sehr große falsche Datei nicht erst ganz in den Speicher holen)
+    if (datei && typeof datei.size === 'number' && datei.size > 5 * 1024 * 1024) throw new (G().AppError)('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
     let text;
     try { text = await datei.text(); } catch (e) { throw new (G().AppError)('datei', 'Datei ließ sich nicht lesen.', String((e && e.message) || e || '')); }
     const r = await AE().einspielen(text);
@@ -389,8 +400,9 @@
       if (offen && d && d.dok && offen.dok.id !== d.dok.id) leisteZu(false);
       knopfReset();
     });
-    document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); konflikteZeigen(); knopfReset(); });
-    document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); });
+    document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); konflikteZeigen(); knopfReset(); hilfeZeigen(); });
+    // Neues Paket gezeigt (auch nach einem Abgleich): Knöpfe und Konfliktliste (Titel aus der neuen Basis) neu
+    document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); konflikteZeigen(); });
     document.addEventListener('flyer:onlinefassung', (e) => { const v = e && e.detail && e.detail.version; if (typeof v === 'string' && v) onlineVersion = v; });
     knoepfeZeigen();
     hilfeZeigen();
