@@ -687,6 +687,7 @@
       </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
       <div id="buildsKlapp"></div>
+      <p class="muted small fassung-hint" id="fassungHint" role="status" hidden></p>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
       <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
     </div>
@@ -931,17 +932,23 @@
     return normalizeIndex(data);
   }
 
+  function safeBuildPath(p) {
+    return typeof p === 'string' && /^[\w.\-\/]+$/.test(p) && !/(^|\/)\.\.(\/|$)/.test(p);
+  }
   function normalizeIndex(data) {
     var list = data.filter(function (b) {
-      return b && typeof b.path === 'string' && /^[\w.\-\/]+$/.test(b.path) && !/(^|\/)\.\.(\/|$)/.test(b.path);
+      return b && safeBuildPath(b.path);
     }).map(function (b) {
-      return {
+      var out = {
         commit: String(b.commit || ''),
         short: String(b.short || String(b.commit || '').slice(0, 7) || '?'),
         message: String(b.message || ''),
         date: String(b.date || ''),
         path: b.path
       };
+      // Playtester-Fassung (seit aether PR #68): nur ein gültiger Pfad zählt, sonst „keine Playtester-Fassung“.
+      if (safeBuildPath(b.playtester)) out.playtester = b.playtester;
+      return out;
     });
     // Neueste zuerst (index.json ist schon so sortiert; stabil nachsortieren, falls nicht).
     list = list.map(function (b, i) { return { b: b, i: i, t: Date.parse(b.date) }; })
@@ -951,6 +958,20 @@
       }).map(function (x) { return x.b; });
     return list;
   }
+
+  // Build in der gewählten Fassung (Pfad builds/… bzw. playtester/…), oder null, wenn es diese Fassung
+  // für den Build nicht gibt. Das Ergebnis geht überall dorthin, wo bisher der Build selbst hinging
+  // (Dateiliste, Laden, Speichern, Start-Rahmen).
+  function variantOf(b, f) {
+    f = f || fassung;
+    if (!b) return null;
+    var path = f === 'playtester' ? b.playtester : b.path;
+    if (!path) return null;
+    return { commit: b.commit, short: b.short, message: b.message, date: b.date, path: path, fassung: f };
+  }
+  // Fassung eines gespeicherten Eintrags. Einträge von vor der Umstellung haben kein Feld: Entwickler.
+  function entryFassung(x) { return x && x.fassung === 'playtester' ? 'playtester' : 'entwickler'; }
+  function buildFassung(b) { return b && b.fassung === 'playtester' ? 'playtester' : 'entwickler'; }
 
   // ---------------------------------------------------------------------------
   // Build-Dateien erkennen
@@ -1099,8 +1120,11 @@
   async function pruneCache(cache, info) {
     if (!cache) return;
     try {
-      var idx = readCacheIndex().filter(function (x) { return x.short !== info.build.short; });
-      idx.unshift({ short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) });
+      var fa = buildFassung(info.build);
+      var idx = readCacheIndex().filter(function (x) { return x.short !== info.build.short || entryFassung(x) !== fa; });
+      var entry = { short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) };
+      if (fa === 'playtester') entry.fassung = 'playtester';
+      idx.unshift(entry);
       idx = idx.slice(0, KEEP_BUILDS);
       writeJson(CACHE_INDEX_KEY, idx);
       var keep = {};
@@ -1120,7 +1144,8 @@
 
   // Build-Infos aus dem lokalen Stand, ohne API, oder null, wenn der Build nicht vollständig da ist.
   function savedBuildInfo(build, have) {
-    var entry = readCacheIndex().filter(function (x) { return x.short === build.short && Array.isArray(x.files) && x.files.length; })[0];
+    var fa = buildFassung(build);
+    var entry = readCacheIndex().filter(function (x) { return x.short === build.short && entryFassung(x) === fa && Array.isArray(x.files) && x.files.length; })[0];
     if (!entry) return null;
     var files = entry.files.filter(function (f) { return f && typeof f.name === 'string' && typeof f.sha === 'string'; })
       .map(function (f) { return fileEntry(f.name, f.sha, f.size); });
@@ -1131,7 +1156,7 @@
   async function refreshSaved() {
     var have = await cachedKeySet();
     savedBuilds = {};
-    builds.forEach(function (b) { if (savedBuildInfo(b, have)) savedBuilds[b.short] = true; });
+    builds.forEach(function (b) { var v = variantOf(b); if (v && savedBuildInfo(v, have)) savedBuilds[b.short] = true; });
   }
 
   async function clearCache() {
@@ -1667,7 +1692,7 @@
   // Gewählter Build, falls er startbar ist (offline nur gespeicherte), sonst null.
   function startableSelection() {
     var r = document.querySelector('input[name="build"]:checked');
-    return r && !r.disabled ? (builds[Number(r.value)] || null) : null;
+    return r && !r.disabled ? variantOf(builds[Number(r.value)]) : null;
   }
 
   function discardFrame(f) {
@@ -1684,7 +1709,7 @@
     if (frame && frame.state !== 'start') { layoutGame(); return; }
     var visible = !$('buildsView').hidden;
     var b = visible ? startableSelection() : null;
-    if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path)) discardFrame(frame);
+    if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path || frame.build.fassung !== b.fassung)) discardFrame(frame);
     if (b && !frame) {
       frame = { iframe: createGameFrame(b), build: b, state: 'start', doc: null, tapped: false, pointer: '' };
       var wrap = $('game');
@@ -2030,11 +2055,13 @@
       li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
       ul.appendChild(li);
       $('buildsKlapp').textContent = '';
+      updateFassungHint([]);
       syncStartFrame();
       return;
     }
-    // Offline sind nur vollständig gespeicherte Builds startbar; vorausgewählt ist der neueste davon.
-    var startable = builds.filter(function (b) { return !offline || savedBuilds[b.short]; });
+    // Nur Builds mit der gewählten Fassung sind wählbar; offline zusätzlich nur vollständig gespeicherte.
+    // Vorausgewählt bleibt der gewählte Build, sonst der neueste wählbare (z. B. nach dem Umschalten).
+    var startable = builds.filter(function (b) { return variantOf(b) && (!offline || savedBuilds[b.short]); });
     var preselect = startable.filter(function (b) { return b.short === keepShort; })[0] || startable[0] || null;
     builds.forEach(function (b, i) {
       var li = document.createElement('li');
@@ -2064,6 +2091,12 @@
         badge.textContent = 'neuester';
         meta.appendChild(badge);
       }
+      if (!variantOf(b)) {
+        var nv = document.createElement('span');
+        nv.className = 'no-variant';
+        nv.textContent = 'keine Playtester-Fassung';
+        meta.appendChild(nv);
+      }
       if (savedBuilds[b.short]) {
         var saved = document.createElement('span');
         saved.className = 'badge saved';
@@ -2077,8 +2110,22 @@
       ul.appendChild(li);
     });
     applyBuildsKlapp();
+    updateFassungHint(startable);
     updateApiInfo();
     syncStartFrame();
+  }
+
+  // Kurzer Hinweis, wenn in der Fassung „Playtester“ kein Build startbar ist (Start gesperrt).
+  function updateFassungHint(startable) {
+    var box = $('fassungHint');
+    var text = '';
+    if (fassung === 'playtester' && builds.length && !startable.length) {
+      text = builds.some(function (b) { return variantOf(b); })
+        ? 'Keine Playtester-Fassung gespeichert. Offline lassen sich nur gespeicherte Builds starten.'
+        : 'Noch kein Build mit Playtester-Fassung. Zum Spielen auf „Entwickler“ umschalten.';
+    }
+    box.textContent = text;
+    box.hidden = !text;
   }
 
   // Zugeklappt: die neuesten BUILDS_SICHTBAR Builds und – falls er weiter unten liegt – der gewählte Build
