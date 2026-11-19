@@ -158,6 +158,23 @@
   .build.unavailable { opacity: .45; cursor: default; }
   .build.unavailable input { pointer-events: none; }
 
+  /* Umschalter „Fassung: Entwickler | Playtester“ (Stil wie der Umschalter Spielen / Projekt) */
+  .fassung { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .fassung-lbl { color: var(--muted); font-size: 14px; font-weight: 600; flex: none; }
+  .seg {
+    flex: 1; display: flex; gap: 3px; padding: 3px; box-sizing: border-box; height: 38px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+  }
+  .seg button {
+    flex: 1; min-width: 0; padding: 0 10px;
+    border: 1px solid transparent; border-radius: 10px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .seg button[aria-pressed="true"] { background: #1d2540; color: var(--text); border-color: var(--accent); }
+  .build .meta .no-variant { margin-left: auto; font-style: italic; }
+  .fassung-hint { margin: 10px 0 0; }
+
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
 
   /* Offline-Hinweis */
@@ -661,6 +678,13 @@
         <h2 class="grow" style="margin:0">Build wählen</h2>
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
       </div>
+      <div class="fassung" id="fassungBox">
+        <span class="fassung-lbl" id="fassungLbl">Fassung:</span>
+        <div class="seg" role="group" aria-labelledby="fassungLbl">
+          <button type="button" id="fassungEntwickler" data-fassung="entwickler" aria-pressed="true">Entwickler</button>
+          <button type="button" id="fassungPlaytester" data-fassung="playtester" aria-pressed="false">Playtester</button>
+        </div>
+      </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
       <div id="buildsKlapp"></div>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
@@ -802,6 +826,22 @@
   var buildsOffen = false;
 
   var $ = function (id) { return document.getElementById(id); };
+
+  // Fassung der Builds (seit aether PR #68): „entwickler“ = builds/<hash>/ (Standard, wie bisher),
+  // „playtester“ = Pfad aus dem Feld "playtester" in index.json. Die Wahl liegt in localStorage.
+  var FASSUNG_KEY = 'aether.fassung';
+  var FASSUNGEN = ['entwickler', 'playtester'];
+  var FASSUNG_TEXT = { entwickler: 'Entwickler-Fassung', playtester: 'Playtester-Fassung' };
+  function readFassung() {
+    var v = null;
+    try { v = localStorage.getItem(FASSUNG_KEY); } catch (e) { v = null; }
+    return FASSUNGEN.indexOf(v) >= 0 ? v : 'entwickler';
+  }
+  function storeFassung(v) {
+    try { localStorage.setItem(FASSUNG_KEY, v); } catch (e) { /* Speicher voll o. ä. */ }
+  }
+  var fassung = readFassung();
+
 
   // ---------------------------------------------------------------------------
   // Token-Speicher
@@ -3851,6 +3891,22 @@
   $('reloadBtn').addEventListener('click', refreshBuilds);
   // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
   $('buildList').addEventListener('change', function () { applyBuildsKlapp(); syncStartFrame(); });
+  // Umschalter „Fassung“: Wahl speichern, Liste (Ausgrauen, „gespeichert“) und Start-Rahmen nachführen.
+  function renderFassung() {
+    $('fassungEntwickler').setAttribute('aria-pressed', String(fassung === 'entwickler'));
+    $('fassungPlaytester').setAttribute('aria-pressed', String(fassung === 'playtester'));
+  }
+  async function setFassung(v) {
+    if (FASSUNGEN.indexOf(v) < 0 || v === fassung) return;
+    fassung = v;
+    storeFassung(v);
+    renderFassung();
+    await refreshSaved();
+    renderBuilds();
+  }
+  $('fassungEntwickler').addEventListener('click', function () { setFassung('entwickler'); });
+  $('fassungPlaytester').addEventListener('click', function () { setFassung('playtester'); });
+  renderFassung();
   window.addEventListener('resize', fitHeader);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeader, function () { /* egal */ });
   // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).
