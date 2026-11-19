@@ -46,15 +46,17 @@ const frameLabel = (page) => page.evaluate(() => {
   const m = /data-fassung="([^"]*)"/.exec(f.getAttribute('srcdoc') || '');
   return { title: f.getAttribute('title'), fassung: m ? m[1] : '' };
 });
-// Umschalten und warten, bis Liste und Start-Rahmen nachgeführt sind.
-async function switchTo(page, f) {
+// Umschalten und warten, bis Liste und Start-Rahmen nachgeführt sind. gesperrt = true: kein startbarer Build
+// erwartet (dann: kein Rahmen, #playOff und Hinweis sichtbar), sonst ein Rahmen mit der neuen Beschriftung.
+// (Nur auf „#playOff sichtbar“ zu warten reicht nicht: Ohne Rahmen ist das schon vor dem Neuzeichnen wahr.)
+async function switchTo(page, f, gesperrt = false) {
   const text = f === 'playtester' ? 'Playtester-Fassung' : 'Entwickler-Fassung';
   await page.click(f === 'playtester' ? '#fassungPlaytester' : '#fassungEntwickler');
-  await page.waitForFunction((t) => {
+  await page.waitForFunction(([t, g]) => {
     const fr = document.querySelector('#game iframe');
-    if (fr) return (fr.getAttribute('srcdoc') || '').includes('data-fassung="' + t + '"');
-    return !document.getElementById('playOff').hidden;
-  }, text);
+    if (g) return !fr && !document.getElementById('playOff').hidden && !document.getElementById('fassungHint').hidden;
+    return !!fr && (fr.getAttribute('srcdoc') || '').includes('data-fassung="' + t + '"');
+  }, [text, gesperrt]);
 }
 async function exitGame(page) {
   await page.click('#exitBtn');
@@ -108,6 +110,18 @@ describe('Fassung: Umschalter, Speichern, Ausgrauen, Auswahl', () => {
     assert.equal(await frame.evaluate(() => window.__g.fassung), undefined, 'Entwickler-Fassung läuft');
     assert.deepEqual(await frameAttrs(page), SANDBOX);
     await page.screenshot({ path: path.join(H.OUT, 'fassung-entwickler.png') });
+    await exitGame(page);
+    // Schmalste Breite (320 px): Umschalter bleibt in der Karte, kein waagerechter Überlauf.
+    await page.setViewportSize({ width: 320, height: 568 });
+    // Der Start-Rahmen folgt #playSlot erst nach dem resize-Ereignis; bis dahin warten (Frist 5 s).
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth, null, { timeout: 5000 }).catch(() => {});
+    const narrow = await page.evaluate(() => ({
+      seg: document.querySelector('#fassungBox .seg').getBoundingClientRect().right,
+      list: document.getElementById('buildList').getBoundingClientRect().right,
+      over: document.documentElement.scrollWidth - window.innerWidth
+    }));
+    assert.ok(narrow.seg <= narrow.list + 0.5, `320 px: Umschalter ragt hinaus (${narrow.seg} > ${narrow.list})`);
+    assert.ok(narrow.over <= 0, `320 px: waagerechter Überlauf ${narrow.over}px`);
     assert.deepEqual(log.errors, []);
     await context.close();
   });
@@ -214,7 +228,7 @@ describe('Fassung: Umschalter, Speichern, Ausgrauen, Auswahl', () => {
     mock.builds = buildsMitPlaytester(0);
     const { context, page, log } = await H.newPage();
     await H.openBuilds(page);
-    await switchTo(page, 'playtester');
+    await switchTo(page, 'playtester', true);
     assert.equal(await page.$('#game iframe'), null, 'kein Start-Rahmen');
     assert.ok(await page.isVisible('#playOff'));
     assert.ok(await page.isDisabled('#playOff'));
@@ -390,7 +404,7 @@ describe('Fassung: Laden, Beschriftung, Speicher, Offline', () => {
       localStorage.setItem('aether.cachedBuilds', JSON.stringify(idx));
     });
     await switchTo(page, 'entwickler');
-    await switchTo(page, 'playtester');
+    await switchTo(page, 'playtester', true);
     assert.equal(await page.$('#game iframe'), null);
     assert.ok(await page.isDisabled('#playOff'));
     assert.match(await page.textContent('#fassungHint'), /Keine Playtester-Fassung gespeichert/);
