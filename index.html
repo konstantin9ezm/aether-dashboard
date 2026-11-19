@@ -159,14 +159,14 @@
   .build.unavailable input { pointer-events: none; }
 
   /* Umschalter „Fassung: Entwickler | Playtester“ (Stil wie der Umschalter Spielen / Projekt) */
-  .fassung { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .fassung { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .fassung-lbl { color: var(--muted); font-size: 14px; font-weight: 600; flex: none; }
   .seg {
-    flex: 1; display: flex; gap: 3px; padding: 3px; box-sizing: border-box; height: 38px;
+    flex: 1; min-width: 0; display: flex; gap: 3px; padding: 3px; box-sizing: border-box; height: 38px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
   }
   .seg button {
-    flex: 1; min-width: 0; padding: 0 10px;
+    flex: 1; min-width: 0; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     border: 1px solid transparent; border-radius: 10px; background: transparent;
     color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
     touch-action: manipulation; user-select: none; -webkit-user-select: none;
