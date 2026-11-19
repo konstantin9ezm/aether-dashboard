@@ -1438,20 +1438,25 @@
   var START_CSS = 'html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;' +
     '-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}' +
     '#aetherStart{box-sizing:border-box;display:flex;align-items:center;justify-content:center;' +
-    'width:100%;height:100%;min-height:44px;margin:0;padding:10px 18px;border:0;border-radius:12px;' +
+    'flex-direction:column;width:100%;height:100%;min-height:44px;margin:0;padding:6px 18px;border:0;border-radius:12px;' +
     'background:linear-gradient(135deg,#7c9cff,#a78bfa);color:#0b0e14;' +
     'font:700 18px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;' +
     'cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}' +
     '#aetherStart:active{transform:scale(.98)}' +
+    // Gewählte Fassung klein unter „Spielen“ (aus data-fassung; der Knopftext selbst bleibt „Spielen“).
+    '#aetherStart[data-fassung]::after{content:attr(data-fassung);display:block;font-size:12px;font-weight:600;line-height:1.2;opacity:.8}' +
     '#aetherStart:disabled{cursor:default}' +
     '#aetherStart:focus-visible{outline:3px solid #fff;outline-offset:-6px}';
-  function startDocument() {
+  // fassungText: „Entwickler-Fassung“ bzw. „Playtester-Fassung“ (feste Texte, siehe FASSUNG_TEXT).
+  function startDocument(fassungText) {
+    var t = String(fassungText || '').replace(/[^\w\- ]/g, '');
     return '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">' +
       '<meta name="color-scheme" content="dark"><title>Aether</title>' +
       '<style>' + START_CSS + '</style>' +
       '<script>(' + iframeBoot.toString() + ')(' + scriptJson({ fps: FPS_MODE }) + ');<\/script>' +
-      '</head><body><button id="aetherStart" type="button">Spielen</button></body></html>';
+      '</head><body><button id="aetherStart" type="button"' +
+      (t ? ' data-fassung="' + t + '" aria-label="Spielen, ' + t + '"' : '') + '>Spielen</button></body></html>';
   }
 
   function pickMainJs(info) {
@@ -1685,7 +1690,7 @@
     iframe.setAttribute('allow', 'gamepad *; fullscreen *; autoplay *');
     iframe.setAttribute('title', 'Aether ' + build.short);
     iframe.setAttribute('referrerpolicy', 'no-referrer');
-    iframe.srcdoc = startDocument();
+    iframe.srcdoc = startDocument(FASSUNG_TEXT[buildFassung(build)]);
     return iframe;
   }
 
