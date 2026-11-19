@@ -30,8 +30,13 @@ window.__g.ready = true;`;
 const GAME_HTML = `<!doctype html><html lang=de><head><meta charset=utf-8><title>Test</title></head>
 <body><canvas id=canvas tabindex=0></canvas><script src="spiel.js"></script></body></html>`;
 const GAME_FILES = { 'index.html': Buffer.from(GAME_HTML), 'spiel.js': Buffer.from(GAME_JS) };
+// Playtester-Fassung (Ordner playtester/<hash>/, Feld "playtester" in index.json): eigenes Spiel-Skript,
+// damit Tests sehen, welche Fassung wirklich geladen wurde.
+const PT_JS = GAME_JS.replace('window.__g = { ready: false };', "window.__g = { ready: false, fassung: 'playtester' };");
+const PT_FILES = { 'index.html': Buffer.from(GAME_HTML), 'spiel.js': Buffer.from(PT_JS) };
 const blobs = new Map();
-for (const buf of Object.values(GAME_FILES)) blobs.set(gitSha(buf), buf);
+for (const buf of [...Object.values(GAME_FILES), ...Object.values(PT_FILES)]) blobs.set(gitSha(buf), buf);
+const listing = (dir, files) => Object.entries(files).map(([name, buf]) => ({ name, path: dir + name, sha: gitSha(buf), size: buf.length, type: 'file' }));
 
 // n Builds, neuester zuerst; alle mit denselben (kleinen) Spieldateien.
 function makeBuilds(n, prefix = '') {
@@ -87,7 +92,9 @@ async function githubApi(route) {
   if (headers.authorization !== `Bearer ${TOKEN}`) return json(route, 401, { message: 'Bad credentials' });
   if (p === `${BASE}/contents/index.json`) return raw(route, JSON.stringify(mock.builds));
   const b = mock.builds.find((x) => p === `${BASE}/contents/${x.path.replace(/\/$/, '')}`);
-  if (b) return json(route, 200, Object.entries(GAME_FILES).map(([name, buf]) => ({ name, path: b.path + name, sha: gitSha(buf), size: buf.length, type: 'file' })));
+  if (b) return json(route, 200, listing(b.path, GAME_FILES));
+  const pt = mock.builds.find((x) => typeof x.playtester === 'string' && p === `${BASE}/contents/${x.playtester.replace(/\/$/, '')}`);
+  if (pt) return json(route, 200, listing(pt.playtester, PT_FILES));
   const m = /\/git\/blobs\/([0-9a-f]{40})$/.exec(p);
   if (m && blobs.has(m[1])) return raw(route, blobs.get(m[1]), 'application/octet-stream');
   if (p === `${BASE}/actions/workflows`) return json(route, 200, { total_count: 1, workflows: [{ id: 42, name: 'Build', path: '.github/workflows/build.yml', state: 'active' }] });
@@ -194,4 +201,4 @@ async function startGame(page) {
 // Tippfläche und Sichtbarkeit eines Elements.
 const rectOf = (page, sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, top: r.top, bottom: r.bottom, visible: r.width > 0 && r.height > 0 }; });
 
-module.exports = { closeAll, ROOT, OUT, TOKEN, BASE, DASH_BASE, mock, srv, start, stop, newPage, openProject, openBuilds, waitProjectLoaded, setVisibility, startGame, rectOf, makeBuilds, makePulls, roadmap, sha };
+module.exports = { GAME_FILES, PT_FILES, gitSha, closeAll, ROOT, OUT, TOKEN, BASE, DASH_BASE, mock, srv, start, stop, newPage, openProject, openBuilds, waitProjectLoaded, setVisibility, startGame, rectOf, makeBuilds, makePulls, roadmap, sha };
