@@ -796,8 +796,9 @@
   var SHELL_CACHE_NAME = 'aether-shell-v1'; // gehört dem Service Worker (sw.js)
   var CACHE_INDEX_KEY = 'aether.cachedBuilds'; // welche Builds vollständig im Cache liegen (mit Dateiliste)
   var LAST_INDEX_KEY = 'aether.lastIndex';     // zuletzt online geladene Build-Liste (für den Offline-Start)
-  // Wie viele Builds lokal bleiben: der zuletzt gestartete und der neueste. Mehr nicht,
-  // weil iOS den Speicher pro Web-App begrenzt und bei Platzmangel alles verwerfen kann.
+  // Wie viele Builds lokal bleiben: der zuletzt gestartete und der neueste, und zwar je Fassung
+  // (Entwickler/Playtester), also höchstens 2 × 2. Mehr nicht, weil iOS den Speicher pro Web-App
+  // begrenzt und bei Platzmangel alles verwerfen kann. Dateien mit gleichem Inhalt liegen nur einmal im Cache.
   var KEEP_BUILDS = 2;
   // Zeitlimit für die Online-Prüfung beim Start. Danach wird der lokale Stand angezeigt.
   var ONLINE_CHECK_TIMEOUT_MS = 30 * 1000;
@@ -1125,7 +1126,8 @@
       var entry = { short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) };
       if (fa === 'playtester') entry.fassung = 'playtester';
       idx.unshift(entry);
-      idx = idx.slice(0, KEEP_BUILDS);
+      var count = {};
+      idx = idx.filter(function (x) { var k = entryFassung(x); count[k] = (count[k] || 0) + 1; return count[k] <= KEEP_BUILDS; });
       writeJson(CACHE_INDEX_KEY, idx);
       var keep = {};
       idx.forEach(function (x) { (x.files || []).forEach(function (f) { keep[cacheKey(f.sha)] = true; }); });
@@ -2206,8 +2208,10 @@
     renderBuilds();
   }
 
+  // Neuester Build der gewählten Fassung (Playtester: neuester Build mit Feld "playtester").
   async function ensureNewestSaved() {
-    var b = builds[0];
+    var b = null;
+    for (var i = 0; i < builds.length && !b; i++) b = variantOf(builds[i]);
     if (!b || savedBuilds[b.short]) return;
     var cache = await openCache();
     if (!cache) return; // ohne Cache-Storage gibt es nichts zu speichern
