@@ -47,6 +47,33 @@ Das Token wird nur im `localStorage` dieses Geräts gespeichert und ausschließl
 Hinweis: Weil das Spiel isoliert läuft, steht ihm kein eigener `localStorage`/IndexedDB zur Verfügung. Mail-Links
 und die Zwischenablage gehen dort ebenfalls nicht. Dafür gibt es die Schnittstelle unten.
 
+## Fassung (Entwickler/Playtester)
+
+Seit aether PR #68 legt die CI im Branch `web-build` je Build zwei Fassungen ab: `builds/<hash>/` (Entwickler-Fassung)
+und `playtester/<hash>/` (Playtester-Fassung). In `index.json` haben Builds ab PR #68 das Feld
+`"playtester": "playtester/<hash>/"`; ältere Builds haben es nicht (nur Entwickler-Fassung). Das Dashboard liest
+`index.json` nur und ändert das Format nicht.
+
+- Zwischen „Build wählen / Aktualisieren“ und der ersten Build-Karte sitzt der Umschalter **„Fassung: Entwickler |
+  Playtester“**. Standard ist „Entwickler“ (Verhalten wie zuvor, Pfad aus `path`). Die Wahl liegt in `localStorage`
+  unter `aether.fassung` (`"entwickler"` oder `"playtester"`); fehlende oder ungültige Werte gelten als „Entwickler“.
+- **Playtester:** Builds mit Feld `playtester` laden ihre Dateien von diesem Pfad (gleicher Weg: GitHub-API,
+  `contents/<pfad>?ref=web-build`, dann `git/blobs`). Builds ohne das Feld sind ausgegraut, nicht wählbar und zeigen
+  rechts „keine Playtester-Fassung“ (auch unter „Ältere Builds anzeigen“). Ist beim Umschalten ein solcher Build
+  gewählt, springt die Auswahl auf den neuesten Build mit Playtester-Fassung; gibt es keinen, ist der Start gesperrt
+  (ausgegrauter Knopf) mit kurzem Hinweis unter der Liste.
+- Der Knopf „Spielen“ im Start-Rahmen zeigt klein darunter die gewählte Fassung („Entwickler-Fassung“ bzw.
+  „Playtester-Fassung“; `data-fassung` am Knopf, `aria-label` „Spielen, …“). Beim Wechsel von Fassung oder Build wird
+  der Start-Rahmen neu aufgebaut; Sandbox und alle Attribute des iframes bleiben unverändert.
+- **Speicher/Offline:** „gespeichert“ gilt je Fassung; Entwickler- und Playtester-Fassung desselben Hashs sind
+  getrennte Einträge in `aether.cachedBuilds` (Playtester-Einträge tragen `"fassung": "playtester"`, Einträge ohne
+  das Feld sind Entwickler-Fassung – bereits gespeicherte Builds gelten nach dem Update also weiter als gespeichert).
+  Das automatische Laden des neuesten Builds beim Start nimmt die gewählte Fassung. Es bleiben **je Fassung** höchstens
+  2 Builds (zuletzt gestarteter + neuester), insgesamt also höchstens 4; Dateien gleichen Inhalts liegen nur einmal im
+  Cache `aether-builds-v1`. Offline sind nur gespeicherte Builds der gewählten Fassung startbar. Beim bloßen Umschalten
+  wird nichts automatisch geladen.
+- Tests: `tests/fassung.test.js`.
+
 ## Spielstart im Rahmen
 
 Safari/WebKit drosselt `requestAnimationFrame` in einem fremden (cross-origin) iframe auf 30 fps, bis der Nutzer
@@ -1135,6 +1162,12 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   CI-Zeile mit langen Job- und Schrittnamen (Re-run): „Dauer / Limit (Prozent)“ liegt bei 1194×834, 834×1194,
   874×402, 402×874, 390×844, 360 und 320 px sowie in 10-px-Schritten von 320 bis 1400 px immer in einer Zeile,
   ohne Überlauf aus der Karte. Gegenprobe (muss rot werden): ohne `white-space: nowrap` am Block.
+- `tests/fassung.test.js` – Umschalter „Fassung: Entwickler | Playtester“ mit nachgestelltem `index.json` (Builds mit und
+  ohne `playtester`): Standard Entwickler, Speichern/Wiederherstellen (`aether.fassung`, ungültige Werte), Ausgrauen
+  und Nicht-Wählbarkeit auch unter „Ältere Builds“, Sprung der Auswahl, gesperrter Start, Pfad beim Laden
+  (`builds/…` bzw. `playtester/…`), Beschriftung im Start-Rahmen, „gespeichert“ und Obergrenze je Fassung, vorhandener
+  Entwickler-Eintrag, Offline. Gegenproben (müssen rot werden): Ausgrauen entfernt, Pfad vertauscht, `localStorage`
+  ignoriert, Fassung im Cache-Eintrag ignoriert, Beschriftung entfernt.
 - `tests/klappen.test.js` – Ein- und Ausklappen (Desktop, iPhone 13): Fortschritt mit „Erledigt“ beim Laden zu,
   Pfeil-Knöpfe ≥ 44 × 44 in allen Abschnitten, Pfeilrichtung und `aria-expanded`, ganzer Kopf antippbar, Tastatur,
   „Einklappen“ nur am Ende von „Erledigt“ samt Scrollen zum Kopf; Build-Liste mit 3 Builds + „Ältere Builds

@@ -158,6 +158,23 @@
   .build.unavailable { opacity: .45; cursor: default; }
   .build.unavailable input { pointer-events: none; }
 
+  /* Umschalter „Fassung: Entwickler | Playtester“ (Stil wie der Umschalter Spielen / Projekt) */
+  .fassung { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .fassung-lbl { color: var(--muted); font-size: 14px; font-weight: 600; flex: none; }
+  .seg {
+    flex: 1; min-width: 0; display: flex; gap: 3px; padding: 3px; box-sizing: border-box; height: 38px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
+  }
+  .seg button {
+    flex: 1; min-width: 0; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border: 1px solid transparent; border-radius: 10px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .seg button[aria-pressed="true"] { background: #1d2540; color: var(--text); border-color: var(--accent); }
+  .build .meta .no-variant { margin-left: auto; font-style: italic; }
+  .fassung-hint { margin: 10px 0 0; }
+
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
 
   /* Offline-Hinweis */
@@ -661,8 +678,16 @@
         <h2 class="grow" style="margin:0">Build wählen</h2>
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
       </div>
+      <div class="fassung" id="fassungBox">
+        <span class="fassung-lbl" id="fassungLbl">Fassung:</span>
+        <div class="seg" role="group" aria-labelledby="fassungLbl">
+          <button type="button" id="fassungEntwickler" data-fassung="entwickler" aria-pressed="true">Entwickler</button>
+          <button type="button" id="fassungPlaytester" data-fassung="playtester" aria-pressed="false">Playtester</button>
+        </div>
+      </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
       <div id="buildsKlapp"></div>
+      <p class="muted small fassung-hint" id="fassungHint" role="status" hidden></p>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
       <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
     </div>
@@ -771,8 +796,9 @@
   var SHELL_CACHE_NAME = 'aether-shell-v1'; // gehört dem Service Worker (sw.js)
   var CACHE_INDEX_KEY = 'aether.cachedBuilds'; // welche Builds vollständig im Cache liegen (mit Dateiliste)
   var LAST_INDEX_KEY = 'aether.lastIndex';     // zuletzt online geladene Build-Liste (für den Offline-Start)
-  // Wie viele Builds lokal bleiben: der zuletzt gestartete und der neueste. Mehr nicht,
-  // weil iOS den Speicher pro Web-App begrenzt und bei Platzmangel alles verwerfen kann.
+  // Wie viele Builds lokal bleiben: der zuletzt gestartete und der neueste, und zwar je Fassung
+  // (Entwickler/Playtester), also höchstens 2 × 2. Mehr nicht, weil iOS den Speicher pro Web-App
+  // begrenzt und bei Platzmangel alles verwerfen kann. Dateien mit gleichem Inhalt liegen nur einmal im Cache.
   var KEEP_BUILDS = 2;
   // Zeitlimit für die Online-Prüfung beim Start. Danach wird der lokale Stand angezeigt.
   var ONLINE_CHECK_TIMEOUT_MS = 30 * 1000;
@@ -802,6 +828,22 @@
   var buildsOffen = false;
 
   var $ = function (id) { return document.getElementById(id); };
+
+  // Fassung der Builds (seit aether PR #68): „entwickler“ = builds/<hash>/ (Standard, wie bisher),
+  // „playtester“ = Pfad aus dem Feld "playtester" in index.json. Die Wahl liegt in localStorage.
+  var FASSUNG_KEY = 'aether.fassung';
+  var FASSUNGEN = ['entwickler', 'playtester'];
+  var FASSUNG_TEXT = { entwickler: 'Entwickler-Fassung', playtester: 'Playtester-Fassung' };
+  function readFassung() {
+    var v = null;
+    try { v = localStorage.getItem(FASSUNG_KEY); } catch (e) { v = null; }
+    return FASSUNGEN.indexOf(v) >= 0 ? v : 'entwickler';
+  }
+  function storeFassung(v) {
+    try { localStorage.setItem(FASSUNG_KEY, v); } catch (e) { /* Speicher voll o. ä. */ }
+  }
+  var fassung = readFassung();
+
 
   // ---------------------------------------------------------------------------
   // Token-Speicher
@@ -891,17 +933,23 @@
     return normalizeIndex(data);
   }
 
+  function safeBuildPath(p) {
+    return typeof p === 'string' && /^[\w.\-\/]+$/.test(p) && !/(^|\/)\.\.(\/|$)/.test(p);
+  }
   function normalizeIndex(data) {
     var list = data.filter(function (b) {
-      return b && typeof b.path === 'string' && /^[\w.\-\/]+$/.test(b.path) && !/(^|\/)\.\.(\/|$)/.test(b.path);
+      return b && safeBuildPath(b.path);
     }).map(function (b) {
-      return {
+      var out = {
         commit: String(b.commit || ''),
         short: String(b.short || String(b.commit || '').slice(0, 7) || '?'),
         message: String(b.message || ''),
         date: String(b.date || ''),
         path: b.path
       };
+      // Playtester-Fassung (seit aether PR #68): nur ein gültiger Pfad zählt, sonst „keine Playtester-Fassung“.
+      if (safeBuildPath(b.playtester)) out.playtester = b.playtester;
+      return out;
     });
     // Neueste zuerst (index.json ist schon so sortiert; stabil nachsortieren, falls nicht).
     list = list.map(function (b, i) { return { b: b, i: i, t: Date.parse(b.date) }; })
@@ -911,6 +959,20 @@
       }).map(function (x) { return x.b; });
     return list;
   }
+
+  // Build in der gewählten Fassung (Pfad builds/… bzw. playtester/…), oder null, wenn es diese Fassung
+  // für den Build nicht gibt. Das Ergebnis geht überall dorthin, wo bisher der Build selbst hinging
+  // (Dateiliste, Laden, Speichern, Start-Rahmen).
+  function variantOf(b, f) {
+    f = f || fassung;
+    if (!b) return null;
+    var path = f === 'playtester' ? b.playtester : b.path;
+    if (!path) return null;
+    return { commit: b.commit, short: b.short, message: b.message, date: b.date, path: path, fassung: f };
+  }
+  // Fassung eines gespeicherten Eintrags. Einträge von vor der Umstellung haben kein Feld: Entwickler.
+  function entryFassung(x) { return x && x.fassung === 'playtester' ? 'playtester' : 'entwickler'; }
+  function buildFassung(b) { return b && b.fassung === 'playtester' ? 'playtester' : 'entwickler'; }
 
   // ---------------------------------------------------------------------------
   // Build-Dateien erkennen
@@ -1059,9 +1121,13 @@
   async function pruneCache(cache, info) {
     if (!cache) return;
     try {
-      var idx = readCacheIndex().filter(function (x) { return x.short !== info.build.short; });
-      idx.unshift({ short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) });
-      idx = idx.slice(0, KEEP_BUILDS);
+      var fa = buildFassung(info.build);
+      var idx = readCacheIndex().filter(function (x) { return x.short !== info.build.short || entryFassung(x) !== fa; });
+      var entry = { short: info.build.short, path: info.build.path, files: info.files.map(function (f) { return { name: f.name, sha: f.sha, size: f.size }; }) };
+      if (fa === 'playtester') entry.fassung = 'playtester';
+      idx.unshift(entry);
+      var count = {};
+      idx = idx.filter(function (x) { var k = entryFassung(x); count[k] = (count[k] || 0) + 1; return count[k] <= KEEP_BUILDS; });
       writeJson(CACHE_INDEX_KEY, idx);
       var keep = {};
       idx.forEach(function (x) { (x.files || []).forEach(function (f) { keep[cacheKey(f.sha)] = true; }); });
@@ -1080,7 +1146,8 @@
 
   // Build-Infos aus dem lokalen Stand, ohne API, oder null, wenn der Build nicht vollständig da ist.
   function savedBuildInfo(build, have) {
-    var entry = readCacheIndex().filter(function (x) { return x.short === build.short && Array.isArray(x.files) && x.files.length; })[0];
+    var fa = buildFassung(build);
+    var entry = readCacheIndex().filter(function (x) { return x.short === build.short && entryFassung(x) === fa && Array.isArray(x.files) && x.files.length; })[0];
     if (!entry) return null;
     var files = entry.files.filter(function (f) { return f && typeof f.name === 'string' && typeof f.sha === 'string'; })
       .map(function (f) { return fileEntry(f.name, f.sha, f.size); });
@@ -1091,7 +1158,7 @@
   async function refreshSaved() {
     var have = await cachedKeySet();
     savedBuilds = {};
-    builds.forEach(function (b) { if (savedBuildInfo(b, have)) savedBuilds[b.short] = true; });
+    builds.forEach(function (b) { var v = variantOf(b); if (v && savedBuildInfo(v, have)) savedBuilds[b.short] = true; });
   }
 
   async function clearCache() {
@@ -1373,20 +1440,25 @@
   var START_CSS = 'html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;' +
     '-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}' +
     '#aetherStart{box-sizing:border-box;display:flex;align-items:center;justify-content:center;' +
-    'width:100%;height:100%;min-height:44px;margin:0;padding:10px 18px;border:0;border-radius:12px;' +
+    'flex-direction:column;width:100%;height:100%;min-height:44px;margin:0;padding:6px 18px;border:0;border-radius:12px;' +
     'background:linear-gradient(135deg,#7c9cff,#a78bfa);color:#0b0e14;' +
     'font:700 18px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;' +
     'cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}' +
     '#aetherStart:active{transform:scale(.98)}' +
+    // Gewählte Fassung klein unter „Spielen“ (aus data-fassung; der Knopftext selbst bleibt „Spielen“).
+    '#aetherStart[data-fassung]::after{content:attr(data-fassung);display:block;font-size:12px;font-weight:600;line-height:1.2;opacity:.8}' +
     '#aetherStart:disabled{cursor:default}' +
     '#aetherStart:focus-visible{outline:3px solid #fff;outline-offset:-6px}';
-  function startDocument() {
+  // fassungText: „Entwickler-Fassung“ bzw. „Playtester-Fassung“ (feste Texte, siehe FASSUNG_TEXT).
+  function startDocument(fassungText) {
+    var t = String(fassungText || '').replace(/[^\w\- ]/g, '');
     return '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">' +
       '<meta name="color-scheme" content="dark"><title>Aether</title>' +
       '<style>' + START_CSS + '</style>' +
       '<script>(' + iframeBoot.toString() + ')(' + scriptJson({ fps: FPS_MODE }) + ');<\/script>' +
-      '</head><body><button id="aetherStart" type="button">Spielen</button></body></html>';
+      '</head><body><button id="aetherStart" type="button"' +
+      (t ? ' data-fassung="' + t + '" aria-label="Spielen, ' + t + '"' : '') + '>Spielen</button></body></html>';
   }
 
   function pickMainJs(info) {
@@ -1620,14 +1692,14 @@
     iframe.setAttribute('allow', 'gamepad *; fullscreen *; autoplay *');
     iframe.setAttribute('title', 'Aether ' + build.short);
     iframe.setAttribute('referrerpolicy', 'no-referrer');
-    iframe.srcdoc = startDocument();
+    iframe.srcdoc = startDocument(FASSUNG_TEXT[buildFassung(build)]);
     return iframe;
   }
 
   // Gewählter Build, falls er startbar ist (offline nur gespeicherte), sonst null.
   function startableSelection() {
     var r = document.querySelector('input[name="build"]:checked');
-    return r && !r.disabled ? (builds[Number(r.value)] || null) : null;
+    return r && !r.disabled ? variantOf(builds[Number(r.value)]) : null;
   }
 
   function discardFrame(f) {
@@ -1644,7 +1716,7 @@
     if (frame && frame.state !== 'start') { layoutGame(); return; }
     var visible = !$('buildsView').hidden;
     var b = visible ? startableSelection() : null;
-    if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path)) discardFrame(frame);
+    if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path || frame.build.fassung !== b.fassung)) discardFrame(frame);
     if (b && !frame) {
       frame = { iframe: createGameFrame(b), build: b, state: 'start', doc: null, tapped: false, pointer: '' };
       var wrap = $('game');
@@ -1990,11 +2062,13 @@
       li.textContent = indexLoaded ? 'index.json enthält keine Builds.' : 'Build-Liste konnte nicht geladen werden.';
       ul.appendChild(li);
       $('buildsKlapp').textContent = '';
+      updateFassungHint([]);
       syncStartFrame();
       return;
     }
-    // Offline sind nur vollständig gespeicherte Builds startbar; vorausgewählt ist der neueste davon.
-    var startable = builds.filter(function (b) { return !offline || savedBuilds[b.short]; });
+    // Nur Builds mit der gewählten Fassung sind wählbar; offline zusätzlich nur vollständig gespeicherte.
+    // Vorausgewählt bleibt der gewählte Build, sonst der neueste wählbare (z. B. nach dem Umschalten).
+    var startable = builds.filter(function (b) { return variantOf(b) && (!offline || savedBuilds[b.short]); });
     var preselect = startable.filter(function (b) { return b.short === keepShort; })[0] || startable[0] || null;
     builds.forEach(function (b, i) {
       var li = document.createElement('li');
@@ -2024,6 +2098,12 @@
         badge.textContent = 'neuester';
         meta.appendChild(badge);
       }
+      if (!variantOf(b)) {
+        var nv = document.createElement('span');
+        nv.className = 'no-variant';
+        nv.textContent = 'keine Playtester-Fassung';
+        meta.appendChild(nv);
+      }
       if (savedBuilds[b.short]) {
         var saved = document.createElement('span');
         saved.className = 'badge saved';
@@ -2037,8 +2117,22 @@
       ul.appendChild(li);
     });
     applyBuildsKlapp();
+    updateFassungHint(startable);
     updateApiInfo();
     syncStartFrame();
+  }
+
+  // Kurzer Hinweis, wenn in der Fassung „Playtester“ kein Build startbar ist (Start gesperrt).
+  function updateFassungHint(startable) {
+    var box = $('fassungHint');
+    var text = '';
+    if (fassung === 'playtester' && builds.length && !startable.length) {
+      text = builds.some(function (b) { return variantOf(b); })
+        ? 'Keine Playtester-Fassung gespeichert. Offline lassen sich nur gespeicherte Builds starten.'
+        : 'Noch kein Build mit Playtester-Fassung. Zum Spielen auf „Entwickler“ umschalten.';
+    }
+    box.textContent = text;
+    box.hidden = !text;
   }
 
   // Zugeklappt: die neuesten BUILDS_SICHTBAR Builds und – falls er weiter unten liegt – der gewählte Build
@@ -2114,8 +2208,10 @@
     renderBuilds();
   }
 
+  // Neuester Build der gewählten Fassung (Playtester: neuester Build mit Feld "playtester").
   async function ensureNewestSaved() {
-    var b = builds[0];
+    var b = null;
+    for (var i = 0; i < builds.length && !b; i++) b = variantOf(builds[i]);
     if (!b || savedBuilds[b.short]) return;
     var cache = await openCache();
     if (!cache) return; // ohne Cache-Storage gibt es nichts zu speichern
@@ -3851,6 +3947,22 @@
   $('reloadBtn').addEventListener('click', refreshBuilds);
   // Anderer Build gewählt: Start-Rahmen für diesen Build neu anlegen.
   $('buildList').addEventListener('change', function () { applyBuildsKlapp(); syncStartFrame(); });
+  // Umschalter „Fassung“: Wahl speichern, Liste (Ausgrauen, „gespeichert“) und Start-Rahmen nachführen.
+  function renderFassung() {
+    $('fassungEntwickler').setAttribute('aria-pressed', String(fassung === 'entwickler'));
+    $('fassungPlaytester').setAttribute('aria-pressed', String(fassung === 'playtester'));
+  }
+  async function setFassung(v) {
+    if (FASSUNGEN.indexOf(v) < 0 || v === fassung) return;
+    fassung = v;
+    storeFassung(v);
+    renderFassung();
+    await refreshSaved();
+    renderBuilds();
+  }
+  $('fassungEntwickler').addEventListener('click', function () { setFassung('entwickler'); });
+  $('fassungPlaytester').addEventListener('click', function () { setFassung('playtester'); });
+  renderFassung();
   window.addEventListener('resize', fitHeader);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHeader, function () { /* egal */ });
   // Start-Rahmen folgt #playSlot (Meldungen, Liste, Schrift, Fenstergröße verschieben ihn).
