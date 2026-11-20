@@ -21,7 +21,7 @@
   Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
   Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-medien.js (Bibliothek:
-  Datenmodell, Git-Blob-SHA, Status, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -259,6 +259,56 @@ button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; backg
 }
 #toast.on{ opacity:1; }
 @media (prefers-reduced-motion: reduce){ #toast{ transition:none; } }
+/* F3b: Reiter „Seiten | Bibliothek“ und Bibliothek (flyer-bibliothek.js) */
+.versionszeile{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+.reiter button{ min-width:96px; font-size:16px; }
+.reiter-zusatz{ font-size:13px; color:var(--muted); }
+main[data-reiter="bibliothek"] > #pfad, main[data-reiter="bibliothek"] > #ordnerKacheln, main[data-reiter="bibliothek"] > #seitenTitel,
+main[data-reiter="bibliothek"] > #leer, main[data-reiter="bibliothek"] > #kacheln, main[data-reiter="bibliothek"] > #ausgeblendetZeile{ display:none !important; }
+.bibliothek{ min-width:0; }
+.b-kopf{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 8px; min-width:0; }
+.b-kopf .pfad{ flex:1 1 14em; margin:0; }
+.b-knoepfe{ display:flex; flex-wrap:wrap; gap:8px; }
+.b-filter{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 10px; min-width:0; }
+.b-wahl{ display:inline-flex; align-items:center; gap:6px; font-size:15px; }
+.b-wahl select{ font:inherit; font-size:15px; min-height:44px; padding:6px 10px; border-radius:10px; border:1px solid var(--line); background:var(--chip); color:var(--text); max-width:100%; }
+.b-platz{ font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.ok-marke{ font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:0 8px; margin-left:6px; }
+.ok-kopf{ display:flex; align-items:center; }
+.b-abschnitte .t-abschnitt{ margin:14px 0 8px; }
+.m-kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; min-width:0; }
+@media (max-width:600px){ .m-kacheln{ grid-template-columns:1fr 1fr; } }
+button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3px; min-width:0; padding:6px; border-radius:12px; text-align:left; background:var(--panel); }
+.m-bild{ position:relative; display:block; aspect-ratio:16/10; border-radius:8px; overflow:hidden; background:var(--field); }
+.m-bild img{ display:block; width:100%; height:100%; object-fit:cover; }
+.m-bild .m-ersatz{ position:absolute; left:0; right:0; top:0; padding:4px 6px; font-size:11px; color:var(--muted); }
+.m-spiel{ position:absolute; left:50%; top:50%; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%; background:rgba(0,0,0,.72); }
+.m-spiel::after{ content:""; position:absolute; left:13px; top:10px; border-style:solid; border-width:7px 0 7px 11px; border-color:transparent transparent transparent #fff; }
+.m-dauer{ position:absolute; right:4px; bottom:4px; font-size:11px; font-weight:600; padding:1px 6px; border-radius:6px; background:rgba(0,0,0,.72); color:#fff; }
+.m-name{ font-weight:600; font-size:14px; overflow-wrap:anywhere; min-width:0; }
+.m-art{ font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.m-status{ display:flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
+.m-status::before{ content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--muted); }
+.m-status[data-status="online"]::before{ background:#2fae66; }
+.m-status[data-status="geraet"]::before{ background:var(--sel); }
+.m-status[data-status="geraet"]{ color:var(--warn-text); }
+.m-gross{ font-size:12px; color:var(--warn-text); overflow-wrap:anywhere; }
+.m-vorschau{ position:relative; border-radius:10px; overflow:hidden; background:#0b1222; margin:0 0 8px; }
+.m-vorschau > img{ display:block; width:100%; height:auto; max-height:60vh; object-fit:contain; }
+.m-vorschau .m-ersatz{ display:flex; align-items:center; justify-content:center; min-height:120px; padding:12px; color:#c9cbe0; font-size:14px; text-align:center; }
+.m-kenn{ font-size:14px; color:var(--muted); margin:0 0 8px; overflow-wrap:anywhere; }
+.m-liste{ display:flex; flex-direction:column; gap:6px; margin:6px 0; min-width:0; }
+.m-zeile{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--field); font-size:14px; min-width:0; }
+.m-zeile .m-dname{ flex:1; min-width:0; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; overflow-wrap:anywhere; }
+.m-zeile .m-dgroesse{ flex:none; color:var(--muted); }
+.m-zeile.zu-gross{ border-color:var(--warn-line); }
+.m-anleitung{ margin:8px 0; padding-left:1.4em; font-size:14px; }
+.m-anleitung li{ margin:0 0 4px; overflow-wrap:anywhere; }
+.m-anleitung code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
+.g-mini.f-mini{ min-height:72px; }
+/* F3b: Player (Bibliothek, Vorlage „Bild / Video“) – flyer-player.js */
+.pl{ position:relative; background:#000; border-radius:10px; overflow:hidden; }
+.pl video{ display:block; width:100%; height:auto; max-height:60vh; background:#000; }
 /* ---------- Druck (flyer-export.js füllt #druck) ----------
    Nur Seiten-Container, nichts, was als Fläche gezeichnet wird (keine box-shadow, kein background-clip:text,
    kein filter, keine Verläufe mit Transparenz): iPhone/iPad zeigen so etwas in der PDF-Ansicht als Fläche. */
@@ -295,7 +345,7 @@ button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; backg
     <button type="button" id="btnNeueSeite" class="hervor" hidden>+ Seite</button>
     <button type="button" id="btnGrafikenVersion" class="hervor" hidden>Grafiken &amp; Daten exportieren</button>
   </div>
-  <div id="versionsZeile" class="versionszeile" hidden><button type="button" id="btnVersion" aria-haspopup="dialog"><b id="versionName">Version 1.1 ▾</b> <span id="versionZusatz" class="zusatz"></span></button></div>
+  <div id="versionsZeile" class="versionszeile" hidden><button type="button" id="btnVersion" aria-haspopup="dialog"><b id="versionName">Version 1.1 ▾</b> <span id="versionZusatz" class="zusatz"></span></button><div id="reiter" class="seg reiter" role="group" aria-label="Ansicht" hidden><button type="button" data-reiter="seiten" aria-pressed="true">Seiten</button><button type="button" data-reiter="bibliothek" aria-pressed="false">Bibliothek</button></div><span id="reiterZusatz" class="reiter-zusatz" hidden>gilt für alle Versionen</span></div>
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
@@ -319,6 +369,19 @@ button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; backg
   <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>
   <div id="kacheln" class="kacheln"></div>
   <div id="ausgeblendetZeile" class="ausgeblendet-zeile" hidden><button type="button" id="btnAusgeblendete" aria-pressed="false">Ausgeblendete zeigen (0)</button></div>
+  <section id="bibliothek" class="bibliothek" aria-label="Bibliothek" hidden>
+    <div class="b-kopf">
+      <nav id="bPfad" class="pfad" aria-label="Ordner der Bibliothek"><button type="button" id="bPfadZurueck" aria-label="Einen Ordner zurück">‹</button><ol id="bPfadListe"></ol></nav>
+      <div class="b-knoepfe"><button type="button" id="bHinzufuegen" class="hervor" aria-haspopup="dialog">+ Hinzufügen</button><button type="button" id="bOnline" aria-haspopup="dialog">Medien online</button></div>
+    </div>
+    <div class="b-filter"><label class="b-wahl">Version: <select id="bFilter" aria-label="Version"></select></label><span id="bPlatz" class="b-platz"></span></div>
+    <p id="bSafari" class="hinweis b-safari" role="note" hidden></p>
+    <p id="bZugriff" class="hinweis" role="status" hidden></p>
+    <div id="bOrdner" class="ordner-kacheln"></div>
+    <div id="bAbschnitte" class="b-abschnitte"></div>
+    <input type="file" id="bDateiFotos" multiple hidden>
+    <input type="file" id="bDateiDateien" multiple hidden>
+  </section>
 </main>
 
 <div id="vollbild" class="vollbild" role="dialog" aria-modal="true" aria-labelledby="vbTitel" hidden>
@@ -378,6 +441,7 @@ button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; backg
 <script src="flyer-bearbeiten.js"></script>
 <script src="flyer-uebersicht.js"></script>
 <script src="flyer-grafik.js"></script>
+<script src="flyer-bibliothek.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

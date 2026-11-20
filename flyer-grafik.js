@@ -343,7 +343,8 @@
   async function seiteVorbereiten(dok, nr, opt) {
     const ex = EX(), a = A();
     if (!ex || typeof ex.seitenBild !== 'function') throw new Error('Export nicht bereit');
-    const bild = await ex.seitenBild(dok, undefined, (w) => messen(w, dok));
+    // F3b: opt.optionen = Darstellungs-Optionen einer anderen als der geöffneten Version („Aus Flyern“ der Bibliothek)
+    const bild = await ex.seitenBild(dok, opt && opt.optionen ? opt.optionen : undefined, (w) => messen(w, dok));
     const m = bild.mess || { grafiken: [], zeilen: [], breite: bild.breite, hoehe: bild.hoehe };
     const vt = dateiTeil(nr), kennung = dateiTeil(dok.id);
     const schrift = m.grafiken.some((g) => g.echt && g.echt.mitText) ? await ex.schriftRegeln() : '';
