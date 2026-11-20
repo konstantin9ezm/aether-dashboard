@@ -242,6 +242,23 @@ describe('F3b c) Bibliothek', () => {
       await page.click('#tafelInhalt button.g-sel');
       await page.waitForFunction(() => window.AetherFlyer.paketV2().medien.dateien.length === 2);
       assert.equal(await page.evaluate(() => window.AetherFlyer.paketV2().medien.dateien[1].name), 'I1 · Kasten');
+      // „Aus Flyern“ zeigt die im Filter gewählte Version (bei „Alle“ die geöffnete): Version 1.2 mit S2 ausgeblendet und
+      // einer neuen Seite N1
+      await page.evaluate(() => window.AetherFlyer.aendereStruktur((p) => {
+        const ST = window.AetherFlyerStruktur;
+        ST.versionKopieren(p, '1.1', '1.2');
+        ST.seiteAusblenden(p, '1.2', 'S2', true);
+        ST.seiteAnlegen(p, '1.2', { vorlage: 'kennzahlen', heute: '2026-11-20' });
+      }));
+      assert.equal(await page.evaluate(() => window.AetherFlyer.version()), '1.1', 'geöffnet bleibt 1.1');
+      await page.selectOption('#bFilter', '1.2');
+      await page.click('#bOrdner .ordner-kachel[data-ordner="aus-flyern"] .ok-oeffnen');
+      await page.waitForFunction(() => /Grafiken auf 4 Seiten/.test(document.getElementById('bAbschnitte').textContent), null, { timeout: 30000 });
+      assert.match(await text(page, '#bAbschnitte > p.t-klein'), /Seiten von Version 1\.2/);
+      assert.deepEqual(await page.$$eval('#bAbschnitte .f-seite', (fs) => fs.map((f) => f.dataset.seite)), ['S1', 'E1', 'I1', 'N1'], 'Seiten der Version 1.2');
+      await page.selectOption('#bFilter', 'alle');
+      await page.waitForFunction(() => /Seiten von Version 1\.1/.test(document.querySelector('#bAbschnitte > p.t-klein').textContent));
+      assert.deepEqual(await page.$$eval('#bAbschnitte .f-seite', (fs) => fs.map((f) => f.dataset.seite)), ['S1', 'S2', 'E1', 'I1'], '„Alle“: die geöffnete Version 1.1');
       assert.deepEqual(log.errors, []);
     });
   });
@@ -289,18 +306,19 @@ describe('F3b d) Größen und Hinweise im Browser', () => {
 
   test('Safari-Hinweis (F10) dauerhaft in der Bibliothek nur in Safari außerhalb der Home-Bildschirm-App (nachgebaut) und nur bei Dateien „nur Gerät“', async () => {
     const ua = 'Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
-    for (const app of [false, true]) {
+    for (const [app, weg] of [[false, ''], [true, 'display-mode'], [true, 'navigator.standalone']]) {
       await mitSeite({ init: [[(a) => {
         Object.defineProperty(navigator, 'userAgent', { get: () => a.ua });
+        if (a.weg === 'navigator.standalone') Object.defineProperty(navigator, 'standalone', { get: () => true });
         const mm = window.matchMedia.bind(window);
-        window.matchMedia = (q) => (/display-mode:\s*standalone/.test(q) ? { matches: a.app, media: q, addEventListener() {}, removeEventListener() {} } : mm(q));
-      }, { ua, app }]].map(([fn, arg]) => ({ content: '(' + fn + ')(' + JSON.stringify(arg) + ')' })) }, async ({ page, log }) => {
+        window.matchMedia = (q) => (/display-mode:\s*standalone/.test(q) ? { matches: a.weg === 'display-mode', media: q, addEventListener() {}, removeEventListener() {} } : mm(q));
+      }, { ua, weg }]].map(([fn, arg]) => ({ content: '(' + fn + ')(' + JSON.stringify(arg) + ')' })) }, async ({ page, log }) => {
         await oeffneFlyer(page);
         await importiere(page, paketV1());
         await bibliothek(page);
         assert.ok(await page.isHidden('#bSafari'), 'ohne Dateien kein Hinweis');
         await hinzu(page, [{ name: 'Bild.png', type: 'image/png', bytes: PNG }]);
-        if (app) assert.ok(await page.isHidden('#bSafari'), 'Home-Bildschirm-App: kein Hinweis');
+        if (app) assert.ok(await page.isHidden('#bSafari'), 'Home-Bildschirm-App (' + weg + '): kein Hinweis');
         else assert.equal(await text(page, '#bSafari'), 'Nur auf diesem Gerät: in Safari können Daten nach einigen Tagen ohne Besuch gelöscht werden – Home-Bildschirm-App nutzen oder online stellen');
         assert.deepEqual(log.errors, []);
       });
