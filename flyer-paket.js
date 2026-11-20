@@ -13,7 +13,9 @@
 // Format (F3a): formatVersion 1 (ein Flyer: kategorien, dokumente) und 2 (versionen, je Version ordner und seiten).
 // lies/pruefe nehmen beide an und geben das Paket unverändert zurück; alsV2 wandelt v1 verlustfrei in v2 um (eine
 // Version 1.1, Ordner = Kategorien, alle Dokumente als Original-Seiten, HTML Byte für Byte gleich). Repariert wird nie:
-// Fehlerhafte Pakete werden mit Fundstelle abgelehnt. Unbekannte Felder bleiben überall erhalten (z. B. später medien).
+// Fehlerhafte Pakete werden mit Fundstelle abgelehnt. Unbekannte Felder bleiben überall erhalten.
+// F3b: optionales Feld „medien“ oben im Paket (Bibliothek für alle Versionen, nur Metadaten) – geprüft, wenn vorhanden
+// (pruefeMedien); formatVersion bleibt 2, denn F3a liest ein Paket mit diesem Feld weiter (unbekannte Felder bleiben).
 (function () {
   'use strict';
 
@@ -133,7 +135,84 @@
       if (c !== undefined && typeof c !== 'string') throw formatFehler('css.' + art + ' muss ein Text sein (gefunden: „' + kurz(c) + '“)');
     });
     if (fv === 1) pruefeV1(obj); else pruefeV2(obj);
+    if (obj.medien !== undefined) pruefeMedien(obj.medien);
     return obj;
+  }
+
+  // F3b: Bibliothek (Feld „medien“ oben im Paket, gilt für alle Versionen; nur Metadaten, nie Datei-Inhalte).
+  // { zaehler: { datei, ordner }, ordner: [{ id: mo<n>, name, eltern }], dateien: [{ id: m<n>, name, ordner, art, mime,
+  //   groesse, breite, hoehe, dauer, datei, gitSha, herkunft, quelle?, startbild, erstellt }] } – unbekannte Felder bleiben.
+  var MEDIEN_ARTEN = ['foto', 'video', 'animation', 'grafik'];
+  var KENNUNG_MEDIUM = /^m([1-9]\d*)$/;
+  var KENNUNG_MEDIEN_ORDNER = /^mo([1-9]\d*)$/;
+  // Dateiname im Repo aether-medien: nur ASCII, <name-als-slug>_<id>.<endung>
+  var MEDIEN_DATEI = /^[a-z0-9]+(?:-[a-z0-9]+)*_(m[1-9]\d*)\.([a-z0-9]{1,5})$/;
+  function istZahlOderNull(v, ab0) { return v === null || (typeof v === 'number' && isFinite(v) && (ab0 ? v >= 0 : v > 0)); }
+  function pruefeMedien(m) {
+    var wo = 'medien';
+    if (!istObjekt(m)) throw formatFehler(wo + ' muss ein Objekt sein (mit zaehler, ordner und dateien)');
+    if (!istObjekt(m.zaehler) || !istGanzzahlAb0(m.zaehler.datei) || !istGanzzahlAb0(m.zaehler.ordner)) {
+      throw formatFehler(wo + ': zaehler muss { datei, ordner } mit ganzen Zahlen ab 0 sein (gefunden: „' + kurz(m.zaehler) + '“)');
+    }
+    if (!Array.isArray(m.ordner)) throw formatFehler(wo + ': ordner muss eine Liste sein');
+    if (!Array.isArray(m.dateien)) throw formatFehler(wo + ': dateien muss eine Liste sein');
+    var ordner = new Map();
+    m.ordner.forEach(function (o, j) {
+      var w = wo + ': Ordner ' + (j + 1);
+      if (!istObjekt(o)) throw formatFehler(w + ': kein Objekt');
+      var k = typeof o.id === 'string' ? KENNUNG_MEDIEN_ORDNER.exec(o.id) : null;
+      if (!k) throw formatFehler(w + ': id muss „mo<n>“ sein (gefunden: „' + kurz(o.id) + '“)');
+      if (Number(k[1]) > m.zaehler.ordner) throw formatFehler(w + ': Kennung „' + o.id + '“ ist größer als zaehler.ordner (' + m.zaehler.ordner + ')');
+      if (ordner.has(o.id)) throw formatFehler(w + ': id „' + o.id + '“ kommt doppelt vor');
+      ordner.set(o.id, o);
+      pruefeText(o.name, w + ': name', false);
+      if (o.eltern !== null && typeof o.eltern !== 'string') throw formatFehler(w + ': eltern muss null oder eine Ordner-id sein (gefunden: „' + kurz(o.eltern) + '“)');
+    });
+    ordner.forEach(function (o) {
+      if (o.eltern === null) return;
+      if (!ordner.has(o.eltern)) throw formatFehler(wo + ': Ordner „' + o.id + '“: eltern „' + kurz(o.eltern) + '“ gibt es nicht');
+      var gesehen = new Set([o.id]), p = ordner.get(o.eltern);
+      while (p) {
+        if (gesehen.has(p.id)) throw formatFehler(wo + ': Ordner „' + o.id + '“ liegt in sich selbst (Kreis über „' + p.id + '“)');
+        gesehen.add(p.id);
+        p = p.eltern === null ? null : ordner.get(p.eltern);
+      }
+    });
+    var ids = new Set();
+    m.dateien.forEach(function (d, j) {
+      var w = wo + ': Datei ' + (j + 1);
+      if (!istObjekt(d)) throw formatFehler(w + ': kein Objekt');
+      var k = typeof d.id === 'string' ? KENNUNG_MEDIUM.exec(d.id) : null;
+      if (!k) throw formatFehler(w + ': id muss „m<n>“ sein (gefunden: „' + kurz(d.id) + '“)');
+      if (Number(k[1]) > m.zaehler.datei) throw formatFehler(w + ': Kennung „' + d.id + '“ ist größer als zaehler.datei (' + m.zaehler.datei + ')');
+      if (ids.has(d.id)) throw formatFehler(w + ': id „' + d.id + '“ kommt doppelt vor');
+      ids.add(d.id);
+      w = wo + ': Datei ' + d.id;
+      pruefeText(d.name, w + ': name', false);
+      if (d.name.length > 120) throw formatFehler(w + ': name hat mehr als 120 Zeichen');
+      if (!Array.isArray(d.ordner)) throw formatFehler(w + ': ordner muss eine Liste sein');
+      var zu = new Set();
+      d.ordner.forEach(function (oid) {
+        if (typeof oid !== 'string' || !ordner.has(oid)) throw formatFehler(w + ': Ordner „' + kurz(oid) + '“ gibt es in der Bibliothek nicht');
+        if (zu.has(oid)) throw formatFehler(w + ': Ordner „' + oid + '“ doppelt zugeordnet');
+        zu.add(oid);
+      });
+      if (MEDIEN_ARTEN.indexOf(d.art) < 0) throw formatFehler(w + ': art muss foto, video, animation oder grafik sein (gefunden: „' + kurz(d.art) + '“)');
+      pruefeText(d.mime, w + ': mime', false);
+      if (!istGanzzahlAb0(d.groesse)) throw formatFehler(w + ': groesse muss eine ganze Zahl ab 0 (Bytes) sein (gefunden: „' + kurz(d.groesse) + '“)');
+      if (!istZahlOderNull(d.breite) || !istZahlOderNull(d.hoehe)) throw formatFehler(w + ': breite und hoehe müssen Zahlen größer 0 oder null sein');
+      if (!istZahlOderNull(d.dauer, true)) throw formatFehler(w + ': dauer muss eine Zahl ab 0 (Sekunden) oder null sein');
+      if (!istZahlOderNull(d.startbild, true)) throw formatFehler(w + ': startbild muss eine Zahl ab 0 (Sekunden) oder null sein');
+      var dm = typeof d.datei === 'string' ? MEDIEN_DATEI.exec(d.datei) : null;
+      if (!dm || dm[1] !== d.id) throw formatFehler(w + ': datei muss „<name>_' + d.id + '.<endung>“ sein, nur ASCII (gefunden: „' + kurz(d.datei) + '“)');
+      if (typeof d.gitSha !== 'string' || !/^[0-9a-f]{40}$/.test(d.gitSha)) throw formatFehler(w + ': gitSha muss 40 Hex-Zeichen sein (gefunden: „' + kurz(d.gitSha) + '“)');
+      if (d.herkunft !== 'eigen' && d.herkunft !== 'flyer-kopie') throw formatFehler(w + ': herkunft muss „eigen“ oder „flyer-kopie“ sein (gefunden: „' + kurz(d.herkunft) + '“)');
+      if (d.herkunft === 'flyer-kopie' && (!istObjekt(d.quelle) || !istVersionsNummer(d.quelle.version) || typeof d.quelle.seite !== 'string' || !d.quelle.seite ||
+          !(typeof d.quelle.grafik === 'number' && Number.isInteger(d.quelle.grafik) && d.quelle.grafik >= 1))) {
+        throw formatFehler(w + ': quelle muss { version, seite, grafik } sein (Grafik aus einem Flyer)');
+      }
+      pruefeText(d.erstellt, w + ': erstellt', false);
+    });
   }
 
   // Felder eines Dokuments (v1) bzw. einer Seite (v2), die beide Formate gleich haben
@@ -1023,6 +1102,8 @@
     lies: lies,
     pruefe: pruefe,
     alsV2: alsV2,
+    pruefeMedien: pruefeMedien,
+    MEDIEN_ARTEN: Object.freeze(MEDIEN_ARTEN.slice()),
     istVersionsNummer: istVersionsNummer,
     vergleicheVersion: vergleicheVersion,
     datum: datum,

@@ -278,7 +278,10 @@
     // F3a: Struktur-Änderungen der geöffneten Version (neue, kopierte, umbenannte, ausgeblendete, gelöschte Seiten …)
     try { s.struktur = h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung() : []; } catch (e) { s.struktur = []; }
     const datei = new File([JSON.stringify(s, null, 2)], DATEI_SICHERUNG, { type: 'application/json' });
-    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert'));
+    // F3b: die Sicherung erfasst nur die Metadaten der Bibliothek – die Dateien selbst über „Medien online stellen“
+    const mitMedien = s.struktur.some((f) => /^(M|MO)\|\*\|/.test(f.k));
+    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert' +
+      (mitMedien ? ' – Dateien der Bibliothek nicht darin: über „Medien online stellen“ bzw. „Alle sichern“' : '')));
   }
   async function einspielen(datei) {
     // Größe vor dem Lesen prüfen (eine sehr große falsche Datei nicht erst ganz in den Speicher holen)
@@ -298,9 +301,13 @@
     return { uebernommen: r.uebernommen, verworfen: r.verworfen, konflikte: r.konflikte, doks: r.doks, struktur: rs };
   }
   function strukturZahl() { try { return h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung().length : 0; } catch (e) { return 0; } }
+  // F3b: Struktur-Felder, die „Alle Änderungen verwerfen“ zurücknimmt (geöffnete Version; die Bibliothek bleibt)
+  function verwerfbarZahl() {
+    try { return h && typeof h.strukturVerwerfbar === 'function' ? h.strukturVerwerfbar() : strukturZahl(); } catch (e) { return 0; }
+  }
   // „Alle Änderungen verwerfen“: Texte, Status und Struktur der geöffneten Version
   async function verwerfen() {
-    const n = AE().alle().length, ns = strukturZahl();
+    const n = AE().alle().length, ns = verwerfbarZahl();
     if (!n && !ns) { meldung('Keine Änderungen'); return false; }
     let ja = false;
     try { ja = window.confirm('Alle Änderungen verwerfen? Das lässt sich nicht rückgängig machen.'); } catch (e) { ja = false; }
@@ -407,7 +414,7 @@
     const n = AE().alle().length + strukturZahl();
     const pk = !!paket();
     for (const id of ['btnExport', 'btnSichern', 'btnEinspielen', 'btnVerwerfen']) { const b = $(id); if (b) b.hidden = !pk; }
-    const v = $('btnVerwerfen'); if (v) v.disabled = !n;
+    const v = $('btnVerwerfen'); if (v) v.disabled = !(AE().alle().length + verwerfbarZahl());
     const s = $('btnSichern'); if (s) s.disabled = !n;
     const hl = $('onlineStellen'); if (hl) hl.hidden = !pk;
     const m = $('vbModus'); if (m) m.hidden = false;
