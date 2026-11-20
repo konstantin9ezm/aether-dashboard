@@ -417,6 +417,125 @@
     return true;
   }
 
+  /* ---------- „Medien online stellen“ (Teil E) ---------- */
+  // Alle Dateien „nur Gerät“ mit dem Dateinamen im Repo; über 25 MiB mit Hinweis (E5) und nicht in „Alle sichern“.
+  // „Alle sichern“: eine ZIP („stored“, CRC stückweise vorab, Inhalte als Blob-Teile – nichts doppelt im Speicher) bis
+  // 512 MiB, darüber die Dateien einzeln (Teilen mit mehreren Dateien, sonst Herunterladen je Datei).
+  function sicherungsTag() { return heute(); }
+  function commitText(n) { return 'Medien ' + sicherungsTag() + '.' + n + ' [skip ci]'; }
+  async function naechsteNummer() {
+    const s = S(), w = s && typeof s.ladeGeraet === 'function' ? await s.ladeGeraet('medienSicherung') : null;
+    const m = /^(\d{4}-\d{2}-\d{2})\.(\d+)$/.exec(String(w || ''));
+    return m && m[1] === sicherungsTag() ? Number(m[2]) + 1 : 1;
+  }
+  function nurGeraet() { return M().dateien(pk()).filter((d) => I().statusVon(d) === 'geraet'); }
+  // Vorbereiten (beim Öffnen der Tafel, damit das Teilen synchron im Klick geht) → { art: 'zip'|'einzeln', datei|dateien, n, bytes }
+  async function sicherungVorbereiten(liste) {
+    const s = S(), Z = window.AetherFlyerZip;
+    const teile = [];
+    for (const d of liste) {
+      const e = s ? await s.ladeMedienInhalt(d.id) : null;
+      if (e && e.blob) teile.push({ d: d, blob: e.blob });
+    }
+    const bytes = teile.reduce((x, t) => x + t.blob.size, 0);
+    if (!teile.length) return { art: 'leer', n: 0, bytes: 0, fehlen: liste.length };
+    if (bytes <= M().ZIP_MAX && Z && typeof Z.schreiber === 'function') {
+      const sch = Z.schreiber(new Date());
+      for (const t of teile) sch.add(t.d.datei, t.blob, { crc: await M().crc32Blob(t.blob) });
+      const datei = new File(sch.teile(), 'aether-medien-' + sicherungsTag() + '.zip', { type: 'application/zip' });
+      return { art: 'zip', datei: datei, n: teile.length, bytes: bytes, fehlen: liste.length - teile.length };
+    }
+    return { art: 'einzeln', dateien: teile.map((t) => new File([t.blob], t.d.datei, { type: t.d.mime })), n: teile.length, bytes: bytes, fehlen: liste.length - teile.length };
+  }
+  function allesSichern(vb, ev, fertig) {
+    if (!vb || !vb.n) return;
+    const g = G();
+    if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
+    const gemerkt = () => { const s = S(); if (s && typeof s.speichereGeraet === 'function') s.speichereGeraet('medienSicherung', sicherungsTag() + '.' + vb.nummer).catch(() => {}); if (fertig) fertig(); };
+    if (vb.art === 'zip') {
+      const b = B();
+      if (b && typeof b.weitergeben === 'function') b.weitergeben(vb.datei, 'Aether Medien', () => { meldung(vb.n + (vb.n === 1 ? ' Datei' : ' Dateien') + ' als ZIP gesichert'); gemerkt(); });
+      else if (EX()) { EX().herunterladenUndFreigeben(vb.datei); gemerkt(); }
+      return;
+    }
+    // Über der ZIP-Grenze: Dateien einzeln (ein Teilen-Dialog mit allen Dateien, sonst je Datei herunterladen)
+    if (g.kannTeilen(vb.dateien)) {
+      navigator.share({ files: vb.dateien, title: 'Aether Medien' }).then(() => { meldung(vb.n + ' Dateien gesichert'); gemerkt(); }).catch(() => {});
+      return;
+    }
+    if (EX()) { for (const f of vb.dateien) EX().herunterladenUndFreigeben(f); meldung(vb.n + ' Dateien werden heruntergeladen'); gemerkt(); }
+  }
+  function onlineStellen() {
+    const u = U();
+    if (!u) return;
+    let vb = null, nummer = 1, vbNr = 0;
+    u.tafel('Medien online stellen', (inhalt) => {
+      const alle = nurGeraet();
+      const klein = alle.filter((d) => !M().zuGrossFuerUpload(d.groesse));
+      const summe = alle.reduce((x, d) => x + d.groesse, 0);
+      const kopf = el('p', alle.length ? alle.length + (alle.length === 1 ? ' neue Datei' : ' neue Dateien') + ' nur auf diesem Gerät · zusammen ' + M().groesseText(summe)
+        : 'Alle Dateien der Bibliothek liegen online in aether-medien (oder es gibt noch keine).', 'm-kenn');
+      kopf.id = 'mOnlineKopf';
+      inhalt.appendChild(kopf);
+      const liste = el('div', undefined, 'm-liste');
+      for (const d of alle) {
+        const gross = M().zuGrossFuerUpload(d.groesse);
+        const z = el('div', undefined, 'm-zeile' + (gross ? ' zu-gross' : ''));
+        z.setAttribute('data-id', d.id);
+        const t = el('div', undefined, 'm-dname');
+        t.appendChild(el('div', d.datei));
+        if (gross) t.appendChild(el('div', M().HINWEIS_GROSS, 't-hinweis'));
+        if (!M().hatInhalt(d.id)) t.appendChild(el('div', 'Inhalt nicht auf diesem Gerät – von dem Gerät aus hochladen, auf dem die Datei hinzugefügt wurde.', 't-hinweis'));
+        z.append(t, el('span', M().groesseText(d.groesse), 'm-dgroesse'));
+        liste.appendChild(z);
+      }
+      inhalt.appendChild(liste);
+      const ol = el('ol', undefined, 'm-anleitung');
+      const schritt = (teile) => { const li = el('li'); for (const x of teile) li.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); ol.appendChild(li); };
+      const code = (t) => el('code', t);
+      schritt(['„Alle sichern“ → in der Dateien-App ablegen (ZIP vorher in der Dateien-App entpacken)']);
+      schritt(['Upload-Seite öffnen: github.com/konstantin9ezm/aether-medien/upload/main/medien']);
+      const ct = code(commitText(nummer));
+      ct.id = 'mCommit';
+      schritt(['Dateien hineinziehen bzw. auswählen, Nachricht ', ct]);
+      schritt(['„Commit changes“']);
+      schritt(['Danach wie gewohnt „Paket exportieren“ und das Paket ins Repo aether hochladen (das Paket kennt Dateinamen und Prüfsummen). Dann „Online prüfen“: die Dateien werden grün.']);
+      inhalt.appendChild(ol);
+      const row = el('div', undefined, 'row');
+      const sichern = knopf('Alle sichern', (ev) => allesSichern(vb, ev, () => { nummer++; ct.textContent = commitText(nummer); }), 'g-sel');
+      sichern.id = 'mAlleSichern';
+      sichern.disabled = true;
+      sichern.style.width = 'auto';
+      sichern.style.margin = '0';
+      const link = el('a', 'Upload-Seite öffnen');
+      link.href = M().UPLOAD_SEITE;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.id = 'mUploadSeite';
+      link.className = 'g-knopf-link';
+      row.append(sichern, link);
+      inhalt.appendChild(row);
+      const stand = el('p', '', 't-klein');
+      stand.id = 'mSicherungStand';
+      stand.setAttribute('role', 'status');
+      inhalt.appendChild(stand);
+      inhalt.appendChild(el('p', 'Dateien über 25 MiB: GitHub nimmt im Browser höchstens 25 MiB je Datei an – sie bleiben vorerst nur auf diesem Gerät und kommen nicht in „Alle sichern“.', 't-hinweis'));
+      // Vorbereiten (einmal je Inhalt der Tafel)
+      const nr = ++vbNr;
+      if (!klein.length) { stand.textContent = alle.length ? 'Keine Datei bis 25 MiB zum Sichern.' : ''; return; }
+      stand.textContent = 'Wird vorbereitet …';
+      Promise.all([naechsteNummer(), sicherungVorbereiten(klein)]).then(([n, v]) => {
+        if (nr !== vbNr) return;
+        nummer = n; ct.textContent = commitText(nummer);
+        vb = v; vb.nummer = n;
+        sichern.disabled = !v.n;
+        stand.textContent = v.art === 'zip' ? 'Bereit: ' + v.n + (v.n === 1 ? ' Datei' : ' Dateien') + ' als ZIP (' + M().groesseText(v.datei.size) + ')'
+          : v.art === 'einzeln' ? 'Bereit: ' + v.n + ' Dateien einzeln (zusammen über ' + M().groesseText(M().ZIP_MAX) + ' – zu groß für eine ZIP)' : 'Kein Inhalt auf diesem Gerät.';
+        if (v.fehlen) stand.textContent += ' · ' + v.fehlen + ' ohne Inhalt auf diesem Gerät';
+      }, (e) => { if (nr === vbNr) stand.textContent = 'Sichern nicht möglich: ' + ((e && e.message) || e); });
+    });
+  }
+
   /* ---------- Einrichten ---------- */
   function einrichten() {
     if (eingerichtet) return;
@@ -433,6 +552,8 @@
     dateiMenue: dateiMenue,
     loeschen: loeschen,
     inSeiteTafel: inSeiteTafel,
-    neueSeite: neueSeite
+    neueSeite: neueSeite,
+    onlineStellen: onlineStellen,
+    sicherungVorbereiten: sicherungVorbereiten
   });
 })();
