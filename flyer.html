@@ -23,7 +23,8 @@
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
   Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-medien.js (Bibliothek:
   Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer-medien-tafeln.js
-  (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer-player.js (Player, Medien in Seiten,
+  Modus „Medium“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -308,7 +309,10 @@ button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3
 .m-anleitung li{ margin:0 0 4px; overflow-wrap:anywhere; }
 .m-anleitung code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
 .g-mini.f-mini{ min-height:72px; }
-/* F3b: Player (Bibliothek, Vorlage „Bild / Video“) – flyer-player.js */
+/* F3b: Player (Bibliothek, Vorlage „Bild / Video“) – flyer-player.js; Leiste des Modus „Medium“ */
+.vb-wahl{ font:inherit; font-size:16px; width:100%; min-height:44px; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.vb-start input[type="range"]{ flex:1 1 10em; min-width:0; min-height:44px; accent-color:var(--sel); }
+.vb-edit .t-check{ margin:0; }
 .pl{ position:relative; background:#000; border-radius:10px; overflow:hidden; }
 .pl video{ display:block; width:100%; height:auto; max-height:60vh; background:#000; }
 /* ---------- Druck (flyer-export.js füllt #druck) ----------
@@ -394,7 +398,7 @@ button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3
     <span id="vbTitel"></span>
     <span id="vbWarnung" class="warnung" hidden>Text zu lang</span>
     <div id="vbModus" class="seg" role="group" aria-label="Modus" hidden>
-      <button type="button" data-modus="ansehen" aria-pressed="true">Ansehen</button><button type="button" data-modus="text" aria-pressed="false">Text</button><button type="button" data-modus="status" aria-pressed="false">Status</button>
+      <button type="button" data-modus="ansehen" aria-pressed="true">Ansehen</button><button type="button" data-modus="text" aria-pressed="false">Text</button><button type="button" data-modus="status" aria-pressed="false">Status</button><button type="button" data-modus="medium" aria-pressed="false" hidden>Medium</button>
     </div>
     <button type="button" id="vbReset" hidden>Dokument zurücksetzen</button>
     <button type="button" id="vbPdf" hidden>PDF</button>
@@ -407,6 +411,14 @@ button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3
     <label for="vbEditFeld" id="vbEditLabel" class="klein"></label>
     <textarea id="vbEditFeld" rows="3" spellcheck="true"></textarea>
     <div class="row"><button type="button" id="vbEditOk" class="primary">Übernehmen</button><button type="button" id="vbEditAb">Abbrechen</button><button type="button" id="vbEditOrig">Original</button></div>
+  </div>
+  <div id="vbMedium" class="vb-edit" hidden>
+    <span id="vbMediumLabel" class="klein"></span>
+    <label class="t-label" for="vbMediumWahl">Medium aus der Bibliothek</label>
+    <select id="vbMediumWahl" class="vb-wahl"></select>
+    <div id="vbMediumStartZeile" class="row vb-start"><label for="vbMediumStart" class="klein">Startbild bei</label><input type="range" id="vbMediumStart" min="0" step="0.1" value="0"><span id="vbMediumStartZeit" class="klein"></span><button type="button" id="vbMediumStartOk">Startbild übernehmen</button></div>
+    <div class="row" role="group" aria-label="Einstellungen"><label class="t-check"><input type="checkbox" id="vbMediumTonAus"> Ton aus</label><label class="t-check"><input type="checkbox" id="vbMediumSchleife"> Schleife</label><label class="t-check"><input type="checkbox" id="vbMediumAutostart"> Autostart (nur mit „Ton aus“)</label></div>
+    <p id="vbMediumHinweis" class="t-hinweis" role="status"></p>
   </div>
   <div id="vbStatus" class="vb-edit" hidden>
     <span id="vbStatusLabel" class="klein"></span>
@@ -445,6 +457,7 @@ button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3
 <script src="flyer-grafik.js"></script>
 <script src="flyer-bibliothek.js"></script>
 <script src="flyer-medien-tafeln.js"></script>
+<script src="flyer-player.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

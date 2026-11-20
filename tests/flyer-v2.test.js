@@ -185,14 +185,15 @@ describe('F3a c) Ordner', () => {
 });
 
 describe('F3a d) Seiten', () => {
-  test('Vorlagen tragen gültige Markierungen (Zähler, Status, Stand), Bild/Video gesperrt, Kopie, Kennungen N… nie wiederverwendet, Original nie löschbar, Ausblenden', () => {
+  test('Vorlagen tragen gültige Markierungen (Zähler, Status, Stand), Bild/Video freigeschaltet (F3b), Kopie, Kennungen N… nie wiederverwendet, Original nie löschbar, Ausblenden', () => {
     const pk = P.alsV2(paketV1());
     const v = ST.version(pk, '1.1');
-    assert.deepEqual(ST.VORLAGEN.map((x) => [x.id, !!x.gesperrt]), [['leer', false], ['titel-text', false], ['liste-status', false], ['kennzahlen', false], ['zwei-kaesten', false], ['bild-video', true]]);
-    assert.match(fehlerText(() => ST.seiteAnlegen(pk, '1.1', { vorlage: 'bild-video', heute: '2020-02-03' })), /Bild \/ Video kommt ab F3b/);
+    assert.deepEqual(ST.VORLAGEN.map((x) => [x.id, !!x.gesperrt]), [['leer', false], ['titel-text', false], ['liste-status', false], ['kennzahlen', false], ['zwei-kaesten', false], ['bild-video', false]]);
+    // F3b: „Bild / Video“ freigeschaltet (geprüft in tests/flyer-f3b.test.js); eine unbekannte Vorlage bleibt abgelehnt
+    assert.match(fehlerText(() => ST.seiteAnlegen(pk, '1.1', { vorlage: 'gibt-es-nicht', heute: '2020-02-03' })), /Vorlage nicht verfügbar/);
     const tZahl = { leer: 3, 'titel-text': 7, 'liste-status': 10, kennzahlen: 13, 'zwei-kaesten': 9 };
     const neu = {};
-    for (const vl of ST.VORLAGEN.filter((x) => !x.gesperrt)) {
+    for (const vl of ST.VORLAGEN.filter((x) => !x.gesperrt && x.id !== 'bild-video')) {   // F3b: Bild / Video eigens in flyer-f3b.test.js
       const s = ST.seiteAnlegen(pk, '1.1', { vorlage: vl.id, ordner: ['a'], heute: '2020-02-03' });
       neu[vl.id] = s;
       assert.equal(s.herkunft, 'eigen');

@@ -214,7 +214,7 @@
   const VORLAGEN = Object.freeze([
     { id: 'leer', name: 'Leer' }, { id: 'titel-text', name: 'Titel + Text' }, { id: 'liste-status', name: 'Liste mit Status' },
     { id: 'kennzahlen', name: 'Kennzahlen' }, { id: 'zwei-kaesten', name: 'Zwei Kästen' },
-    { id: 'bild-video', name: 'Bild / Video', gesperrt: true, hinweis: 'ab F3b' }
+    { id: 'bild-video', name: 'Bild / Video' }
   ].map(Object.freeze));
   // F3b: Platz des Mediums in der Vorlage „Bild / Video“ (16:9; den Inhalt setzt flyer-player.js bei jeder Darstellung
   // ein – im Paket steht nur der Verweis data-medium="m<n>", nie der Inhalt)

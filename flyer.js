@@ -337,7 +337,7 @@
     A.setzeAnpasser((wurzel, dok, ort) => {
       if (AE) {
         let markieren = false;
-        try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
+        try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && (B.modus() === 'text' || B.modus() === 'status'); } catch (e) { markieren = false; }
         try { AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren }); } catch (e) { /* Basis bleibt sichtbar */ }
       }
       if (mitPlayer) PL.anpassen(wurzel, dok, ort);

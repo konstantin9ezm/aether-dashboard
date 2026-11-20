@@ -279,7 +279,8 @@ const DRUCK_HOST = (id) => `#druck .druck-seite[data-id="${id}"] .flyer-host`;
 const vbDok = (page) => page.locator(VB_HOST);
 const vollbildOffen = (page) => page.$eval('#vollbild', (v) => !v.hidden && getComputedStyle(v).display !== 'none');
 const zaehlerVb = (page) => text(page, '#vbZaehler');
-const modusJetzt = (page) => page.$$eval('#vbModus button[data-modus]', (bs) => bs.map((b) => [b.dataset.modus, b.getAttribute('aria-pressed')]));
+// F3b: nur die sichtbaren Knöpfe („Medium“ erscheint nur bei Seiten aus der Vorlage „Bild / Video“)
+const modusJetzt = (page) => page.$$eval('#vbModus button[data-modus]:not([hidden])', (bs) => bs.map((b) => [b.dataset.modus, b.getAttribute('aria-pressed')]));
 // Alles Prüfbare eines dargestellten Dokuments (Shadow Root eines Darstellungs-Hosts)
 const dokInfo = (page, hostSel) => page.$eval(hostSel, (h) => {
   const r = h.shadowRoot;

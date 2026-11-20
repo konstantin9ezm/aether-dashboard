@@ -39,7 +39,7 @@ var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js',
   'flyer.html', 'flyer.js', 'flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js',
   'flyer-zip.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js',
-  'flyer-medien.js', 'flyer-bibliothek.js', 'flyer-medien-tafeln.js'].concat(SCHRIFT_DATEIEN);
+  'flyer-medien.js', 'flyer-bibliothek.js', 'flyer-medien-tafeln.js', 'flyer-player.js'].concat(SCHRIFT_DATEIEN);
 
 function shellKey(url) {
   // Ohne Query und Hash, damit "…/?x#projekt" denselben Eintrag trifft wie "…/".

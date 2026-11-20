@@ -309,7 +309,7 @@
   function htmlJetzt(nr, seite) { const ae = AE(); return ae && typeof ae.htmlMitSchicht === 'function' ? ae.htmlMitSchicht(nr, seite) : seite.html; }
   // Kleine Skizze einer Vorlage (nur Flächen, kein Text außer den Zahlen)
   function skizze(id) {
-    const d = el('div', undefined, 'skizze' + (id === 'bild-video' ? ' gesperrt' : ''));
+    const d = el('div', undefined, 'skizze');   // F3b: „Bild / Video“ ist freigeschaltet
     d.setAttribute('aria-hidden', 'true');
     const i = (k) => el('i', undefined, k || '');
     if (id === 'titel-text') d.append(i('t'), i(), i(), i(), i('p'));

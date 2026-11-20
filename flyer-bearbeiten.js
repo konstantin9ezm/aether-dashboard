@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const MODI = ['ansehen', 'text', 'status'];
+  const MODI = ['ansehen', 'text', 'status', 'medium'];   // F3b: „Medium“ (Seiten aus der Vorlage „Bild / Video“, flyer-player.js)
   const STATUS_NAMEN = { ok: 'fertig', run: 'läuft gerade', next: 'als Nächstes', plan: 'geplant', '': 'ohne Status' };
   const DATEI_PAKET = 'aether-flyer-paket.json';
   const DATEI_SICHERUNG = 'aether-flyer-aenderungen.json';
@@ -64,6 +64,7 @@
     const box = $('vbModus');
     if (box) for (const b of box.querySelectorAll('button[data-modus]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-modus') === m));
     knopfReset();
+    try { document.dispatchEvent(new CustomEvent('flyer:modus', { detail: { modus: m } })); } catch (e) { /* egal */ }
     // Markierungen gibt es nur in Text/Status: beim Wechsel das Vollbild neu darstellen
     if (neuZeichnen !== false && war !== m && A() && offenesDok()) A().vollbildNeu();
   }
@@ -71,7 +72,7 @@
     const r = $('vbReset');
     if (!r) return;
     const d = offenesDok();
-    r.hidden = modus === 'ansehen' || !d || !AE().hatAenderungen(d.id);
+    r.hidden = (modus !== 'text' && modus !== 'status') || !d || !AE().hatAenderungen(d.id);
   }
 
   /* ---------- Leisten (Text, Status) ---------- */
@@ -128,7 +129,7 @@
 
   // Klick/Antippen im Vollbild (Modi Text und Status): Element mit data-t bzw. data-s im Dokument finden
   function klickImDokument(ev) {
-    if (modus === 'ansehen') return;
+    if (modus !== 'text' && modus !== 'status') return;   // „Ansehen“ und „Medium“: Klicks gehören dem Dokument bzw. Player
     const a = A(), dok = offenesDok();
     const host = a && typeof a.vollbildHost === 'function' ? a.vollbildHost() : null;
     if (!dok || !host || !host.shadowRoot) return;
