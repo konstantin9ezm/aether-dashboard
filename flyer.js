@@ -550,6 +550,8 @@
     }
     if (M && BI && typeof BI.einrichten === 'function') {
       try { BI.einrichten(medienHilfen); } catch (e) { /* Seite läuft ohne Bibliothek */ }
+      const MT = window.AetherFlyerMedienTafeln || null;
+      if (MT && typeof MT.einrichten === 'function') { try { MT.einrichten(); } catch (e) { /* ohne Hinzufügen und Menüs */ } }
     }
     if (M && MO && typeof MO.einrichten === 'function') {
       try { Promise.resolve(MO.einrichten(medienHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Medien online */ }

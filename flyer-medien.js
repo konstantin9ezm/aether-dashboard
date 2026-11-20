@@ -431,6 +431,46 @@
   // „Zuletzt hinzugefügt“: höchstens 12, neueste zuerst
   function zuletzt(liste) { return liste.slice().sort((a, b) => (a.erstellt < b.erstellt ? 1 : a.erstellt > b.erstellt ? -1 : 0)).slice(0, MAX_ZULETZT); }
 
+  // Medium in einer Seite (Vorlage „Bild / Video“): nur der Verweis und die Einstellungen stehen im HTML –
+  // data-medium="m<n>", data-ton="aus", data-schleife="an", data-autostart="an" (Standard: Ton an, Schleife und
+  // Autostart aus). F7: Autostart nur zusammen mit „Ton aus“ (Browser starten Videos von selbst nur ohne Ton).
+  const PLATZ_RE = /\bdata-medium\s*=/;
+  function hatMediumPlatz(html) { return PLATZ_RE.test(String(html || '')); }
+  function einstellungen(e) {
+    return { medium: e.getAttribute('data-medium') || '', tonAus: e.getAttribute('data-ton') === 'aus',
+      schleife: e.getAttribute('data-schleife') === 'an', autostart: e.getAttribute('data-autostart') === 'an' };
+  }
+  function mediumPlatz(html) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + String(html || ''), 'text/html');
+    return { doc: doc, el: doc.body.querySelector('[data-medium]') };
+  }
+  // Einstellungen des Medium-Platzes einer Seite → { medium, tonAus, schleife, autostart } | null
+  function mediumVon(html) { if (!hatMediumPlatz(html)) return null; const m = mediumPlatz(html); return m.el ? einstellungen(m.el) : null; }
+  function htmlMitMedium(html, werte) {
+    const m = mediumPlatz(html);
+    if (!m.el) throw fehler('medien', 'Kein Medium-Platz.', 'Diese Seite hat keinen Platz für ein Medium (Vorlage „Bild / Video“).');
+    const e = m.el, w = werte || {};
+    if ('medium' in w) {
+      if (w.medium && !/^m[1-9]\d*$/.test(String(w.medium))) throw fehler('medien', 'Ungültiges Medium.', String(w.medium));
+      e.setAttribute('data-medium', w.medium || '');
+    }
+    const schalter = (an, attr, wert) => { if (an) e.setAttribute(attr, wert); else e.removeAttribute(attr); };
+    if ('tonAus' in w) schalter(w.tonAus === true, 'data-ton', 'aus');
+    if ('schleife' in w) schalter(w.schleife === true, 'data-schleife', 'an');
+    if ('autostart' in w) schalter(w.autostart === true, 'data-autostart', 'an');
+    const neu = einstellungen(e);
+    if (neu.autostart && !neu.tonAus) throw fehler('medien', 'Autostart nur mit „Ton aus“.', 'Browser starten ein Video von selbst nur ohne Ton – erst „Ton aus“ wählen.');
+    return m.doc.body.innerHTML;
+  }
+  function seiteMitMedium(pk, nummer, seiteId, werte) {
+    const v = (pk.versionen || []).find((x) => x.nummer === nummer);
+    const s = v ? v.seiten.find((x) => x.id === seiteId) : null;
+    if (!s) throw fehler('medien', 'Seite nicht gefunden.', 'Seite ' + seiteId + ' gibt es in Version ' + nummer + ' nicht (mehr).');
+    if (werte && werte.medium && !datei(pk, werte.medium)) throw fehler('medien', 'Datei nicht gefunden.', 'Die Datei ' + werte.medium + ' gibt es in der Bibliothek nicht.');
+    s.html = htmlMitMedium(s.html, werte);
+    return s;
+  }
+
   /* ---------- Status (F3) und Hinweise ---------- */
   // onlineShas = Set der Git-Blob-SHAs in aether-medien/medien/ (null = noch nie geprüft)
   function status(d, onlineShas) { if (!d) return 'flyer'; return onlineShas && onlineShas.has(d.gitSha) ? 'online' : 'geraet'; }
@@ -516,6 +556,136 @@
   }
   function setzeLader(fn) { laderOnline = typeof fn === 'function' ? fn : null; }
 
+  /* ---------- Einlesen im Browser: Maße, Dauer, Startbild/Vorschau, Mini, SVG bereinigen ---------- */
+  // Selbst gewählt: Vorschau bzw. Startbild höchstens 1600 px (lange Seite), Mini 360 px; JPEG 0,85 für Fotos und
+  // Videos, PNG für Grafiken und Animationen (Transparenz); höchstens 10 s für ein Video-Bild.
+  const BILD_MAX = 1600, MINI_MAX = 360, JPEG_Q = 0.85, VIDEO_FRIST_MS = 10000;
+  function mitFrist(p, ms, ersatz) {
+    let t;
+    return Promise.race([Promise.resolve(p).catch(() => ersatz), new Promise((r) => { t = setTimeout(() => r(ersatz), ms); })]).finally(() => clearTimeout(t));
+  }
+  function canvasBlob(c, typ) {
+    return new Promise((ok) => { try { c.toBlob((b) => ok(b || null), typ, typ === 'image/jpeg' ? JPEG_Q : undefined); } catch (e) { ok(null); } });
+  }
+  // Quelle (ImageBitmap, img, video) verkleinert als Blob (nie vergrößert); Canvas danach freigeben (iOS)
+  async function verkleinert(quelle, w, h, max, typ) {
+    if (!(w > 0 && h > 0)) return null;
+    const f = Math.min(1, max / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * f)); c.height = Math.max(1, Math.round(h * f));
+    try {
+      const ctx = c.getContext('2d');
+      if (typ === 'image/jpeg') { ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, c.width, c.height); }
+      ctx.drawImage(quelle, 0, 0, c.width, c.height);
+      return await canvasBlob(c, typ);
+    } catch (e) { return null; } finally { c.width = c.height = 0; }
+  }
+  function bildElement(blob) {
+    return new Promise((ok) => {
+      const url = URL.createObjectURL(blob), img = new Image();
+      img.onload = () => ok({ img: img, url: url });
+      img.onerror = () => { URL.revokeObjectURL(url); ok(null); };
+      img.src = url;
+    });
+  }
+  // Bild dekodieren → { quelle, w, h, frei() } | null (z. B. HEIC in Chromium: null → „Vorschau nicht möglich“)
+  async function dekodieren(blob, istSvg) {
+    if (!istSvg && typeof createImageBitmap === 'function') {
+      try { const bmp = await createImageBitmap(blob); return { quelle: bmp, w: bmp.width, h: bmp.height, frei: () => { try { bmp.close(); } catch (e) { /* egal */ } } }; } catch (e) { /* weiter mit <img> */ }
+    }
+    const r = await mitFrist(bildElement(blob), VIDEO_FRIST_MS, null);
+    if (!r) return null;
+    const w = r.img.naturalWidth || (istSvg ? 1200 : 0), h = r.img.naturalHeight || (istSvg ? 800 : 0);
+    if (!(w > 0 && h > 0)) { URL.revokeObjectURL(r.url); return null; }
+    return { quelle: r.img, w: w, h: h, frei: () => URL.revokeObjectURL(r.url) };
+  }
+  // Video: Metadaten und ein Bild bei t Sekunden → { breite, hoehe, dauer, b, k, abspielbar, t }
+  function videoBild(blob, t, mime) {
+    return mitFrist(new Promise((ok) => {
+      const v = document.createElement('video'), url = URL.createObjectURL(blob);
+      let fertig = false;
+      const ende = (r) => { if (fertig) return; fertig = true; try { v.removeAttribute('src'); v.load(); } catch (e) { /* egal */ } URL.revokeObjectURL(url); ok(r); };
+      v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      v.onerror = () => ende({ breite: null, hoehe: null, dauer: null, b: null, k: null, abspielbar: false, t: null });
+      // WebM ohne Längenangabe (z. B. aus MediaRecorder): Dauer erst nach einem Sprung ans Ende bekannt
+      const dauerHolen = () => new Promise((r) => {
+        if (isFinite(v.duration)) { r(); return; }
+        const z = setTimeout(r, 3000);
+        v.ondurationchange = () => { if (isFinite(v.duration)) { clearTimeout(z); v.ondurationchange = null; r(); } };
+        try { v.currentTime = 1e9; } catch (e) { clearTimeout(z); r(); }
+      });
+      v.onloadeddata = async () => {
+        v.onloadeddata = null;
+        await dauerHolen();
+        const d = isFinite(v.duration) ? v.duration : null;
+        const ziel = Math.max(0, Math.min(typeof t === 'number' ? t : 1, d !== null ? Math.max(0, d - 0.05) : 1));
+        const zeichnen = async () => {
+          const w = v.videoWidth, h = v.videoHeight;
+          const b = await verkleinert(v, w, h, BILD_MAX, 'image/jpeg'), k = await verkleinert(v, w, h, MINI_MAX, 'image/jpeg');
+          ende({ breite: w || null, hoehe: h || null, dauer: d, b: b, k: k, abspielbar: true, t: Math.round(ziel * 100) / 100 });
+        };
+        if (Math.abs(v.currentTime - ziel) < 0.01) { zeichnen(); return; }
+        v.onseeked = () => { v.onseeked = null; zeichnen(); };
+        try { v.currentTime = ziel; } catch (e) { zeichnen(); }
+      };
+      v.src = url;
+    }), VIDEO_FRIST_MS, { breite: null, hoehe: null, dauer: null, b: null, k: null, abspielbar: false, t: null, zeitlimit: true }).then((r) => {
+      let kann = '';
+      try { kann = document.createElement('video').canPlayType(String(mime || '')); } catch (e) { kann = ''; }
+      r.formatBekannt = kann !== '';
+      return r;
+    });
+  }
+  // Startbild „aus der ersten Sekunde“: bei 1 s, bei kürzeren Videos in der Mitte
+  function startZeit(dauer) { return typeof dauer === 'number' && dauer > 0 ? Math.min(1, dauer / 2) : 1; }
+  // Eine Datei einlesen: format = formatVon(…), kopf = erste Bytes (Animation) → { art, breite, hoehe, dauer, startbild,
+  // b, k, vorschau (Boolean), abspielbar (Video) }
+  async function einlesen(blob, format, kopf) {
+    let art = format.art, dauer = null;
+    if (format.endung === 'gif' || format.endung === 'png' || format.endung === 'webp') {
+      const a = animationLesen(kopf || new Uint8Array(0), format.endung);
+      art = a.animiert ? 'animation' : (format.endung === 'gif' ? 'foto' : format.art);
+      dauer = a.dauer;
+    }
+    if (art === 'video') {
+      const v0 = await videoBild(blob, 0, format.mime);
+      const t = startZeit(v0.dauer);
+      const v = v0.abspielbar && t > 0 ? await videoBild(blob, t, format.mime) : v0;
+      return { art: art, breite: v.breite, hoehe: v.hoehe, dauer: v.dauer !== null ? v.dauer : v0.dauer, startbild: v.abspielbar ? v.t : null,
+        b: v.b, k: v.k, vorschau: !!v.b, abspielbar: v0.abspielbar, formatBekannt: v0.formatBekannt };
+    }
+    const d = await dekodieren(blob, format.endung === 'svg');
+    if (!d) return { art: art, breite: null, hoehe: null, dauer: dauer, startbild: null, b: null, k: null, vorschau: false };
+    try {
+      const typ = art === 'foto' && format.endung !== 'png' && format.endung !== 'webp' ? 'image/jpeg' : 'image/png';
+      const b = await verkleinert(d.quelle, d.w, d.h, BILD_MAX, typ), k = await verkleinert(d.quelle, d.w, d.h, MINI_MAX, typ);
+      return { art: art, breite: d.w, hoehe: d.h, dauer: dauer, startbild: null, b: b, k: k, vorschau: !!b };
+    } finally { d.frei(); }
+  }
+  // F5: SVG nur als Bild – über DOMParser bereinigt (ohne Skripte, Handler, fremde Verweise, foreignObject); → Text | wirft
+  const SVG_WEG = new Set(['script', 'foreignobject', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'handler', 'listener', 'audio', 'video']);
+  function svgBereinigen(text) {
+    const doc = new DOMParser().parseFromString(String(text || ''), 'image/svg+xml');
+    const w = doc.documentElement;
+    if (!w || String(w.localName).toLowerCase() !== 'svg' || doc.getElementsByTagName('parsererror').length) throw fehler('medien', 'SVG nicht lesbar.', 'Die Datei ist keine gültige SVG-Grafik.');
+    const P = window.AetherFlyerPaket;
+    for (const el of Array.from(w.querySelectorAll('*'))) {
+      const n = String(el.localName || '').toLowerCase();
+      if (SVG_WEG.has(n) || ((n === 'set' || n.indexOf('animate') === 0) && /href|^on/i.test(String(el.getAttribute('attributeName') || '')))) { el.remove(); continue; }
+    }
+    for (const el of [w].concat(Array.from(w.querySelectorAll('*')))) {
+      for (const at of Array.from(el.attributes)) {
+        const n = at.name.toLowerCase(), ln = String(at.localName || '').toLowerCase();
+        if (n.indexOf('on') === 0 || ln.indexOf('on') === 0) { el.removeAttributeNode(at); continue; }
+        if (ln === 'href' || ln === 'src') { const v = at.value.trim(); if (!(v.charAt(0) === '#' || /^data:image\//i.test(v))) el.removeAttributeNode(at); continue; }
+        if (n === 'style' && P) { at.value = P.bereinigeCss(at.value); continue; }
+        if (/url\(/i.test(at.value) && !/^url\(\s*['"]?#/i.test(at.value.trim())) el.removeAttributeNode(at);
+      }
+      if (String(el.localName).toLowerCase() === 'style' && P) el.textContent = P.bereinigeCss(el.textContent);
+    }
+    return new XMLSerializer().serializeToString(w);
+  }
+
   window.AetherFlyerMedien = Object.freeze({
     GRENZE_UPLOAD: GRENZE_UPLOAD, MAX_DATEI: MAX_DATEI, AUTO_LADEN: AUTO_LADEN, ZIP_MAX: ZIP_MAX, WEBCRYPTO_MAX: WEBCRYPTO_MAX,
     MAX_NAME: MAX_NAME, MAX_ORDNERNAME: MAX_ORDNERNAME, MAX_ZULETZT: MAX_ZULETZT, AUS_FLYERN: AUS_FLYERN,
@@ -534,12 +704,15 @@
     ordnerAnlegen: ordnerAnlegen, ordnerUmbenennen: ordnerUmbenennen, ordnerVerschieben: ordnerVerschieben, ordnerLoeschen: ordnerLoeschen,
     neueKennung: neueKennung, verweiseIn: verweiseIn, verwendung: verwendung, verwendetIn: verwendetIn, gefiltert: gefiltert,
     inOrdner: inOrdner, zuletzt: zuletzt,
+    hatMediumPlatz: hatMediumPlatz, mediumVon: mediumVon, htmlMitMedium: htmlMitMedium, seiteMitMedium: seiteMitMedium,
     // Status und Hinweise
     status: status, istSafari: istSafari, safariHinweisNoetig: safariHinweisNoetig, laeuftAlsApp: laeuftAlsApp,
     platzMeldung: platzMeldung, annahmeMeldung: annahmeMeldung,
     // Laufzeit
     bildLaden: bildLaden, bild: bild, bildVergessen: bildVergessen, bilderBereit: bilderBereit, geraetLaden: geraetLaden,
     setzeOnline: setzeOnline, onlineStand: onlineStand, hatInhalt: hatInhalt, inhaltDa: inhaltDa, inhalt: inhalt, setzeLader: setzeLader,
-    datenUrlVon: datenUrlVon
+    datenUrlVon: datenUrlVon,
+    // Einlesen (Browser)
+    einlesen: einlesen, videoBild: videoBild, startZeit: startZeit, svgBereinigen: svgBereinigen, dekodieren: dekodieren
   });
 })();

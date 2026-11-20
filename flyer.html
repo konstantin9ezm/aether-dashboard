@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <meta name="theme-color" content="#0b0e14">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <title>Aether – Flyer</title>
@@ -16,12 +16,14 @@
   Paket-Inhalte werden nie als HTML-Text eingesetzt: bereinigt (flyer-paket.js, DOMParser) und je Dokument in einem
   eigenen Shadow Root dargestellt (flyer-ansicht.js). Das Aussehen der Dokumente kommt allein aus dem Paket-CSS;
   die Regeln hier gelten nur für die Seite selbst. Die CSP oben sichert zusätzlich, dass nichts aus dem Paket
-  etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API).
+  etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API). F3b: media-src blob: für
+  Videos der Bibliothek (Object-URLs aus dem eigenen Speicher, nie fremde Adressen).
   Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-struktur.js (Versionen, Ordner,
   Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
   Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-medien.js (Bibliothek:
-  Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer-medien-tafeln.js
+  (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -442,6 +444,7 @@ button.m-kachel{ display:flex; flex-direction:column; align-items:stretch; gap:3
 <script src="flyer-uebersicht.js"></script>
 <script src="flyer-grafik.js"></script>
 <script src="flyer-bibliothek.js"></script>
+<script src="flyer-medien-tafeln.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>
