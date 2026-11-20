@@ -11,7 +11,8 @@
   Flyer & Infografiken: zeigt die Dokumente eines Flyer-Pakets (aether-flyer-paket.json, Format „aether-flyer-paket“)
   als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js.
   Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem Repo aether (docs/flyer, Zweig main, gelesen über
-  die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt) und liegt danach in
+  die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt; F3b: Medien der Bibliothek
+  ebenso aus dem privaten Repo aether-medien, Ordner medien/) und liegt danach in
   IndexedDB „aether-flyer“ (ohne Token), damit die Seite offline startet (App-Hülle in sw.js).
   Paket-Inhalte werden nie als HTML-Text eingesetzt: bereinigt (flyer-paket.js, DOMParser) und je Dokument in einem
   eigenen Shadow Root dargestellt (flyer-ansicht.js). Das Aussehen der Dokumente kommt allein aus dem Paket-CSS;
@@ -24,7 +25,7 @@
   Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-medien.js (Bibliothek:
   Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer-medien-tafeln.js
   (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer-player.js (Player, Medien in Seiten,
-  Modus „Medium“, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Modus „Medium“, F3b), flyer-medien-online.js (Abgleich mit dem privaten Repo aether-medien, nur lesend, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -459,6 +460,7 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
 <script src="flyer-bibliothek.js"></script>
 <script src="flyer-medien-tafeln.js"></script>
 <script src="flyer-player.js"></script>
+<script src="flyer-medien-online.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>
