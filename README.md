@@ -819,6 +819,92 @@ CSV, JSON, ZIP); alles steht in derselben einen Paketdatei (Format v2, siehe unt
   zurück, „✕“ schließt alle). Esc schließt, Backspace geht eine Tafel zurück – beides nicht in Textfeldern (dort löscht
   Backspace Zeichen, Esc geht zurück).
 
+**Bibliothek (F3b)** – zweiter Reiter „Seiten | Bibliothek“ neben der Versionswahl, Zusatz „gilt für alle Versionen“
+(eine gemeinsame Bibliothek für alle Versionen; das Gerät merkt sich den Reiter).
+
+- **Aufbau:** Pfad „Bibliothek“ mit „‹“ (Backspace geht einen Ordner zurück, außer in Textfeldern), „+ Hinzufügen“,
+  „Medien online“, Filter „Version: Alle ▾“ (jede Version und „nicht verwendet“; eine Version zeigt die Dateien, die in
+  ihren Seiten vorkommen), belegter und freier Platz (`navigator.storage.estimate`), Ordner-Kacheln (Name, Zahl der
+  Dateien, Menü „···“: Öffnen, Umbenennen, Verschieben, Löschen – die Dateien bleiben, Unterordner wandern nach oben),
+  „+ Neuer Ordner“, darunter die Datei-Kacheln (Mini-Bild, bei Videos Spieldauer, bei Animationen „GIF“, Name,
+  Art · Größe, Status-Punkt). Ordner wie bei den Seiten: verschachtelt, eine Datei in mehreren Ordnern, getrennt von
+  den Seiten-Ordnern (Kennungen `mo<n>`). Auf der obersten Ebene „Zuletzt hinzugefügt“ (höchstens 12) und „Weitere ohne
+  Ordner“ (Dateien ohne Ordner, die nicht schon dort stehen).
+- **Status je Datei:** grün „online“ (eine Datei mit derselben Git-Blob-SHA liegt in `aether-medien/medien/`), orange
+  „nur Gerät“, grau „Flyer“ (Grafik aus „Aus Flyern“). Die Git-Blob-SHA (SHA-1 über `blob <Größe>\0` + Inhalt) rechnet
+  das Gerät selbst – bis 64 MiB mit Web Crypto, darüber stückweise mit eigenem SHA-1 (eine große Datei liegt so nie ganz
+  im Speicher).
+- **„Aus Flyern“** (Marke „nur lesen“): alle Grafiken der Seiten der gewählten Version (Filter-Version, bei „Alle“ die
+  geöffnete), nach Seite gruppiert – dieselbe Erkennung wie der Export „Grafiken & Daten“ (am echten Paket 227 Grafiken).
+  Nicht löschbar; „Als eigene Datei übernehmen“ macht eine benennbare PNG-Datei daraus („<Seite> · <Grafik-Art>“,
+  `herkunft` „flyer-kopie“ mit Seite und Grafik-Nummer).
+- **„+ Hinzufügen“:** Ziel = geöffneter Ordner. „Aus Fotos“ (Datei-Eingabefeld mit `accept="image/*,video/*"` – auf
+  iOS bietet das die Fotos-Mediathek an), „Aus Dateien“ (Endungen, öffnet die Dateien-App), beide mit Mehrfachauswahl,
+  und „Grafik aus einem Flyer“ (Seite → Grafik). Beim ersten Hinzufügen fragt die Seite `navigator.storage.persist()` an.
+  Je Datei: Format prüfen, Annahme bis 500 MB, Platz prüfen, SVG bereinigen (DOMParser, ohne Skripte, Handler, fremde
+  Verweise), Maße und Dauer lesen, Startbild aus der ersten Sekunde (bei 1 s, kürzere Videos in der Mitte) und Mini-Bild
+  erzeugen, Git-Blob-SHA. Name = Dateiname ohne Endung (umbenennbar). Die Tafel „Hinzugefügt“ zeigt je Datei die
+  tatsächliche Größe, den Hinweis über 25 MiB bzw. den Grund einer Ablehnung – nichts wird still gekürzt oder abgelehnt.
+- **Formate:** Fotos JPG, PNG, WebP, HEIC (Vorschau nur, wo der Browser HEIC kann; sonst „Vorschau in diesem Browser nicht
+  möglich“), Grafiken SVG (nur als Bild), Videos MP4, MOV, WebM (Hinweis, wenn der Browser das Format nicht abspielt),
+  Animationen GIF, animiertes WebP und APNG (am Inhalt erkannt, laufen wie Bilder in Schleife).
+- **Größen:** Über 25 MiB (26 214 400 Bytes; genau 25 MiB ist noch ohne) steht an der Kachel und in „Medien online
+  stellen“ „Zu groß für den Upload im Browser (GitHub: höchstens 25 MiB je Datei) – bleibt vorerst nur auf diesem Gerät.“
+  Angenommen wird bis 500 MB je Datei (500 MiB), wenn der Platz reicht (frei mindestens Größe + 5 % + 10 MB, sonst
+  „Nicht genug Speicher auf diesem Gerät …“). Vermutung (bisheriger Stand des WebKit-Blogs „Updates to Storage Policy“,
+  2023 – webkit.org war bei der Umsetzung nicht erreichbar): seit Safari 17 gilt ein Kontingent je Ursprung als Anteil
+  der Festplatte (Chromium ebenso), 500 MB reichen also meist; am Gerät noch nicht mit 500 MB geprüft (siehe Grenzen).
+- **Menü einer Datei:** großes Vorschaubild bzw. Player, Kenndaten (Art, Maße, Dauer, Größe, Status), Abspielen bzw.
+  Ansehen, Umbenennen (nur der Name in der Bibliothek; der Dateiname im Repo bleibt), In Ordner … (Ankreuzliste), In Seite
+  einsetzen … (Seiten der offenen Version aus der Vorlage „Bild / Video“ oder „Neue Seite mit diesem Medium“ im
+  aktuellen Seiten-Ordner), Herunterladen / Teilen (wie beim Bild), „Bearbeiten (ab F3d)“ ausgegraut, Löschen. Die
+  Rückfrage beim Löschen nennt die Seiten (`Version · Kennung`), die danach „Medium fehlt (m<n>)“ zeigen, und – wenn die
+  Datei online ist –, dass sie im Repo aether-medien bleibt, bis man sie dort selbst löscht.
+- **Player** (Bibliothek und Seiten): eigene Steuerleiste – Abspielen/Pause, Zeit „0:12 / 0:42“, Zeitleiste zum
+  Springen, Ton an/aus, Schleife, Tempo 0,5×/1×/1,5×/2×, Vollbild (iPad: Vollbild des Players, iPhone: Vollbild des
+  Videos) –, `playsinline`, Tippflächen ≥ 44 px auch in einer verkleinert dargestellten Seite, Leertaste
+  Abspielen/Pause außerhalb von Textfeldern. Standard: Ton an, Schleife aus, Autostart aus. Ein Video wird erst beim
+  Abspielen gelesen (`preload="none"`, Object-URL aus dem Geräte-Speicher, sonst online nachladen); Object-URLs werden
+  freigegeben, sobald der Player weg ist.
+- **Vorlage „Bild / Video“** (freigeschaltet): Titel, Untertitel, ein Medium (16:9) und der Kasten „Zu sehen“ mit Text.
+  Im Vollbild neuer Modus „Medium“ neben „Ansehen | Text | Status“ (nur bei solchen Seiten): Medium wählen, Startbild
+  (Zeitpunkt, erzeugt das Startbild neu), Ton aus, Schleife, Autostart – Autostart nur zusammen mit „Ton aus“ (Browser
+  starten Videos von selbst nur stumm), sonst ein Hinweis. In der Seite steht nur der Verweis:
+  `<div class="medium" data-medium="m<n>" … data-ton="aus" data-schleife="an" data-autostart="an">` – nie der Inhalt.
+  Fehlt die Datei: Platzhalter „Medium fehlt (m<n>)“. PDF, „Bild“ und Grafik-Export zeigen bei Videos das Startbild, bei
+  Animationen das erste Bild.
+- **„Medien online stellen“** (Knopf „Medien online“): alle Dateien „nur Gerät“ mit dem Dateinamen im Repo und der
+  Größe, Summe, Hinweis über 25 MiB. „Alle sichern“: eine ZIP aller Dateien bis 25 MiB („stored“; CRC vorab stückweise,
+  Inhalte als Blob-Teile, nichts doppelt im Speicher) bis zusammen 512 MiB, darüber die Dateien einzeln (ein
+  Teilen-Dialog mit allen Dateien, sonst Herunterladen je Datei). „Upload-Seite öffnen“:
+  `https://github.com/konstantin9ezm/aether-medien/upload/main/medien`. Anleitung: 1) „Alle sichern“ → in der Dateien-App
+  ablegen (ZIP vorher in der Dateien-App entpacken) · 2) Upload-Seite öffnen · 3) Dateien hineinziehen bzw. auswählen,
+  Nachricht `Medien <JJJJ-MM-TT>.<n> [skip ci]` · 4) „Commit changes“ · 5) danach wie gewohnt „Paket exportieren“ und
+  das Paket ins Repo aether hochladen (das Paket kennt Dateinamen und Prüfsummen). Danach „Online prüfen“: grün.
+- **Online-Abgleich** (im Ablauf von „Online prüfen“, beim Start, beim online-Ereignis und alle 10 Minuten – nur, wenn
+  die Bibliothek Dateien hat): `GET /repos/konstantin9ezm/aether-medien/contents/medien?ref=main` (bei 404 zusätzlich
+  `GET /repos/konstantin9ezm/aether-medien`: Repo da → noch nichts online), Inhalte per
+  `GET …/git/blobs/<sha>` mit `Accept: application/vnd.github.raw+json` (roh, nicht als Base64 im JSON; CORS geht wie
+  beim Paket). Zeitlimit für die Antwort wie alle Anfragen (15 s), für den Inhalt danach 15 s plus 2 s je MiB. Jeder
+  geladene Inhalt wird per Git-Blob-SHA geprüft und kommt in den Geräte-Speicher. Beim Prüfen werden nur fehlende Dateien
+  bis 5 MiB nachgeladen, größere beim Öffnen bzw. Abspielen. 401, 403 und 404 gelten gleich als „kein Zugriff“: einmal
+  „Kein Zugriff auf aether-medien – Repo anlegen bzw. den Token um das Repo erweitern“ (und dauerhaft in der Bibliothek),
+  danach keine automatischen Versuche mehr, bis „Online prüfen“ ausdrücklich gedrückt wird; alles andere läuft weiter.
+- **Offline:** Bibliothek, Player und Seiten mit Medien laufen mit allem, was im Geräte-Speicher liegt (Status aus der
+  zuletzt gelesenen Liste); fehlende Dateien zeigen „offline nicht verfügbar“.
+- **Safari:** Außerhalb der Home-Bildschirm-App (`display-mode: standalone` bzw. `navigator.standalone`) steht bei
+  Dateien „nur Gerät“ dauerhaft „Nur auf diesem Gerät: in Safari können Daten nach einigen Tagen ohne Besuch gelöscht
+  werden – Home-Bildschirm-App nutzen oder online stellen“. Vermutung (bisheriger Stand des WebKit-Blogs, 2020; nicht
+  nachgeprüft, webkit.org war nicht erreichbar): Safari löscht Website-Daten wie IndexedDB nach 7 Tagen Browser-Nutzung
+  ohne Besuch der Seite; Home-Bildschirm-Apps sind davon ausgenommen.
+
+**Repo aether-medien (einmalig einrichten):** Auf GitHub ein **privates** Repo `konstantin9ezm/aether-medien` anlegen
+(mit README, damit es einen Zweig `main` gibt) und darin den Ordner `medien/` (entsteht beim ersten Upload über die
+Upload-Seite). Den vorhandenen Fine-grained-Token des Dashboards um dieses Repo erweitern (Repository access: auch
+aether-medien; Permissions: Contents „Read-only“ – keine Schreibrechte). Das Dashboard liest nur; hochgeladen wird per
+Hand über die GitHub-Weboberfläche (höchstens 25 MiB je Datei). Medien liegen nie im Repo aether-dashboard und nie im
+Paket.
+
 **Export „Grafiken & Daten“ (F3a)** – „Export“ im Vollbild bzw. „Grafiken & Daten exportieren“ im Menü „···“ öffnet die
 Tafel für die Seite: „Alle Grafiken als PNG“, „Alle Grafiken als SVG“, „Daten als CSV“, „Daten als JSON“, „Einzeln
 wählen“ (Raster mit Mini-Bildern, Mehrfachauswahl, Umschalter PNG | SVG, „Auswahl herunterladen (`<n>`)“) und „Alles als
@@ -917,11 +1003,15 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   Die Zähler für neue Kennungen nehmen das Maximum. Strukturkonflikte stehen in derselben Liste („Lokal behalten“ |
   „Online übernehmen“); verschwindet die offene Version online, öffnet die Seite wieder 1.1.
 - **Änderungen sichern / einspielen / verwerfen:** „Änderungen sichern“ gibt `aether-flyer-aenderungen.json` weiter
-  (`{ "format": "aether-flyer-aenderungen", "version": 2, "paketFassung", "versionNummer", "gesichert", "eintraege": [ … ],
+  (`{ "format": "aether-flyer-aenderungen", "version": 3, "paketFassung", "versionNummer", "gesichert", "eintraege": [ … ],
   "struktur": [ … ] }`; je Eintrag zusätzlich `ver` = Versionsnummer, `struktur` = geänderte Struktur-Felder der offenen
   Version mit altem und neuem Wert – neue, kopierte, umbenannte, verschobene und ausgeblendete Seiten und Ordner kommen
-  so mit zurück). Eine Sicherung `version` 1 wird weiter gelesen (gilt für die offene Version). Sichern und Verwerfen
-  wirken auf die offene Version.
+  so mit zurück). F3b (Sicherung `version` 3): `struktur` enthält zusätzlich die Metadaten der Bibliothek (Felder
+  `M|*|<id>|…`, `MO|*|<id>|…`, `Z|*`), nie die Datei-Inhalte – die gehen über „Medien online stellen“ bzw. „Alle sichern“
+  (die Meldung nach dem Sichern sagt das). Sicherungen `version` 1 und 2 werden weiter gelesen (v1 gilt für die offene
+  Version). Sichern und Verwerfen wirken auf die offene Version; „Alle Änderungen verwerfen“ lässt die Bibliothek
+  unverändert. Der Abgleich der Bibliotheks-Metadaten mit der Online-Datei folgt denselben Regeln wie die Struktur
+  (Konfliktliste mit „Lokal behalten“ / „Online übernehmen“, z. B. „Datei m4 · … (Bibliothek)“).
   „Änderungen einspielen“ (Dateiauswahl ohne `accept`) prüft den Inhalt selbst (Format, Version, Feldtypen, höchstens
   5 MB und 20 000 Einträge, nur Text-Werte) und ordnet die Einträge wie beim Abgleich gegen die aktuelle Basis ein;
   vorhandene eigene Einträge gehen vor, Widersprüche kommen in die Konfliktliste. Falsches Format oder zu neue Version
@@ -980,8 +1070,29 @@ Export-Fassung (`version` `<JJJJ-MM-TT>.<n>`) bleibt der Stempel des ganzen Pake
   Ordner derselben Version, kein Kreis), `seiten` (Felder wie die Dokumente in v1 ohne `kategorie`, dazu `herkunft`
   „original“ | „eigen“ – eigene Seiten heißen `N<n>` mit n ≤ `zaehler.seite` –, `vorlage` (null oder Text), `ordner`
   (Liste von Ordner-ids), `ausgeblendet`).
-- Unbekannte Felder bleiben auf jeder Ebene erhalten (oben, je Version, je Ordner, je Seite); ein späteres Feld für
-  Medien (F3b) lässt sich so ergänzen, ohne das Format zu brechen.
+- Unbekannte Felder bleiben auf jeder Ebene erhalten (oben, je Version, je Ordner, je Seite).
+- **Feld `medien` (F3b, optional, oben im Paket – gilt für alle Versionen; nur Metadaten, nie Inhalte):**
+
+  ```json
+  "medien": {
+    "zaehler": { "datei": 2, "ordner": 1 },
+    "ordner": [{ "id": "mo1", "name": "Videos", "eltern": null }],
+    "dateien": [
+      { "id": "m1", "name": "…", "ordner": ["mo1"], "art": "video", "mime": "video/mp4", "groesse": 18874368,
+        "breite": 1920, "hoehe": 1080, "dauer": 42, "datei": "platzhalter-video_m1.mp4",
+        "gitSha": "<40 Hex-Zeichen>", "herkunft": "eigen", "startbild": 1, "erstellt": "2026-11-20T17:42:00.000Z" },
+      { "id": "m2", "name": "S1 · Kennzahlen", "ordner": [], "art": "grafik", "mime": "image/png", "groesse": 12000,
+        "breite": 640, "hoehe": 200, "dauer": null, "datei": "s1-kennzahlen_m2.png", "gitSha": "<40 Hex-Zeichen>",
+        "herkunft": "flyer-kopie", "quelle": { "version": "1.1", "seite": "S1", "grafik": 2 }, "startbild": null, "erstellt": "…" }
+    ]
+  }
+  ```
+
+  `id` `m<n>` bzw. `mo<n>` (n ≤ Zähler, nie wiederverwendet), `name` ≤ 120 Zeichen, `art` foto | video | animation |
+  grafik, `groesse` in Bytes, `dauer`/`startbild` in Sekunden, `datei` = Dateiname im Repo aether-medien (nur ASCII:
+  `<name-als-slug>_<id>.<endung>`), `gitSha` = Git-Blob-SHA-1 des Inhalts. Fehlerhafte Medien werden mit Fundstelle
+  abgelehnt. **`formatVersion` bleibt 2:** Der F3a-Stand liest ein Paket mit diesem Feld weiter (unbekannte Felder
+  bleiben erhalten; per Test mit dem Code von `aed37d7` geprüft).
 - **Umwandlung v1 → v2** (beim Import, Online-Laden und für gespeicherte Pakete, verlustfrei): eine Version 1.1 ohne
   Beschreibung; jede Kategorie wird ein Ordner (gleiche id, Reihenfolge des Pakets, doppelte id: die erste gilt); jedes
   Dokument eine Original-Seite im Ordner seiner Kategorie, das HTML bytegleich (am echten Paket: alle 38 Seiten
@@ -1024,7 +1135,7 @@ Export-Fassung (`version` `<JJJJ-MM-TT>.<n>`) bleibt der Stempel des ganzen Pake
   | `data-block` mit `data-zaehler` | Block mit abhakbaren Listeneinträgen und seine Überschrift |
   | `data-stand="kurz"` / `"lang"` | Datum des Dokuments |
 
-**Speicher:** IndexedDB `aether-flyer`, Version 3, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
+**Speicher:** IndexedDB `aether-flyer`, Version 4, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
 'online'|'import', sha, uebernommen }`, das zuletzt übernommene Paket) und `online` (Schlüssel `stand`: `{ sha, version,
 stand, geprueft }`, die zuletzt bekannte Online-Datei) und – seit Teil 2 – `aenderungen` (je Eintrag Schlüssel
 `e:<dok>\n<art>\n<k>`: `{ dok, k, art, alt, neu, exportiert, zeit, konflikt }`, dazu `meta`: `{ exporte }`, die bisher
@@ -1032,7 +1143,11 @@ exportierten Fassungen) und – seit F3a – `struktur` (Schlüssel `lokal`: `{ 
 Stand aller Versionen im Format v2, offene Strukturkonflikte und die Prüfwerte des letzten Exports) und `geraet`
 (Schlüssel `version`: die offene Version dieses Geräts). Die Migration 1 → 2 legt nur `aenderungen` an; `basis` und
 `online` bleiben erhalten. Die Migration 2 → 3 legt `struktur` und `geraet` an und schreibt die Änderungsschicht auf
-Versionen um (Schlüssel `e:<ver>\n<dok>\n<art>\n<k>`, `ver` = „1.1“ für alles Bisherige). Die Basis
+Versionen um (Schlüssel `e:<ver>\n<dok>\n<art>\n<k>`, `ver` = „1.1“ für alles Bisherige). Die Migration 3 → 4 (F3b)
+legt nur `medien` an: `d:<id>` → `{ blob, sha, groesse, mime, zeit }` (Inhalt), `b:<id>` (Startbild bzw. Vorschau,
+höchstens 1600 px), `k:<id>` (Mini-Bild, 360 px), `online` → `{ geprueft, zugriff, liste: [{ sha, name, groesse }] }`
+(zuletzt gelesene Liste von aether-medien, ohne Token); alles andere bleibt unverändert. Große Inhalte haben ein
+längeres Zeitlimit (10 s plus 1 s je 5 MB). Die Basis
 bleibt immer das zuletzt übernommene Paket; dargestellt wird Basis + Änderungsschicht. Kein Token, keine API-Antworten im
 Ganzen, kein `localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
 Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Die Verbindung
@@ -1094,10 +1209,16 @@ jedes in seinem eigenen Shadow Root.
 | `flyer-bearbeiten.js` | `AetherFlyerBearbeiten`: Umschalter und Leisten im Vollbild, Konfliktliste (auch Strukturkonflikte), „Paket exportieren“ (Hinweis ab 20 MB), Hilfe „Online stellen“, Sichern/Einspielen/Verwerfen |
 | `flyer-uebersicht.js` | `AetherFlyerUebersicht` (F3a): Tafeln, Versionsknopf und Tafel „Versionen“, Menüs „···“ für Version, Ordner und Seite, „+ Neuer Ordner“, „+ Seite“ |
 | `flyer-grafik.js` | `AetherFlyerGrafik` (F3a): Export „Grafiken & Daten“ (Erkennung, PNG, SVG, CSV, JSON, Einzelauswahl, ZIP der Version) |
+| `flyer-medien.js` | `AetherFlyerMedien` (F3b): Datenmodell der Bibliothek, Formate, Größen, Git-Blob-SHA, Status, Einlesen (Maße, Startbild, Mini, SVG bereinigen), Bild-Zwischenspeicher |
+| `flyer-bibliothek.js` | `AetherFlyerBibliothek` (F3b): Reiter „Seiten \| Bibliothek“, Pfad, Filter, Ordner, „Aus Flyern“, Datei-Kacheln |
+| `flyer-medien-tafeln.js` | `AetherFlyerMedienTafeln` (F3b): „+ Hinzufügen“, Menü einer Datei, Löschen, „Medien online stellen“ |
+| `flyer-player.js` | `AetherFlyerPlayer` (F3b): Player, Medien in Seiten (`data-medium`), Modus „Medium“ |
+| `flyer-medien-online.js` | `AetherFlyerMedienOnline` (F3b): Abgleich mit dem privaten Repo aether-medien (nur lesend) |
 | `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile, Struktur (lokaler Stand v2, offene Version, Abgleich); Schnittstelle für Tests und Teil 2 |
 
-Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht oder Grafik, bleiben seine Knöpfe verborgen und der
-Rest läuft weiter.
+Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht, Grafik, Bibliothek, Tafeln, Player oder Medien
+online, bleiben seine Knöpfe verborgen und der Rest läuft weiter. Die CSP erlaubt seit F3b `media-src 'self' blob:`
+(Videos aus dem eigenen Speicher).
 
 **Testschalter:** Setzt man vor dem Laden `window.AETHER_TEST_FLYER_INTERVALL_MS` (positive Zahl), gilt dieses
 Intervall statt der 10 Minuten; `window.AETHER_TEST_FLYER_SCHRIFT_FRIST_MS` ersetzt die 5 s Wartezeit auf die
@@ -1125,6 +1246,13 @@ Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur
   Export braucht für PNG dieselbe Selbstprobe wie „Bild“ (sonst nur SVG und Daten); das ZIP der Version wird im
   Speicher gebaut (am echten Paket ca. 47 MB). SVG mit eingebettetem HTML zeigen Grafikprogramme evtl. nicht genau.
   Tabellenprogramme mit deutscher Einstellung können die Spalte `version` („1.1“) als Datum lesen.
+- F3b (Bibliothek, Player, aether-medien) ist auf iPhone/iPad noch nicht am Gerät geprüft. Die Tests spielen eine zur
+  Laufzeit erzeugte WebM ab; MP4/MOV (H.264/HEVC) prüft die Gerätetest-Checkliste. Vermutung (Doku, nicht geprüft): iOS
+  wandelt HEIC aus der Fotos-Mediathek bei `accept="image/*"` meist in JPEG um und kann Videos vor der Übergabe
+  komprimieren – die Tafel „Hinzugefügt“ zeigt darum die tatsächliche Größe. Ob Safari 500-MB-Blobs in IndexedDB
+  zuverlässig speichert, ist am Gerät zu prüfen (Kontingent vermutlich ausreichend, siehe oben). Die Contents-API liefert höchstens
+  1000 Einträge je Ordner. „Alle sichern“ baut die ZIP aus Blob-Teilen; ob Safari beim Teilen großer ZIPs den Inhalt
+  ganz in den Speicher holt, ist offen (darum die Grenze 512 MiB).
 
 ## WebGPU-Check
 
