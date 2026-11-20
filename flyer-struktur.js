@@ -210,12 +210,16 @@
 
   /* ---------- Seiten (Teil D) ---------- */
   const MAX_SEITENNAME = 120;       // selbst gewählt (Name der Kachel)
-  // E3: Vorlagen; „Bild / Video“ sichtbar, aber gesperrt (ab F3b)
+  // E3: Vorlagen; F3b: „Bild / Video“ freigeschaltet (Titel, Untertitel, ein Medium, Kasten „Zu sehen“)
   const VORLAGEN = Object.freeze([
     { id: 'leer', name: 'Leer' }, { id: 'titel-text', name: 'Titel + Text' }, { id: 'liste-status', name: 'Liste mit Status' },
     { id: 'kennzahlen', name: 'Kennzahlen' }, { id: 'zwei-kaesten', name: 'Zwei Kästen' },
-    { id: 'bild-video', name: 'Bild / Video', gesperrt: true, hinweis: 'ab F3b' }
+    { id: 'bild-video', name: 'Bild / Video' }
   ].map(Object.freeze));
+  // F3b: Platz des Mediums in der Vorlage „Bild / Video“ (16:9; den Inhalt setzt flyer-player.js bei jeder Darstellung
+  // ein – im Paket steht nur der Verweis data-medium="m<n>", nie der Inhalt)
+  const MEDIUM_STIL = 'position:relative;aspect-ratio:16/9;width:100%;border-radius:14px;overflow:hidden;background:#0b1222;margin:0 0 14px';
+  const KENNUNG_MEDIUM = /^m[1-9]\d*$/;
   function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function datumKurz(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso)); return m ? m[3] + '.' + m[2] + '.' + m[1] : String(iso); }
   // Aufzählungszeichen wie im Paket (Stern)
@@ -223,7 +227,7 @@
   // F7: HTML einer neuen Seite aus einer Vorlage – dieselben Markierungen wie das Paket (data-t t1…, data-s mit data-status,
   // data-block/data-zaehler mit Zähler, data-stand, <ae-t>) und dasselbe Aussehen (Klassen des Pakets: Hintergrund der
   // Seite, Logo oben links, Marke oben rechts, Fußzeile mit Kennung und Stand).
-  // opt = { kennung, heute: 'JJJJ-MM-TT', klasse: 'page …', marke }
+  // opt = { kennung, heute: 'JJJJ-MM-TT', klasse: 'page …', marke, medium (nur „Bild / Video“: m<n> oder leer) }
   function vorlageHtml(vorlage, opt) {
     let n = 0;
     const t = () => ' data-t="t' + (++n) + '"';
@@ -245,6 +249,10 @@
         '</div></div></div>';
     } else if (vorlage === 'zwei-kaesten') {
       body = '<div class="grid">' + [1, 2].map((i) => '<div class="blk"><h3' + t() + '>Kasten ' + i + '</h3><p class="pp"' + t() + '>Text</p></div>').join('') + '</div>';
+    } else if (vorlage === 'bild-video') {
+      const m = typeof opt.medium === 'string' && KENNUNG_MEDIUM.test(opt.medium) ? opt.medium : '';
+      body = '<div class="medium" data-medium="' + esc(m) + '" style="' + MEDIUM_STIL + '"></div>' +
+        '<div class="blk zu-sehen"><h3' + t() + '>Zu sehen</h3><p class="pp"' + t() + '>Text</p></div>';
     }
     const fuss = '<footer class="ft"><span class="src"' + t() + '>Quelle</span><span class="pg"><ae-t' + t() + '>' + esc(opt.kennung) +
       ' · Stand </ae-t><span data-stand="kurz">' + esc(datumKurz(opt.heute)) + '</span></span></footer>';
@@ -291,7 +299,7 @@
       const erster = ordner.length ? v.ordner.find((o) => o.id === ordner[0]) : null;
       s = { id: k.id, art: 'flyer', titel: 'Neue Seite (' + vl.name + ')', herkunft: 'eigen', vorlage: vl.id, ordner: ordner.slice(), ausgeblendet: false,
         breite: 794, hoehe: 1123,
-        html: vorlageHtml(vl.id, { kennung: k.id, heute: opt.heute, klasse: klasseFuer(v, ordner.length ? ordner[0] : null), marke: erster ? erster.name : 'Eigene Seite' }) };
+        html: vorlageHtml(vl.id, { kennung: k.id, heute: opt.heute, klasse: klasseFuer(v, ordner.length ? ordner[0] : null), marke: erster ? erster.name : 'Eigene Seite', medium: opt.medium }) };
     }
     v.seiten.push(s);
     v.zaehler.seite = k.n;
@@ -331,8 +339,30 @@
   function extra(o, bekannt) { const r = {}; Object.keys(o).sort().forEach((k) => { if (!bekannt.has(k)) r[k] = o[k]; }); return r; }
   // Schlüssel: V|<nr>|<feld>, O|<nr>|<id>|<feld>, P|<nr>|<id>|<feld>; Z|<nr> = zaehler (zählt nicht als Änderung).
   // Felder „da“ gibt es genau, wenn das Objekt existiert.
+  // F3b: Bibliothek (gilt für alle Versionen, „Version“ *): M|*|<id>|<feld> (Datei: name, ordner, meta = alles andere),
+  // MO|*|<id>|<feld> (Bibliotheks-Ordner: name, eltern, extra), Z|* = zaehler der Bibliothek (nur, wenn es medien gibt).
+  const M_BEKANNT = new Set(['id', 'name', 'ordner']);
+  const BIBLIOTHEK = '*';
   function felder(pk) {
     const f = new Map(), j = (x) => JSON.stringify(x);
+    const m = pk && pk.medien;
+    if (m && typeof m === 'object' && !Array.isArray(m)) {
+      f.set('Z|*', j(m.zaehler || { datei: 0, ordner: 0 }));
+      for (const o of m.ordner || []) {
+        const k = 'MO|*|' + o.id + '|';
+        f.set(k + 'da', '1');
+        f.set(k + 'name', j(o.name));
+        f.set(k + 'eltern', j(o.eltern));
+        f.set(k + 'extra', j(extra(o, O_BEKANNT)));
+      }
+      for (const d of m.dateien || []) {
+        const k = 'M|*|' + d.id + '|';
+        f.set(k + 'da', '1');
+        f.set(k + 'name', j(d.name));
+        f.set(k + 'ordner', j(d.ordner));
+        f.set(k + 'meta', j(extra(d, M_BEKANNT)));
+      }
+    }
     for (const v of (pk && pk.versionen) || []) {
       const vn = v.nummer;
       f.set('V|' + vn + '|da', '1');
@@ -363,7 +393,7 @@
   function objektVon(k) {
     const t = k.split('|');
     if (t[0] === 'V') return 'V|' + t[1];
-    if (t[0] === 'O' || t[0] === 'P') return t[0] + '|' + t[1] + '|' + t.slice(2, -1).join('|');
+    if (t[0] === 'O' || t[0] === 'P' || t[0] === 'M' || t[0] === 'MO') return t[0] + '|' + t[1] + '|' + t.slice(2, -1).join('|');
     return null;
   }
   // Kurzer Prüfwert eines Feldwerts (FNV-1a, 32 Bit) – für den Stand beim letzten Export (spart das HTML im Speicher)
@@ -402,7 +432,7 @@
   function ausFeldern(f, oben, reihe) {
     const p = (k) => JSON.parse(f.get(k));
     const aus = {};
-    Object.keys(oben).forEach((k) => { if (k !== 'versionen') aus[k] = oben[k]; });
+    Object.keys(oben).forEach((k) => { if (k !== 'versionen' && k !== 'medien') aus[k] = oben[k]; });
     const nummern = [];
     f.forEach((w, k) => { const t = k.split('|'); if (t[0] === 'V' && t[2] === 'da') nummern.push(t[1]); });
     nummern.sort(vergleicheNummer);
@@ -439,6 +469,38 @@
       Object.assign(v, p('V|' + nr + '|extra'));
       return v;
     });
+    // F3b: Bibliothek (Reihenfolge wie in reihe, Neues hinten); unbekannte Felder des medien-Objekts aus oben
+    if (f.has('Z|*')) {
+      const reiheM = (art) => {
+        const r = [];
+        for (const pk of reihe || []) {
+          const mm = pk && pk.medien;
+          if (!mm) continue;
+          for (const x of (art === 'MO' ? mm.ordner : mm.dateien) || []) if (r.indexOf(x.id) < 0) r.push(x.id);
+        }
+        return r;
+      };
+      const idsM = (art) => {
+        const da = [], vor = art + '|*|';
+        f.forEach((w, k) => { if (k.indexOf(vor) === 0 && k.endsWith('|da')) da.push(k.slice(vor.length, -3)); });
+        const o = reiheM(art);
+        const nummer = (id) => Number(String(id).replace(/^\D+/, '')) || 0;
+        return da.sort((a, b) => { const x = o.indexOf(a), y = o.indexOf(b); return (x < 0 ? 1e9 : x) - (y < 0 ? 1e9 : y) || nummer(a) - nummer(b); });
+      };
+      const alt = oben && oben.medien && typeof oben.medien === 'object' ? oben.medien : {};
+      const medien = {};
+      Object.keys(alt).forEach((k) => { if (k !== 'zaehler' && k !== 'ordner' && k !== 'dateien') medien[k] = alt[k]; });
+      medien.zaehler = p('Z|*');
+      medien.ordner = idsM('MO').map((id) => {
+        const k = 'MO|*|' + id + '|';
+        return Object.assign({ id: id, name: p(k + 'name'), eltern: p(k + 'eltern') }, p(k + 'extra'));
+      });
+      medien.dateien = idsM('M').map((id) => {
+        const k = 'M|*|' + id + '|';
+        return Object.assign({ id: id, name: p(k + 'name'), ordner: p(k + 'ordner') }, p(k + 'meta'));
+      });
+      aus.medien = medien;
+    }
     return aus;
   }
   // Verweise nach einem Abgleich/Einspielen in Ordnung bringen und berichten (nie still): Zuordnung zu einem fehlenden
@@ -467,6 +529,29 @@
       v.zaehler = { seite: Math.max(v.zaehler.seite, hoechste(/^N([1-9]\d*)$/, v.seiten.filter((x) => x.herkunft === 'eigen'))),
         ordner: Math.max(v.zaehler.ordner, hoechste(/^O([1-9]\d*)$/, v.ordner)) };
     }
+    // F3b: Bibliothek wie die Ordner einer Version (Zuordnung zu fehlendem Ordner fällt weg, Kreis → oberste Ebene)
+    const m = pk.medien;
+    if (m && Array.isArray(m.ordner) && Array.isArray(m.dateien)) {
+      const ids = new Set(m.ordner.map((o) => o.id));
+      for (const o of m.ordner) if (o.eltern !== null && !ids.has(o.eltern)) { bericht.push({ art: 'eltern', nummer: BIBLIOTHEK, id: o.id, ordner: o.eltern }); o.eltern = null; }
+      for (const o of m.ordner) {
+        const gesehen = new Set([o.id]);
+        let x = o.eltern === null ? null : m.ordner.find((y) => y.id === o.eltern);
+        while (x) {
+          if (gesehen.has(x.id)) { bericht.push({ art: 'kreis', nummer: BIBLIOTHEK, id: o.id, ordner: o.eltern }); o.eltern = null; break; }
+          gesehen.add(x.id);
+          x = x.eltern === null ? null : m.ordner.find((y) => y.id === x.eltern);
+        }
+      }
+      for (const d of m.dateien) {
+        const weg = d.ordner.filter((o) => !ids.has(o));
+        for (const o of weg) bericht.push({ art: 'zuordnung', nummer: BIBLIOTHEK, id: d.id, ordner: o });
+        if (weg.length) d.ordner = d.ordner.filter((o) => ids.has(o));
+      }
+      const hoechste = (re, liste) => liste.reduce((n, x) => { const r = re.exec(x.id); return r ? Math.max(n, Number(r[1])) : n; }, 0);
+      const z = m.zaehler || { datei: 0, ordner: 0 };
+      m.zaehler = { datei: Math.max(z.datei || 0, hoechste(/^m([1-9]\d*)$/, m.dateien)), ordner: Math.max(z.ordner || 0, hoechste(/^mo([1-9]\d*)$/, m.ordner)) };
+    }
     return bericht;
   }
   // Struktur-Änderungen einer Version gegenüber der Basis (für „Änderungen sichern“): [{ k, alt, neu }] (null = fehlt)
@@ -494,6 +579,7 @@
     if (a === null) return b;
     if (b === null) return a;
     const x = JSON.parse(a), y = JSON.parse(b);
+    if ('datei' in x || 'datei' in y) return JSON.stringify({ datei: Math.max(x.datei || 0, y.datei || 0), ordner: Math.max(x.ordner || 0, y.ordner || 0) });   // F3b: Bibliothek
     return JSON.stringify({ seite: Math.max(x.seite, y.seite), ordner: Math.max(x.ordner, y.ordner) });
   }
   // Struktur zusammenführen: fb = Felder der Basis, fl = lokal, fa = die andere Seite (online bzw. Sicherung).
@@ -567,15 +653,17 @@
       }
     }
     // Fehlende Ordner, auf die verwiesen wird
-    const ordnerDa = (nr, id) => m.has('O|' + nr + '|' + id + '|da');
+    // F3b: Dateien der Bibliothek verweisen auf Bibliotheks-Ordner (MO), Seiten auf Ordner ihrer Version (O)
+    const ordnerArt = (art) => (art === 'M' || art === 'MO' ? 'MO' : 'O');
+    const ordnerDa = (oa, nr, id) => m.has(oa + '|' + nr + '|' + id + '|da');
     const verweis = [];
     m.forEach((w, k) => {
       const t = k.split('|');
-      if (t[0] === 'P' && k.endsWith('|ordner')) for (const id of JSON.parse(w)) { if (!ordnerDa(t[1], id)) verweis.push({ k: k, nr: t[1], id: id }); }
-      if (t[0] === 'O' && k.endsWith('|eltern')) { const e = JSON.parse(w); if (e !== null && !ordnerDa(t[1], e)) verweis.push({ k: k, nr: t[1], id: e }); }
+      if ((t[0] === 'P' || t[0] === 'M') && k.endsWith('|ordner')) for (const id of JSON.parse(w)) { if (!ordnerDa(ordnerArt(t[0]), t[1], id)) verweis.push({ k: k, nr: t[1], id: id, oa: ordnerArt(t[0]) }); }
+      if ((t[0] === 'O' || t[0] === 'MO') && k.endsWith('|eltern')) { const e = JSON.parse(w); if (e !== null && !ordnerDa(t[0], t[1], e)) verweis.push({ k: k, nr: t[1], id: e, oa: t[0] }); }
     });
     for (const v of verweis) {
-      const obj = 'O|' + v.nr + '|' + v.id, felderO = alleFelder(obj);
+      const obj = v.oa + '|' + v.nr + '|' + v.id, felderO = alleFelder(obj);
       if (wert(fl, obj + '|da') === '1') {
         // die andere Seite löschte den Ordner, lokal wird auf ihn verwiesen → Ordner bleibt (lokal), Konflikt
         for (const k of felderO) setze(k, wert(fl, k));
@@ -594,17 +682,18 @@
     // Ordner-Kreise (lokal A in B verschoben, online B in A): übernommene Elternordner im Kreis → lokal, Konflikt
     const kreisPruefen = () => {
       const vers = new Set();
-      m.forEach((w, k) => { if (k[0] === 'O' && k.endsWith('|eltern')) vers.add(k.split('|')[1]); });
-      for (const nr of vers) {
+      m.forEach((w, k) => { const t = k.split('|'); if ((t[0] === 'O' || t[0] === 'MO') && k.endsWith('|eltern')) vers.add(t[0] + '|' + t[1]); });
+      for (const vk of vers) {
+        const oa = vk.split('|')[0], nr = vk.split('|')[1];
         const eltern = new Map();
-        m.forEach((w, k) => { const t = k.split('|'); if (t[0] === 'O' && t[1] === nr && t[t.length - 1] === 'eltern') eltern.set(t.slice(2, -1).join('|'), JSON.parse(w)); });
+        m.forEach((w, k) => { const t = k.split('|'); if (t[0] === oa && t[1] === nr && t[t.length - 1] === 'eltern') eltern.set(t.slice(2, -1).join('|'), JSON.parse(w)); });
         for (const start of eltern.keys()) {
           const weg = [];
           let x = start;
           while (x !== null && eltern.has(x) && weg.indexOf(x) < 0) { weg.push(x); x = eltern.get(x); }
           if (x === null || !eltern.has(x)) continue;
           const kreis = weg.slice(weg.indexOf(x));
-          const ks = kreis.map((id) => 'O|' + nr + '|' + id + '|eltern');
+          const ks = kreis.map((id) => oa + '|' + nr + '|' + id + '|eltern');
           const fremd = ks.filter((k) => genommen.has(k));
           const zurueck = fremd.length ? fremd : [ks[0]];
           for (const k of zurueck) { setze(k, fremd.length ? wert(fl, k) : 'null'); genommen.delete(k); }
@@ -626,12 +715,19 @@
   // Text für die Konfliktliste: Objekt („Seite S5 · Titel“) und je Feld „Name“, Wert lokal, Wert der anderen Seite
   const FELDNAMEN = { da: 'vorhanden', beschreibung: 'Beschreibung', ausgeblendet: 'ausgeblendet', extra: 'weitere Angaben', name: 'Name',
     eltern: 'Elternordner', titel: 'Name', ordner: 'In Ordner', html: 'Inhalt', meta: 'Art und Maße' };
+  // F3b: Kenndaten einer Datei der Bibliothek (meta) kurz statt als JSON
+  function metaText(x) {
+    if (!x || typeof x !== 'object' || typeof x.art !== 'string' || typeof x.groesse !== 'number') return JSON.stringify(x);
+    return x.art + ' · ' + x.groesse + ' Bytes' + (typeof x.gitSha === 'string' ? ' · ' + x.gitSha.slice(0, 7) : '') + (x.startbild !== null && x.startbild !== undefined ? ' · Startbild ' + x.startbild + ' s' : '');
+  }
   function konfliktText(k, fl, fa) {
     const t = k.objekt.split('|');
-    const titelK = t[0] === 'P' ? k.objekt + '|titel' : t[0] === 'O' ? k.objekt + '|name' : null;
+    const titelK = t[0] === 'P' ? k.objekt + '|titel' : (t[0] === 'O' || t[0] === 'M' || t[0] === 'MO') ? k.objekt + '|name' : null;
     const tw = titelK ? (k.lokal[titelK] || k.andere[titelK] || wert(fl, titelK) || wert(fa, titelK)) : null;
     const name = tw ? JSON.parse(tw) : '';
-    const was = t[0] === 'V' ? 'Version ' + t[1] : (t[0] === 'O' ? 'Ordner ' : 'Seite ') + t.slice(2).join('|') + (name ? ' · ' + name : '') + ' (Version ' + t[1] + ')';
+    const was = t[0] === 'V' ? 'Version ' + t[1]
+      : (t[0] === 'M' || t[0] === 'MO') ? (t[0] === 'M' ? 'Datei ' : 'Ordner ') + t.slice(2).join('|') + (name ? ' · ' + name : '') + ' (Bibliothek)'
+        : (t[0] === 'O' ? 'Ordner ' : 'Seite ') + t.slice(2).join('|') + (name ? ' · ' + name : '') + ' (Version ' + t[1] + ')';
     const zeile = (feld, w) => {
       if (w === null) return feld === 'da' ? 'nicht vorhanden' : '–';
       if (feld === 'da') return 'vorhanden';
@@ -640,6 +736,7 @@
       if (feld === 'html') return 'Inhalt (' + x.length + ' Zeichen)';
       if (Array.isArray(x)) return x.length ? x.join(', ') : '(keiner)';
       if (x === null) return feld === 'eltern' ? 'oberste Ebene' : '–';
+      if (feld === 'meta') return metaText(x);
       if (typeof x === 'object') return JSON.stringify(x);
       return String(x) === '' ? '(leer)' : String(x);
     };
@@ -668,6 +765,8 @@
 
   window.AetherFlyerStruktur = Object.freeze({
     STANDARD_VERSION: STANDARD_VERSION,
+    BIBLIOTHEK: BIBLIOTHEK,
+    MEDIUM_STIL: MEDIUM_STIL,
     MAX_BESCHREIBUNG: MAX_BESCHREIBUNG,
     version: version,
     versionsOrdner: versionsOrdner,

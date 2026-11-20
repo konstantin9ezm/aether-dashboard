@@ -11,7 +11,8 @@
 // Export: Paket = Basis + Änderungsschicht (Markierungen bleiben), Fassung „<JJJJ-MM-TT>.<n>“, muss
 // AetherFlyerPaket.pruefe bestehen. Abgleich bei jeder Übernahme (abgleichen). Sicherung „aether-flyer-aenderungen“ v2
 // (F3a: Einträge mit ver, dazu struktur = Feld-Änderungen der Version; v1 wird weiter gelesen und gilt für die
-// geöffnete Version).
+// geöffnete Version). F3b: Sicherung v3 – struktur enthält zusätzlich die Metadaten der Bibliothek (Felder M|*|…,
+// MO|*|…, Z|*; nie Datei-Inhalte); v1 und v2 werden weiter gelesen.
 // F3a: Jeder Eintrag gehört zu einer Version (ver, z. B. „1.1“). Bearbeitet wird immer die geöffnete Version (h.version),
 // dargestellt über ihre Sicht (h.paket: Dokumente wie im Format v1). Abgleich und Export arbeiten auf dem ganzen Paket
 // im Format v2 (h.lokal: lokaler Stand aller Versionen; Abgleich gegen das neue Paket im Format v2).
@@ -24,7 +25,7 @@
   const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const STANDARD_VERSION = '1.1';
   const SICHERUNG_FORMAT = 'aether-flyer-aenderungen';
-  const SICHERUNG_VERSION = 2;
+  const SICHERUNG_VERSION = 3;
   // Selbst gewählt: Sicherungsdatei höchstens 5 MB und 20 000 Einträge (der Paket-Import aus Teil 1 hat keine eigene
   // Grenze); höchstens 50 gemerkte Export-Fassungen (für die Zählung n der Fassung).
   const MAX_SICHERUNG_BYTES = 5 * 1024 * 1024;
@@ -740,7 +741,9 @@
     const felder = new Set();
     const strukturS = struktur.map((f, i) => {
       const wo = 'Struktur ' + (i + 1) + ': ';
-      if (!istObjekt(f) || typeof f.k !== 'string' || !/^(V|O|P)\|[1-9]\d*\.[1-9]\d*\|.+|^Z\|[1-9]\d*\.[1-9]\d*$/.test(f.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekanntes Feld.');
+      const bekannt = typeof f.k === 'string' && (/^(V|O|P)\|[1-9]\d*\.[1-9]\d*\|.+|^Z\|[1-9]\d*\.[1-9]\d*$/.test(f.k) ||
+        (o.version >= 3 && /^(M\|\*\|m[1-9]\d*|MO\|\*\|mo[1-9]\d*)\|(da|name|ordner|meta|eltern|extra)$|^Z\|\*$/.test(f.k)));   // F3b: Bibliothek ab v3
+      if (!istObjekt(f) || !bekannt) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekanntes Feld.');
       if (!istTextOderNull(f.alt) || !istTextOderNull(f.neu)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'alt und neu müssen Text oder null sein.');
       for (const w of [f.alt, f.neu]) { if (w !== null) { try { JSON.parse(w); } catch (e) { throw fehler('format', 'Sicherung fehlerhaft.', wo + 'Wert ist kein JSON.'); } } }
       if (felder.has(f.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');

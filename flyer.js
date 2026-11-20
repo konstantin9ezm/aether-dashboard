@@ -17,6 +17,10 @@
 // Der lokale Stand (Versionen, Ordner, Seiten – AetherFlyerStruktur) liegt in IndexedDB „struktur“ (null = wie die
 // Basis), die geöffnete Version merkt sich das Gerät („geraet“, beim ersten Start 1.1). Ansicht, Änderungsschicht,
 // Druck und Bild sehen die Sicht der geöffneten Version; Export und Online-Prüfung das ganze Paket.
+// F3b: Bibliothek (Feld „medien“ des lokalen Stands, für alle Versionen) – Metadaten ändern wie die Struktur über
+// aendereStruktur; Inhalte liegen nur im Store „medien“ (AetherFlyerSpeicher). Die optionalen Module Bibliothek
+// (AetherFlyerBibliothek), Player (AetherFlyerPlayer, legt Medien in jede Darstellung) und der Online-Abgleich der
+// Medien (AetherFlyerMedienOnline) bekommen ihre Hilfen hier; fehlt eines, läuft der Rest weiter.
 (function () {
   'use strict';
 
@@ -39,6 +43,10 @@
   const U = window.AetherFlyerUebersicht || null;
   const GR = window.AetherFlyerGrafik || null;
   const ST = window.AetherFlyerStruktur;
+  const M = window.AetherFlyerMedien || null;
+  const BI = window.AetherFlyerBibliothek || null;
+  const PL = window.AetherFlyerPlayer || null;
+  const MO = window.AetherFlyerMedienOnline || null;
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
@@ -285,6 +293,7 @@
     paket: () => sicht(),
     paketV2: () => effektiv(),
     strukturSicherung: () => strukturSicherung(),
+    strukturVerwerfbar: () => strukturVerwerfbar(),
     strukturEinspielen: (l) => strukturEinspielen(l),
     strukturKonflikte: () => strukturKonflikte(),
     strukturEntscheide: (id, wahl) => strukturEntscheide(id, wahl),
@@ -304,16 +313,36 @@
     aendere: aendereStruktur
   });
 
+  /* ---------- Hilfen für Bibliothek, Player und Medien online (F3b) ---------- */
+  const medienHilfen = Object.freeze({
+    token: liesToken,
+    paketV2: () => effektiv(),
+    version: () => (effektiv() ? sicht().nummer : version),
+    sicht: () => sicht(),
+    aendere: aendereStruktur,
+    oeffneVersion: oeffneVersion,
+    fehler: fehler,
+    fehlerWeg: fehlerWeg,
+    persistAnfragen: () => persistAnfragen()
+  });
+
   /* ---------- Änderungsschicht (Teil 2) ---------- */
   // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
+  // F3b: danach setzt der Player die Medien ein (data-medium: Player im Vollbild, sonst das Startbild).
   function anpasserSetzen() {
-    if (!AE || !A || typeof A.setzeAnpasser !== 'function') return;
-    AE.einrichten({ paket: () => sicht(), version: () => (effektiv() ? sicht().nummer : version), lokal: () => effektiv() });
+    if (!A || typeof A.setzeAnpasser !== 'function') return;
+    const mitPlayer = !!PL && typeof PL.anpassen === 'function';
+    if (!AE && !mitPlayer) return;
+    if (AE) AE.einrichten({ paket: () => sicht(), version: () => (effektiv() ? sicht().nummer : version), lokal: () => effektiv() });
     A.setzeAnpasser((wurzel, dok, ort) => {
-      let markieren = false;
-      try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
-      AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren });
+      if (AE) {
+        let markieren = false;
+        try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && (B.modus() === 'text' || B.modus() === 'status'); } catch (e) { markieren = false; }
+        try { AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren }); } catch (e) { /* Basis bleibt sichtbar */ }
+      }
+      if (mitPlayer) PL.anpassen(wurzel, dok, ort);
     });
+    if (!AE) return;
     document.addEventListener('flyer:aenderungen', (e) => {
       // Export gelungen: auch die Struktur gilt ab jetzt als exportiert (Prüfwerte des lokalen Stands)
       if (e && e.detail && e.detail.exportiert) {
@@ -392,8 +421,14 @@
       strukturRest.konflikte.push(Object.assign({ id: 's' + Date.now().toString(36) + '-' + (++konfliktNr), quelle: quelle }, k));
     }
   }
-  // „Änderungen sichern“: Struktur-Felder der geöffneten Version, die anders sind als in der Basis
-  function strukturSicherung() { return lokal && basisV2 ? ST.feldAenderungen(basisV2, lokal, sicht() ? sicht().nummer : version) : []; }
+  // „Änderungen sichern“: Struktur-Felder der geöffneten Version, die anders sind als in der Basis; F3b: dazu die
+  // Metadaten der Bibliothek (für alle Versionen, ohne Datei-Inhalte)
+  function strukturSicherung() {
+    if (!lokal || !basisV2) return [];
+    return ST.feldAenderungen(basisV2, lokal, sicht() ? sicht().nummer : version).concat(ST.BIBLIOTHEK ? ST.feldAenderungen(basisV2, lokal, ST.BIBLIOTHEK) : []);
+  }
+  // F3b: was „Alle Änderungen verwerfen“ zurücknimmt (nur die geöffnete Version; die Bibliothek bleibt)
+  function strukturVerwerfbar() { return lokal && basisV2 ? ST.feldAenderungen(basisV2, lokal, sicht() ? sicht().nummer : version).length : 0; }
   // „Änderungen einspielen“: Struktur-Felder einordnen (eigene Änderung geht vor, sonst wie bei Texten) → Zahlen
   function strukturEinspielen(liste) {
     const auftrag = reihe.then(async () => {
@@ -508,6 +543,18 @@
     }
     if (GR && typeof GR.einrichten === 'function') {
       try { GR.einrichten(); } catch (e) { /* Seite läuft ohne „Grafiken & Daten“ */ }
+    }
+    // F3b: Player (Modus „Medium“), Bibliothek, Online-Abgleich der Medien
+    if (M && PL && typeof PL.einrichten === 'function') {
+      try { PL.einrichten(medienHilfen); } catch (e) { /* Seite läuft ohne Player */ }
+    }
+    if (M && BI && typeof BI.einrichten === 'function') {
+      try { BI.einrichten(medienHilfen); } catch (e) { /* Seite läuft ohne Bibliothek */ }
+      const MT = window.AetherFlyerMedienTafeln || null;
+      if (MT && typeof MT.einrichten === 'function') { try { MT.einrichten(); } catch (e) { /* ohne Hinzufügen und Menüs */ } }
+    }
+    if (M && MO && typeof MO.einrichten === 'function') {
+      try { Promise.resolve(MO.einrichten(medienHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Medien online */ }
     }
   }
   async function start() {

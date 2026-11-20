@@ -258,7 +258,7 @@ async function idbEintraege(page) {
   const st = await speicher(page);
   const s = st.idb.find((e) => e.db === 'aether-flyer' && e.store === 'aenderungen');
   assert.ok(s, 'Store aenderungen in IndexedDB aether-flyer');
-  assert.equal(s.version, 3, 'IndexedDB aether-flyer Version 3 (F3a)');
+  assert.equal(s.version, 4, 'IndexedDB aether-flyer Version 4 (F3b)');
   return s.werte.filter((w) => w && typeof w.dok === 'string')
     .map((w) => ({ dok: w.dok, k: w.k, art: w.art, alt: w.alt, neu: w.neu, exportiert: w.exportiert }))
     .sort((a, b) => (a.dok + a.art + a.k).localeCompare(b.dok + b.art + b.k));
@@ -279,7 +279,8 @@ const DRUCK_HOST = (id) => `#druck .druck-seite[data-id="${id}"] .flyer-host`;
 const vbDok = (page) => page.locator(VB_HOST);
 const vollbildOffen = (page) => page.$eval('#vollbild', (v) => !v.hidden && getComputedStyle(v).display !== 'none');
 const zaehlerVb = (page) => text(page, '#vbZaehler');
-const modusJetzt = (page) => page.$$eval('#vbModus button[data-modus]', (bs) => bs.map((b) => [b.dataset.modus, b.getAttribute('aria-pressed')]));
+// F3b: nur die sichtbaren Knöpfe („Medium“ erscheint nur bei Seiten aus der Vorlage „Bild / Video“)
+const modusJetzt = (page) => page.$$eval('#vbModus button[data-modus]:not([hidden])', (bs) => bs.map((b) => [b.dataset.modus, b.getAttribute('aria-pressed')]));
 // Alles Prüfbare eines dargestellten Dokuments (Shadow Root eines Darstellungs-Hosts)
 const dokInfo = (page, hostSel) => page.$eval(hostSel, (h) => {
   const r = h.shadowRoot;

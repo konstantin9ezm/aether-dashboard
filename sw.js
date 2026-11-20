@@ -4,6 +4,10 @@
 // flyer-export.js, flyer-zip.js, flyer-aenderungen.js, flyer-bearbeiten.js, flyer-uebersicht.js und flyer-grafik.js (nur der Programmcode; die Änderungsschicht liegt wie
 // das Paket in IndexedDB). Das Flyer-Paket selbst liegt nie hier, sondern in IndexedDB
 // „aether-flyer“ (verwaltet die Seite); seine Schriften kommen aus fonts/ (schon unten in SCHRIFT_DATEIEN).
+// F3b: dazu flyer-medien.js, flyer-bibliothek.js, flyer-medien-tafeln.js, flyer-player.js und flyer-medien-online.js
+// (Bibliothek). Die Medien selbst liegen nie hier: ihre Inhalte stehen in IndexedDB (Store „medien“), Videos und
+// Bilder laufen über blob:-Adressen aus diesem Speicher (gehen nie durch den Worker), und das Nachladen aus dem Repo
+// aether-medien geht an api.github.com (fremder Ursprung, siehe unten – nie im Cache).
 // Anfragen an api.github.com (mit Token im Authorization-Header) werden hier nie angefasst,
 // also auch nie in einem Cache abgelegt (auch nicht die Online-Prüfung der Flyer-Seite).
 'use strict';
@@ -38,7 +42,8 @@ var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
   'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js',
   'flyer.html', 'flyer.js', 'flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js',
-  'flyer-zip.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js'].concat(SCHRIFT_DATEIEN);
+  'flyer-zip.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js',
+  'flyer-medien.js', 'flyer-bibliothek.js', 'flyer-medien-tafeln.js', 'flyer-player.js', 'flyer-medien-online.js'].concat(SCHRIFT_DATEIEN);
 
 function shellKey(url) {
   // Ohne Query und Hash, damit "…/?x#projekt" denselben Eintrag trifft wie "…/".

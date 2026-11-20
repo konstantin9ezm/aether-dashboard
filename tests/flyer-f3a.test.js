@@ -212,7 +212,7 @@ const zaehlerInfo = (page, sel) => page.$eval(sel, (h) => {
 });
 
 describe('F3a: Seiten (Teil D)', () => {
-  test('„+ Seite“: Vorlagen (Bild / Video gesperrt), Zielordner, Anlegen öffnet das Vollbild; Vorlagen mit gültigen Markierungen; Kopie zeigt die Quelle; Kennungen N… nie wiederverwendet; Umbenennen; In Ordner; Ausblenden mit Umschalter; Original nie löschbar', async () => {
+  test('„+ Seite“: Vorlagen (Bild / Video ab F3b freigeschaltet), Zielordner, Anlegen öffnet das Vollbild; Vorlagen mit gültigen Markierungen; Kopie zeigt die Quelle; Kennungen N… nie wiederverwendet; Umbenennen; In Ordner; Ausblenden mit Umschalter; Original nie löschbar', async () => {
     await mitSeite({}, async ({ page, log }) => {
       await oeffneFlyer(page);
       await importiere(page, paketV1());
@@ -228,7 +228,7 @@ describe('F3a: Seiten (Teil D)', () => {
       assert.equal(await text(page, '#tafelInhalt .t-klein'), 'Ordner: Platzhalter Spiel');
       assert.deepEqual(await page.$$eval('#tafelInhalt .vorlage', (bs) => bs.map((b) => [b.dataset.vorlage, b.querySelector('span:not(.skizze span)').textContent, b.disabled, b.querySelector('small') ? b.querySelector('small').textContent : ''])),
         [['leer', 'Leer', false, ''], ['titel-text', 'Titel + Text', false, ''], ['liste-status', 'Liste mit Status', false, ''], ['kennzahlen', 'Kennzahlen', false, ''],
-          ['zwei-kaesten', 'Zwei Kästen', false, ''], ['bild-video', 'Bild / Video', true, 'ab F3b']]);
+          ['zwei-kaesten', 'Zwei Kästen', false, ''], ['bild-video', 'Bild / Video', false, '']]);   // F3b: freigeschaltet
       assert.ok(await page.isDisabled('#btnAnlegen'), 'ohne Wahl kein Anlegen');
       assert.deepEqual(await page.$$eval('#kopieQuelle option', (os) => os.map((o) => o.textContent)), ['Kopie einer bestehenden Seite …', 'S1 · Platzhalter eins', 'S2 · Platzhalter zwei', 'E1 · Platzhalter drei', 'I1 · Platzhalter-Infografik']);
       await page.click('#tafelInhalt .vorlage[data-vorlage="liste-status"]');
@@ -261,8 +261,9 @@ describe('F3a: Seiten (Teil D)', () => {
       }, heute);
       assert.deepEqual(vorlagen.map((v) => [v.id, v.gleich, v.eindeutig, v.s, v.stand, v.fuss, v.logo, v.marke]), [
         ['leer', true, true, 0, [kurz], true, true, true], ['titel-text', true, true, 0, [kurz], true, true, true], ['liste-status', true, true, 4, [kurz], true, true, true],
-        ['kennzahlen', true, true, 0, [kurz], true, true, true], ['zwei-kaesten', true, true, 0, [kurz], true, true, true]]);
-      assert.deepEqual(vorlagen.map((v) => v.t), [3, 7, 10, 13, 9], 'Platzhalter-Texte je Vorlage');
+        ['kennzahlen', true, true, 0, [kurz], true, true, true], ['zwei-kaesten', true, true, 0, [kurz], true, true, true],
+        ['bild-video', true, true, 0, [kurz], true, true, true]]);   // F3b: Bild / Video freigeschaltet, dieselben Prüfungen
+      assert.deepEqual(vorlagen.map((v) => v.t), [3, 7, 10, 13, 9, 7], 'Platzhalter-Texte je Vorlage');
       // Kopie über das Menü: zeigt die Änderung der Quelle, eigene Kennung, „(Kopie)“, Ordner wie die Quelle
       await page.evaluate(() => window.AetherFlyerAenderungen.setze('S1', 'text', 't2', 'Geänderter Titel'));
       await seitenMenue(page, 'S1');
@@ -351,7 +352,7 @@ describe('F3a: Seiten (Teil D)', () => {
       const s = await H.download(page, () => page.click('#btnSichern'));
       assert.equal(s.name, 'aether-flyer-aenderungen.json');
       const o = JSON.parse(s.puffer.toString('utf8'));
-      assert.deepEqual([o.format, o.version, o.versionNummer], ['aether-flyer-aenderungen', 2, '1.1']);
+      assert.deepEqual([o.format, o.version, o.versionNummer], ['aether-flyer-aenderungen', 3, '1.1']);   // F3b: Sicherung v3
       assert.ok(o.struktur.some((f) => f.k === 'P|1.1|N1|da' && f.alt === null && f.neu === '1'), 'neue Seite N1');
       assert.ok(o.struktur.some((f) => f.k === 'P|1.1|S1|titel' && JSON.parse(f.neu) === 'Umbenannt'));
       assert.deepEqual(o.eintraege.map((e) => [e.ver, e.dok, e.art]), [['1.1', 'N1', 'text']], 'Text in N1 (Stand der neuen Seite ist schon heute)');
@@ -763,8 +764,8 @@ describe('F3a: Speicher (Teil A)', () => {
       await oeffneFlyer(page);
       await ruhe(page);
       const db = await idb(page);
-      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'online', 'struktur']);
-      assert.equal(db.basis.version, 3);
+      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur']);
+      assert.equal(db.basis.version, 4);
       assert.deepEqual(db.basis.werte, [basis], 'Basis unverändert (bleibt v1)');
       assert.deepEqual(db.aenderungen.schluessel.sort(), ['e:1.1\nS1\ntext\nt2', 'e:1.1\nS2\nstatus\ns1', 'meta']);
       const werte = db.aenderungen.werte.filter((w) => w.dok).sort((a, b) => a.dok.localeCompare(b.dok));

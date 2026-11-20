@@ -10,11 +10,16 @@
 // und „geraet“ (was sich nur dieses Gerät merkt, z. B. die geöffnete Version). Die Migration 2 → 3 gibt jedem Eintrag
 // der Änderungsschicht die Version 1.1 (Feld ver, Schlüssel „e:<ver>\n<dok>\n<art>\n<k>“); basis (bleibt, wie es
 // gespeichert wurde – ein v1-Paket wird erst beim Lesen in v2 umgewandelt), online und meta bleiben unverändert.
+// Version 4 (F3b): Store „medien“ mit den Datei-Inhalten der Bibliothek (Blob, nie im Paket) und ihren Bildern:
+// „d:<id>“ → { blob, sha, groesse, mime, zeit } (Inhalt), „b:<id>“ → Blob (Startbild bzw. Vorschau, höchstens 1600 px),
+// „k:<id>“ → Blob (Mini-Bild für Kacheln, höchstens 360 px), „online“ → { geprueft, zugriff, liste: [{ sha, name, groesse }] }
+// (zuletzt gelesene Liste von aether-medien/medien/, für die Status-Punkte offline). Die Migration 3 → 4 legt nur den
+// Store an; alle anderen Stores bleiben unverändert.
 (function () {
   'use strict';
 
   var DB_NAME = 'aether-flyer';
-  var DB_VERSION = 3;
+  var DB_VERSION = 4;
   var STORES = Object.freeze(['basis', 'online']);
   var SCHLUESSEL_BASIS = 'aktuell';  // Store basis:  { paket, quelle:'online'|'import', sha:String|null, uebernommen:ISO }
   var SCHLUESSEL_ONLINE = 'stand';   // Store online: { sha, version, stand, geprueft:ISO } – zuletzt bekannte Online-Datei
@@ -60,6 +65,7 @@
         if (alt < 1) { db.createObjectStore('basis'); db.createObjectStore('online'); }
         if (alt < 2) db.createObjectStore('aenderungen');   // Teil 2: Änderungsschicht (basis und online bleiben)
         if (alt < 3) { db.createObjectStore('struktur'); db.createObjectStore('geraet'); verschiebeAufVersion(req.transaction); }
+        if (alt < 4) db.createObjectStore('medien');   // F3b: Datei-Inhalte und Bilder der Bibliothek (sonst bleibt alles)
       };
       req.onsuccess = function () {
         clearTimeout(timer);
@@ -326,6 +332,119 @@
     } catch (e) { return false; }
   }
 
+  // ---------------------------------------------------------------------------
+  // Bibliothek (F3b): Datei-Inhalte und Bilder
+  // ---------------------------------------------------------------------------
+  var STORE_MEDIEN = 'medien';
+  // Selbst gewählt: große Dateien brauchen länger – 10 s plus 1 s je angefangene 5 MB (500 MB → 110 s)
+  function fristFuer(bytes) { return ZEIT_VORGANG_MS + Math.ceil(Math.max(0, Number(bytes) || 0) / (5 * 1024 * 1024)) * 1000; }
+  function istKennung(id) { return typeof id === 'string' && /^m[1-9]\d*$/.test(id); }
+  function istBlob(b) { return typeof Blob === 'function' && b instanceof Blob; }
+  async function medienVorgang(modus, arbeit, frist) {
+    if (!(await hatStore(STORE_MEDIEN))) return { ok: false };
+    return mitZeitlimit(ausfuehren(STORE_MEDIEN, modus, arbeit, true), frist || ZEIT_VORGANG_MS, { ok: false });
+  }
+  // → { blob, sha, groesse, mime, zeit } | null
+  async function ladeMedienInhalt(id) {
+    try {
+      if (!istKennung(id)) return null;
+      var r = await medienVorgang('readonly', function (s) { return s.get('d:' + id); });
+      var w = r.ok ? r.wert : null;
+      return istObjekt(w) && istBlob(w.blob) ? w : null;
+    } catch (e) { return null; }
+  }
+  // e = { blob, sha, mime } → true|false
+  async function speichereMedienInhalt(id, e) {
+    try {
+      if (!istKennung(id) || !istObjekt(e) || !istBlob(e.blob)) return false;
+      var eintrag = { blob: e.blob, sha: textOderNull(e.sha), groesse: e.blob.size, mime: textOderNull(e.mime) || e.blob.type || '', zeit: jetztIso() };
+      var r = await medienVorgang('readwrite', function (s) { return s.put(eintrag, 'd:' + id); }, fristFuer(e.blob.size));
+      return r.ok === true;
+    } catch (err) { return false; }
+  }
+  // art 'b' (Startbild/Vorschau) oder 'k' (Mini) → Blob | null
+  async function ladeMedienBild(id, art) {
+    try {
+      if (!istKennung(id) || (art !== 'b' && art !== 'k')) return null;
+      var r = await medienVorgang('readonly', function (s) { return s.get(art + ':' + id); });
+      return r.ok && istBlob(r.wert) ? r.wert : null;
+    } catch (e) { return null; }
+  }
+  // bilder = { b: Blob|null, k: Blob|null } → true|false (null entfernt das Bild)
+  async function speichereMedienBilder(id, bilder) {
+    try {
+      if (!istKennung(id) || !istObjekt(bilder)) return false;
+      var r = await medienVorgang('readwrite', function (s) {
+        var letzte;
+        ['b', 'k'].forEach(function (a) {
+          if (!(a in bilder)) return;
+          letzte = istBlob(bilder[a]) ? s.put(bilder[a], a + ':' + id) : s.delete(a + ':' + id);
+        });
+        return letzte;
+      });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+  // Inhalt und Bilder einer Datei entfernen → true|false
+  async function entferneMedium(id) {
+    try {
+      if (!istKennung(id)) return false;
+      var r = await medienVorgang('readwrite', function (s) { s.delete('d:' + id); s.delete('b:' + id); return s.delete('k:' + id); });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+  // Kennungen mit Inhalt auf dem Gerät → [id] | null (ohne Store)
+  async function medienAufGeraet() {
+    try {
+      var r = await medienVorgang('readonly', function (s) { return s.getAllKeys(); });
+      if (!r.ok || !Array.isArray(r.wert)) return null;
+      return r.wert.filter(function (k) { return typeof k === 'string' && k.indexOf('d:') === 0; }).map(function (k) { return k.slice(2); });
+    } catch (e) { return null; }
+  }
+  // Zuletzt gelesene Liste von aether-medien (ohne Token, nur sha, Name, Größe)
+  async function ladeMedienOnline() {
+    try {
+      var r = await medienVorgang('readonly', function (s) { return s.get('online'); });
+      var w = r.ok ? r.wert : null;
+      if (!istObjekt(w)) return null;
+      return {
+        geprueft: textOderNull(w.geprueft), zugriff: w.zugriff === 'kein' ? 'kein' : 'ok',
+        liste: Array.isArray(w.liste) ? w.liste.filter(function (x) { return istObjekt(x) && typeof x.sha === 'string'; }) : []
+      };
+    } catch (e) { return null; }
+  }
+  async function speichereMedienOnline(o) {
+    try {
+      if (!istObjekt(o)) return false;
+      var eintrag = {
+        geprueft: textOderNull(o.geprueft) || jetztIso(), zugriff: o.zugriff === 'kein' ? 'kein' : 'ok',
+        liste: (Array.isArray(o.liste) ? o.liste : []).filter(istObjekt).map(function (x) {
+          return { sha: String(x.sha), name: typeof x.name === 'string' ? x.name : '', groesse: typeof x.groesse === 'number' ? x.groesse : null };
+        })
+      };
+      var r = await medienVorgang('readwrite', function (s) { return s.put(eintrag, 'online'); });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+  // Belegter und freier Platz (navigator.storage.estimate) → { belegt, frei, quote } | null
+  async function platz() {
+    try {
+      var st = navigator.storage;
+      if (!st || typeof st.estimate !== 'function') return null;
+      var e = await mitZeitlimit(st.estimate(), ZEIT_OEFFNEN_MS, null);
+      if (!e || typeof e.quota !== 'number') return null;
+      var belegt = typeof e.usage === 'number' ? e.usage : 0;
+      return { belegt: belegt, quote: e.quota, frei: Math.max(0, e.quota - belegt) };
+    } catch (e) { return null; }
+  }
+  async function istDauerhaft() {
+    try {
+      var st = navigator.storage;
+      if (!st || typeof st.persisted !== 'function') return null;
+      return (await mitZeitlimit(st.persisted(), ZEIT_OEFFNEN_MS, null)) === true;
+    } catch (e) { return null; }
+  }
+
   // Dauerhaften Speicher anfragen (damit der Browser das Paket nicht bei Platzmangel löscht) → true, wenn dauerhaft
   async function persistAnfragen() {
     try {
@@ -350,6 +469,17 @@
     speichereStruktur: speichereStruktur,
     ladeGeraet: ladeGeraet,
     speichereGeraet: speichereGeraet,
-    persistAnfragen: persistAnfragen
+    persistAnfragen: persistAnfragen,
+    // F3b: Bibliothek
+    ladeMedienInhalt: ladeMedienInhalt,
+    speichereMedienInhalt: speichereMedienInhalt,
+    ladeMedienBild: ladeMedienBild,
+    speichereMedienBilder: speichereMedienBilder,
+    entferneMedium: entferneMedium,
+    medienAufGeraet: medienAufGeraet,
+    ladeMedienOnline: ladeMedienOnline,
+    speichereMedienOnline: speichereMedienOnline,
+    platz: platz,
+    istDauerhaft: istDauerhaft
   });
 })();

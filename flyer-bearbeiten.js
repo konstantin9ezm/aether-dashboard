@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const MODI = ['ansehen', 'text', 'status'];
+  const MODI = ['ansehen', 'text', 'status', 'medium'];   // F3b: „Medium“ (Seiten aus der Vorlage „Bild / Video“, flyer-player.js)
   const STATUS_NAMEN = { ok: 'fertig', run: 'läuft gerade', next: 'als Nächstes', plan: 'geplant', '': 'ohne Status' };
   const DATEI_PAKET = 'aether-flyer-paket.json';
   const DATEI_SICHERUNG = 'aether-flyer-aenderungen.json';
@@ -64,6 +64,7 @@
     const box = $('vbModus');
     if (box) for (const b of box.querySelectorAll('button[data-modus]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-modus') === m));
     knopfReset();
+    try { document.dispatchEvent(new CustomEvent('flyer:modus', { detail: { modus: m } })); } catch (e) { /* egal */ }
     // Markierungen gibt es nur in Text/Status: beim Wechsel das Vollbild neu darstellen
     if (neuZeichnen !== false && war !== m && A() && offenesDok()) A().vollbildNeu();
   }
@@ -71,7 +72,7 @@
     const r = $('vbReset');
     if (!r) return;
     const d = offenesDok();
-    r.hidden = modus === 'ansehen' || !d || !AE().hatAenderungen(d.id);
+    r.hidden = (modus !== 'text' && modus !== 'status') || !d || !AE().hatAenderungen(d.id);
   }
 
   /* ---------- Leisten (Text, Status) ---------- */
@@ -128,7 +129,7 @@
 
   // Klick/Antippen im Vollbild (Modi Text und Status): Element mit data-t bzw. data-s im Dokument finden
   function klickImDokument(ev) {
-    if (modus === 'ansehen') return;
+    if (modus !== 'text' && modus !== 'status') return;   // „Ansehen“ und „Medium“: Klicks gehören dem Dokument bzw. Player
     const a = A(), dok = offenesDok();
     const host = a && typeof a.vollbildHost === 'function' ? a.vollbildHost() : null;
     if (!dok || !host || !host.shadowRoot) return;
@@ -278,7 +279,10 @@
     // F3a: Struktur-Änderungen der geöffneten Version (neue, kopierte, umbenannte, ausgeblendete, gelöschte Seiten …)
     try { s.struktur = h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung() : []; } catch (e) { s.struktur = []; }
     const datei = new File([JSON.stringify(s, null, 2)], DATEI_SICHERUNG, { type: 'application/json' });
-    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert'));
+    // F3b: die Sicherung erfasst nur die Metadaten der Bibliothek – die Dateien selbst über „Medien online stellen“
+    const mitMedien = s.struktur.some((f) => /^(M|MO)\|\*\|/.test(f.k));
+    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert' +
+      (mitMedien ? ' – Dateien der Bibliothek nicht darin: über „Medien online stellen“ bzw. „Alle sichern“' : '')));
   }
   async function einspielen(datei) {
     // Größe vor dem Lesen prüfen (eine sehr große falsche Datei nicht erst ganz in den Speicher holen)
@@ -298,9 +302,13 @@
     return { uebernommen: r.uebernommen, verworfen: r.verworfen, konflikte: r.konflikte, doks: r.doks, struktur: rs };
   }
   function strukturZahl() { try { return h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung().length : 0; } catch (e) { return 0; } }
+  // F3b: Struktur-Felder, die „Alle Änderungen verwerfen“ zurücknimmt (geöffnete Version; die Bibliothek bleibt)
+  function verwerfbarZahl() {
+    try { return h && typeof h.strukturVerwerfbar === 'function' ? h.strukturVerwerfbar() : strukturZahl(); } catch (e) { return 0; }
+  }
   // „Alle Änderungen verwerfen“: Texte, Status und Struktur der geöffneten Version
   async function verwerfen() {
-    const n = AE().alle().length, ns = strukturZahl();
+    const n = AE().alle().length, ns = verwerfbarZahl();
     if (!n && !ns) { meldung('Keine Änderungen'); return false; }
     let ja = false;
     try { ja = window.confirm('Alle Änderungen verwerfen? Das lässt sich nicht rückgängig machen.'); } catch (e) { ja = false; }
@@ -407,7 +415,7 @@
     const n = AE().alle().length + strukturZahl();
     const pk = !!paket();
     for (const id of ['btnExport', 'btnSichern', 'btnEinspielen', 'btnVerwerfen']) { const b = $(id); if (b) b.hidden = !pk; }
-    const v = $('btnVerwerfen'); if (v) v.disabled = !n;
+    const v = $('btnVerwerfen'); if (v) v.disabled = !(AE().alle().length + verwerfbarZahl());
     const s = $('btnSichern'); if (s) s.disabled = !n;
     const hl = $('onlineStellen'); if (hl) hl.hidden = !pk;
     const m = $('vbModus'); if (m) m.hidden = false;
