@@ -264,7 +264,11 @@
     (async () => {
       if (d.art === 'animation' || (d.art === 'grafik' && d.mime === 'image/svg+xml') || d.art === 'foto') {
         const s = S(), e = s ? await s.ladeMedienInhalt(d.id) : null;
-        if (e && e.blob && d.art !== 'foto') { const img = zeige(I().urlMerken(URL.createObjectURL(e.blob), null)); if (img) I().urlMerken('', img); return; }
+        if (e && e.blob && d.art !== 'foto') {
+          const url = URL.createObjectURL(e.blob), img = zeige(url);
+          if (img) I().urlMerken(url, img); else URL.revokeObjectURL(url);   // freigegeben, sobald das Bild weg ist
+          return;
+        }
       }
       const b = await M().bildLaden(d.id, 'b');
       if (b) zeige(b.url);
@@ -286,7 +290,7 @@
       const liste = el('div', undefined, 't-liste t-menue');
       const pl = PL();
       if (d.art === 'video') {
-        const b = knopf('Abspielen', () => { if (pl && typeof pl.abspielen === 'function') pl.abspielen(box.querySelector('.pl')); });
+        const b = knopf('Abspielen', () => { if (pl && typeof pl.abspielen === 'function') pl.abspielen(box.querySelector('.ae-pl')); });
         b.disabled = !pl;
         liste.appendChild(b);
       } else liste.appendChild(knopf('Ansehen', () => ansehen(id)));

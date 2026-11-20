@@ -34,7 +34,7 @@
   let eingerichtet = false;
   let zeichenNr = 0;             // zählt Darstellungen (späte Bilder alter Darstellungen verwerfen)
   let schichtNr = 0;             // zählt Änderungen der Änderungsschicht (Cache „Aus Flyern“)
-  const flyerCache = new Map();  // Version → { pk, schicht, seiten: Map(id → vorbereitete Seite), laeuft }
+  const flyerCache = new Map();  // Version → { schluessel, seiten: Map(id → vorbereitete Seite), laeuft }
 
   /* ---------- Hilfen ---------- */
   function meldung(t) { try { G().meldung(t); } catch (e) { /* ohne #toast */ } }
@@ -231,8 +231,9 @@
       if (!M().dateien(p).length) { ziel.appendChild(el('p', 'Noch keine Dateien – „+ Hinzufügen“.', 'leer')); return; }
       const z = M().zuletzt(liste);
       if (z.length) { ziel.appendChild(abschnitt('Zuletzt hinzugefügt')); ziel.appendChild(raster(z)); }
-      const ohne = M().inOrdner(liste, null);
-      if (ohne.length) { ziel.appendChild(abschnitt('Ohne Ordner (' + ohne.length + ')')); ziel.appendChild(raster(ohne)); }
+      // Dateien ohne Ordner, die nicht schon unter „Zuletzt hinzugefügt“ stehen (so geht keine verloren, keine doppelt)
+      const ohne = M().inOrdner(liste, null).filter((d) => z.indexOf(d) < 0);
+      if (ohne.length) { ziel.appendChild(abschnitt('Weitere ohne Ordner (' + ohne.length + ')')); ziel.appendChild(raster(ohne)); }
       if (!liste.length) ziel.appendChild(el('p', filter === 'nicht-verwendet' ? 'Jede Datei wird in einer Seite verwendet.' : 'In Version ' + filter + ' wird keine Datei verwendet.', 'leer'));
       return;
     }
@@ -283,11 +284,18 @@
       try { if (pl && typeof pl.anpassen === 'function') pl.anpassen(w, dok, 'bild'); } catch (e) { /* egal */ }
     } };
   }
+  // Gültig, solange die Seiten der Version (HTML, Ausblendung) und die Änderungsschicht gleich bleiben – Änderungen nur
+  // an der Bibliothek verwerfen die erkannten Grafiken nicht
+  function seitenSchluessel(nr) {
+    const v = ST().version(pk(), nr);
+    if (!v) return '';
+    return v.seiten.map((s) => s.id + ':' + (s.ausgeblendet ? 1 : 0) + ':' + ST().pruefwert(s.html)).join('|') + '#' + schichtNr;
+  }
   function flyerCacheFuer(nr, anlegen) {
-    const p = pk();
+    const sch = seitenSchluessel(nr);
     let c = flyerCache.get(nr);
-    if (c && (c.pk !== p || c.schicht !== schichtNr)) { flyerCache.delete(nr); c = null; }
-    if (!c && anlegen) { c = { pk: p, schicht: schichtNr, seiten: new Map(), laeuft: null }; flyerCache.set(nr, c); }
+    if (c && c.schluessel !== sch) { flyerCache.delete(nr); c = null; }
+    if (!c && anlegen) { c = { schluessel: sch, seiten: new Map(), laeuft: null }; flyerCache.set(nr, c); }
     return c;
   }
   function seitenDer(nr) {
