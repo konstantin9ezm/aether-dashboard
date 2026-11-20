@@ -729,6 +729,9 @@ rechts der Stand). Sie zeigt die Dokumente eines Flyer-Pakets – Flyer (DIN A4)
 prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter. Texte und Status lassen sich im Vollbild
 selbst ändern (Teil 2): Die Änderungen liegen offline auf dem Gerät über dem übernommenen Paket, werden als neue
 Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboard schreibt selbst nie in ein Repo.
+Seit F3a gibt es **Versionen** (jede ein eigener, vollständiger Flyer), **Ordner** (als Kacheln, verschachtelt), **neue
+Seiten** aus Vorlagen oder als Kopie, **Ausblenden** der Original-Seiten und den Export **„Grafiken & Daten“** (PNG, SVG,
+CSV, JSON, ZIP); alles steht in derselben einen Paketdatei (Format v2, siehe unten).
 
 **Bedienung**
 
@@ -738,10 +741,11 @@ Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboa
   Text- und Status-Änderungen, der Stand folgt ihnen von selbst). Darunter die Paket-Zeile
   „`<Titel>` · Version `<version>` · `<n>` Dokumente“ (ohne `titel` im Paket „Flyer-Paket“); ohne Paket „Noch kein Paket –
   „Online prüfen“ oder „Paket importieren“.“
-- **Ansehen:** Kategorie-Chips „Alle“ und je eine Kategorie aus `paket.kategorien` (nur Kategorien mit Dokumenten,
-  Reihenfolge des Pakets; die Wahl wird nicht gespeichert). Kacheln sind die verkleinerte Live-Darstellung des
-  Dokuments (per `transform` auf Kachelbreite skaliert) mit Id und Titel. Antippen öffnet das **Vollbild**: Dokument auf
-  Bildschirmbreite skaliert, oben „‹“, „n / Anzahl“, „›“, „Id · Titel“, „PDF“, „Bild“ und „✕“. Blättern per ‹/›,
+- **Ansehen:** Ordner der geöffneten Version als Kacheln (siehe „Ordner“ unten; die Kategorie-Chips früherer Fassungen
+  entfallen) und darunter die Seiten des geöffneten Ordners („Alle“: jede Seite genau einmal). Kacheln sind die
+  verkleinerte Live-Darstellung des Dokuments (per `transform` auf Kachelbreite skaliert) mit Id, Titel und Menü „···“.
+  Antippen öffnet das **Vollbild**: Dokument auf Bildschirmbreite skaliert, oben „‹“, „n / Anzahl“, „›“, „Id · Titel“,
+  „PDF“, „Bild“, „Export“ und „✕“. Blättern per ‹/›,
   Wischen (waagerecht, mindestens 50 px; nicht mit zwei Fingern oder hineingezoomt) oder ←/→, am Ende ohne Umlauf.
   Esc, Backspace oder ✕ schließen (Fokus zurück auf die Kachel); eine gehaltene Taste schließt nur einmal. Die Tasten
   wirken nur bei offenem Vollbild, nie solange ein Eingabefeld den Fokus hat (jedes `input` außer Knöpfen – `button`,
@@ -754,8 +758,8 @@ Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboa
   (`scrollHeight > clientHeight + 1`), höchstens bis 0,80. Danach bekommt jedes `.fill` die Klasse `off`, wenn es
   niedriger als 90 px ist (`offsetHeight`, unabhängig von der Skalierung), sonst wird `off` entfernt. Läuft es bei
   0,80 noch über, steht „Text zu lang“ an Kachel und Vollbild.
-- **PDF:** „PDF“ im Vollbild (ein Dokument) und „Alle als PDF (n)“ (Chip „Alle“: alle Flyer des Pakets; sonst alle
-  Dokumente der gewählten Kategorie) öffnen den Druckdialog (`window.print`, dort „Als PDF sichern“; iPad: Teilen-Menü).
+- **PDF:** „PDF“ im Vollbild (ein Dokument) und „Alle als PDF (n)“ („Alle“: alle Flyer der geöffneten Version; sonst alle
+  Dokumente des geöffneten Ordners; ausgeblendete Seiten nie) öffnen den Druckdialog (`window.print`, dort „Als PDF sichern“; iPad: Teilen-Menü).
   Je Flyer genau eine A4-Seite ohne Rand (`@page{size:A4 !important;margin:0 !important}`, gegen `@page`-Regeln des
   Pakets); Infografiken werden per `zoom` auf Seitenbreite skaliert und dürfen über mehrere Seiten gehen. Die
   `@media print`-Regeln des Paket-CSS gelten. Die Seite fügt im Druck nur Seiten-Container hinzu (Lage, Größe,
@@ -775,6 +779,80 @@ Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboa
   prüft die Seite selbst. Erfolg: „Paket importiert (Version `<version>`, `<n>` Dokumente)“, das gespeicherte Paket wird
   ersetzt; Banner und „Aktuell …“ der Online-Prüfung gehörten zum vorigen Paket, deshalb wird danach neu geprüft. Kein
   JSON, falsches Format, fehlerhaftes oder zu neues Paket → Fehlerbox, nichts überschrieben.
+
+**Versionen, Ordner und Seiten (F3a)**
+
+- **Versionen:** Knopf „Version `<n>` ▾“ (dazu Versions-Ordner und Seitenzahl) öffnet die Tafel „Versionen“: Versions-Ordner V1, V2 … (aus
+  der ersten Zahl; V1 enthält 1.1, 1.2 …), die offene Version orange mit „aktuell“, ausgeblendete abgeblendet. Der Flyer
+  von heute ist Version 1.1 in V1. „+ Neue Unterversion“ kopiert die gewählte (sonst die offene) Version in die nächste
+  freie Unterversion ihres Versions-Ordners (höchste + 1: aus 1.1 wird 1.4, wenn es 1.2 und 1.3 gibt), „+ Neue
+  Hauptversion“ in den nächsten Versions-Ordner (`<n>.1`). Jede Version ist ein eigener, vollständiger Flyer (Seiten,
+  Ordner, Texte, Status, Ausblendungen); Änderungen in einer Version ändern keine andere. Menü „···“ je Version:
+  Öffnen, Beschreibung (höchstens 80 Zeichen), Ausblenden/Einblenden, Löschen (mit Rückfrage; 1.1 nie). Welche Version
+  offen ist, merkt sich jedes Gerät selbst (IndexedDB, Ablage `geraet`; nicht im Paket), anfangs 1.1. Neue Kopien
+  bekommen die Beschreibung „Kopie von `<x.y>`“.
+- **Ordner** (Kacheln wie in der Dateien-App, Variante B der Vorschau): Pfad „Alle › … “ mit „‹“ (eine Ebene zurück,
+  in „Alle“ gesperrt) und Seitenzahl; Ordner-Kacheln mit Name, „`<n>` Seiten · `<m>` Ordner“ und Menü „···“, auf
+  schmalen Geräten 2 je Reihe; „+ Neuer Ordner“ legt im geöffneten Ordner an (Name per Textfeld, Vorschlag „Neuer
+  Ordner“, höchstens 60 Zeichen, nicht leer, kein doppelter Name im selben Elternordner – auch nicht in anderer
+  Schreibweise). Menü „···“: Öffnen, Umbenennen, Verschieben (nie in sich selbst oder einen eigenen Unterordner),
+  Löschen (mit Rückfrage; die Seiten bleiben und verlieren nur diese Zuordnung, Unterordner wandern eine Ebene hoch).
+  Eine Seite kann in mehreren Ordnern liegen. Aus den Kategorien eines Pakets v1 werden die Ordner der Version 1.1.
+  Kennungen `O<n>`, nie wiederverwendet. Backspace (nicht in einem Textfeld) = eine Ebene zurück.
+- **Neue Seiten:** „+ Seite“ öffnet die Tafel „Neue Seite“ (Zielordner = geöffneter Ordner): Vorlagen „Leer“, „Titel +
+  Text“, „Liste mit Status“, „Kennzahlen“, „Zwei Kästen“; „Bild / Video“ ist sichtbar, aber ausgegraut („ab F3b“); oder
+  „Kopie einer bestehenden Seite …“. „Anlegen“ öffnet die neue Seite im Vollbild; befüllt wird sie mit „Text“ und
+  „Status“ wie jede andere. Vorlagen tragen dieselben Markierungen wie das Paket (`data-t`, `data-s`/`data-status`,
+  `data-block`/`data-zaehler` mit Zähler, `data-stand`, `<ae-t>`) und dasselbe Aussehen (Klassen der Flyer im Ordner:
+  Hintergrund, Logo oben links, Marke = Ordnername oben rechts, Fußzeile mit Kennung und Stand), sodass Text-,
+  Status-, Zähler- und Datumslogik ohne Sonderfälle greifen. Neue Seiten heißen „Neue Seite (`<Vorlage>`)“, Kopien
+  „`<Titel>` (Kopie)“ (mit dem Stand, den die Quelle gerade zeigt); Kennungen `N<n>`, nie wiederverwendet (der Zähler
+  steht in der Version). Freies Verschieben von Elementen kommt erst mit F3c.
+- **Menü „···“ einer Seite:** Öffnen, Kopie anlegen (in denselben Ordnern), Umbenennen (nur der Name der Kachel,
+  höchstens 120 Zeichen; der Inhalt bleibt), In Ordner … (Ankreuzliste aller Ordner der Version, eingerückt nach Ebene,
+  mehrere möglich, wirkt sofort), Grafiken & Daten exportieren, bei Original-Seiten „Ausblenden“/„Einblenden“ (und
+  „Löschen (nur eigene Seiten)“ gesperrt), bei eigenen Seiten „Löschen“ (mit Rückfrage).
+- **Ausblenden:** Die Original-Seiten lassen sich nie löschen, nur ausblenden. Ausgeblendete Seiten fehlen in den
+  Kacheln, in „Alle als PDF“, in den Zählungen und im ZIP der Version; unten schaltet „Ausgeblendete zeigen (`<n>`)“ sie
+  (abgeblendet, mit Marke „ausgeblendet“) wieder ein.
+- **Tafeln** (Versionen, Neue Seite, Menüs, Grafiken & Daten) liegen über Seite und Vollbild und stapeln sich („‹“
+  zurück, „✕“ schließt alle). Esc schließt, Backspace geht eine Tafel zurück – beides nicht in Textfeldern (dort löscht
+  Backspace Zeichen, Esc geht zurück).
+
+**Export „Grafiken & Daten“ (F3a)** – „Export“ im Vollbild bzw. „Grafiken & Daten exportieren“ im Menü „···“ öffnet die
+Tafel für die Seite: „Alle Grafiken als PNG“, „Alle Grafiken als SVG“, „Daten als CSV“, „Daten als JSON“, „Einzeln
+wählen“ (Raster mit Mini-Bildern, Mehrfachauswahl, Umschalter PNG | SVG, „Auswahl herunterladen (`<n>`)“) und „Alles als
+ZIP (`<n>` Seiten)“. Der Knopf „Grafiken & Daten exportieren“ oben in der Übersicht erstellt das ZIP der ganzen geöffneten
+Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
+
+- **Grafik** = automatisch erkanntes Element der Seite (Regel am echten Paket festgelegt): Kandidaten sind Kästen
+  (`[data-block]`, `.blk`, `.box`, `.quote`, `.cd`), Gruppen (`.flow4`, `.states`, `.forms`, `.stepper`, `.rm`,
+  `.legend`), Kennzahlen (`.st`, `.stats3`), Balken (`.bars`, `.stack`, `.budget`, `.gantt`, `.chart`, `.codebar`) und
+  Bilder (`svg`, `img`, `[role=img]`, z. B. das Logo). Es zählt nur der äußerste Kandidat (keiner seiner Vorfahren ist
+  selbst einer), mindestens 24 × 24 px und nicht in einem ausgeblendeten Füllbild (`.fill.off`). Art: Bild-Element ab
+  200 × 80 px „bild“, kleiner „symbol“; Balken (auch darin, oder `.stepper`) „balken“; `.forms`/`.legend` „symbol“;
+  Kennzahlen (auch darin) „kennzahlen“; sonst „kasten“. Am echten Paket: 227 Grafiken auf 38 Seiten (3 bis 12 je Seite).
+- **PNG:** derselbe Weg wie „Bild“ (SVG mit `foreignObject` → Canvas, doppelte Auflösung, Änderungsschicht), aus dem Bild
+  der ganzen Seite ausgeschnitten – Hintergrund wie auf der Seite.
+- **SVG:** SVG-Elemente als echte SVG (die berechneten Stile aus dem Paket-CSS werden eingesetzt, Schriften als
+  `data:`-URL eingebettet, wenn Text vorkommt); das Logo (Hintergrund aus einer `data:`-SVG) als genau diese SVG.
+  HTML-Kästen: Eine saubere SVG bräuchte einen eigenen Layout-Umsetzer (Umbruch, Schriften, Rahmen, Verläufe); darum
+  sind sie SVG mit eingebettetem HTML (`foreignObject`, ganze Seite, `viewBox` auf den Kasten) – die Tafel sagt das
+  ausdrücklich: „nur im Browser genau, in Grafikprogrammen evtl. nicht“.
+- **CSV:** UTF-8 mit BOM, Trenner „;“, Zeilenende CRLF, Spalten `version;seite;kennung;art;wert;status` (art = `text` |
+  `status` | `zaehler` | `stand`; Kennungen wie beim Bearbeiten: `t<n>`, `s<n>`, `zaehler<n>`, `stand<n>`), Werte, wie
+  die Seite sie zeigt (Basis + Änderungsschicht; beim Status ist `wert` der Text des Punkts). Anführungszeichen nur, wo
+  nötig (`;`, `"`, Zeilenumbruch, Leerraum am Rand).
+- **JSON:** `{ "format": "aether-flyer-daten", "formatVersion": 1, "paketFassung", "version", "seite", "titel", "art",
+  "breite", "hoehe", "eintraege": [{ "kennung", "art", "wert", "status" (Zähler zusätzlich "fertig", "laeuft",
+  "gesamt") }], "grafiken": [{ "nr", "art", "x", "y", "breite", "hoehe", "png", "svg", "svgArt" }] }`.
+- **Dateinamen** (nur ASCII): `<version>_<kennung>_<nn>_<art>.png` bzw. `.svg`, Daten `<version>_<kennung>.csv`/`.json`;
+  mehrere Dateien einer Seite als `<version>_<kennung>_png.zip`, `…_svg.zip` bzw. `…_auswahl.zip` (eine Datei direkt), die
+  Version als `aether-flyer_<version>.zip` mit einem Ordner je Seite (ausgeblendete Seiten nicht). ZIP ohne Bibliothek
+  (`flyer-zip.js`: Methode „stored“, CRC-32). Am echten Paket ist das ZIP der Version etwa 47 MB groß (PNG 18,4 MB,
+  SVG 28,5 MB).
+- **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“), sonst Download, sonst ein Dialog
+  mit Link – immer im Antippen, darum bereitet die Tafel alles vorher vor („Grafiken werden erkannt und vorbereitet …“).
 
 **Bearbeiten (Teil 2)** – nur im Vollbild, Umschalter „Ansehen | Text | Status“ (Standard „Ansehen“, Tippflächen ≥ 44 px;
 beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verhält sich alles wie oben (Wischen, Tasten).
@@ -812,23 +890,38 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
 - **Paket exportieren:** Paket = Basis + Änderungen (Markierungen bleiben; unveränderte Dokumente wörtlich, geänderte
   über `DOMParser` neu geschrieben), `version` „`<JJJJ-MM-TT>.<n>`“ (heute; n = 1 bzw. eins mehr als die höchste bekannte
   Fassung desselben Tags aus Basis, letzter Online-Prüfung und früheren Exporten), `stand` = heute, Dateiname immer
-  `aether-flyer-paket.json`. Besteht das Ergebnis `AetherFlyerPaket.pruefe` nicht oder fehlte eine Markierung: Fehlerbox,
-  nichts wird ausgegeben. Weitergabe wie beim Bild (Teilen-Dialog, sonst Download – die Blob-URL wird nach 60 s
+  `aether-flyer-paket.json`. Seit F3a stehen alle Versionen darin (Format v2, siehe unten), es bleibt bei einer Datei.
+  Besteht das Ergebnis `AetherFlyerPaket.pruefe` nicht oder fehlte eine Markierung: Fehlerbox, nichts wird ausgegeben.
+  Ab 20 MB erscheint ein deutlicher Hinweis (die GitHub-Weboberfläche nimmt nach Angabe ca. 25 MB je Datei – nicht
+  nachgeprüft); gekürzt oder still geteilt wird nie. Gemessen am echten Paket: v2 mit 1 Version 416 331 Bytes, mit
+  4 Versionen 1 200 876 Bytes. Weitergabe wie beim Bild (Teilen-Dialog, sonst Download – die Blob-URL wird nach 60 s
   freigegeben –, sonst ein Dialog mit Link; scheitert das Teilen, kommt wie beim Bild der Dialog). Erst nach erfolgreicher
   Weitergabe (bzw. Antippen des Links im Dialog) gelten alle Änderungen als exportiert (Kopfzeile ohne Zusatz). Die Hilfe
   zeigt die zuletzt exportierte Fassung auch nach dem Neuladen.
-- **Online stellen** (aufklappbare Hilfe): 1) „Paket exportieren“ (Fassung wird angezeigt), 2) Link öffnen
+- **Online stellen** (aufklappbare Hilfe, mit F3a unverändert – weiter genau eine Datei): 1) „Paket exportieren“ (Fassung wird angezeigt), 2) Link öffnen
   <https://github.com/konstantin9ezm/aether/upload/main/docs/flyer>, 3) Datei `aether-flyer-paket.json` auswählen
   (ersetzt die alte), 4) Commit-Nachricht „Flyer-Paket `<Fassung>` [skip ci]“ (Knopf „Kopieren“), 5) „Commit directly to
   the main branch“, „Commit changes“. „[skip ci]“ startet keinen CI-Lauf und kostet nichts.
 - **Abgleich** bei jeder Übernahme eines neuen Pakets R (online „Laden“, erstes Online-Laden, Import), genau einmal und
   idempotent, für jeden Eintrag e mit r = Wert in R: r = e.neu → Eintrag entfällt; r = e.alt oder r = e.exportiert →
-  Eintrag bleibt, alt := r; Stand: das spätere Datum gewinnt; sonst – auch wenn das Dokument oder die Stelle in R fehlt –
-  Konflikt. Konflikte: Banner „`<n>` Konflikte …“ → Liste mit Dokument-Id und Titel, Basis-Wert, eigenem Wert und neuem
+  Eintrag bleibt, alt := r; Stand: das spätere Datum gewinnt; sonst – auch wenn die Stelle in R fehlt – Konflikt
+  (fehlt in R das ganze Dokument, entscheidet seit F3a der Abgleich der Struktur, siehe unten). Konflikte: Banner „`<n>` Konflikte …“ → Liste mit Dokument-Id und Titel, Basis-Wert, eigenem Wert und neuem
   Online-Wert, je Konflikt „Meins behalten“ (Eintrag bleibt, alt := r) oder „Online übernehmen“ (Eintrag entfällt). Bis
-  zur Entscheidung gilt der eigene Wert. Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg.
+  zur Entscheidung gilt der eigene Wert. Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg. Texte,
+  Status und Stand werden je Version abgeglichen.
+- **Abgleich der Struktur (F3a):** Versionen, Ordner und Seiten (Dasein, Name/Titel, Beschreibung, Eltern, Ordner,
+  Ausblenden, HTML) werden je Feld mit drei Ständen verglichen – Basis, lokal, online: lokal = online →
+  fertig; lokal = Basis → online wird übernommen; online = Basis → lokal bleibt; sonst Konflikt (bis zur Wahl gilt lokal).
+  Löscht die andere Seite etwas, das lokal geändert ist (auch Texte/Status darin), oder ändert sie etwas lokal Gelöschtes,
+  wird das zum Konflikt statt still zu verschwinden; ebenso ein fehlender Ordner, auf den verwiesen wird, und Ordner-Kreise.
+  Die Zähler für neue Kennungen nehmen das Maximum. Strukturkonflikte stehen in derselben Liste („Lokal behalten“ |
+  „Online übernehmen“); verschwindet die offene Version online, öffnet die Seite wieder 1.1.
 - **Änderungen sichern / einspielen / verwerfen:** „Änderungen sichern“ gibt `aether-flyer-aenderungen.json` weiter
-  (`{ "format": "aether-flyer-aenderungen", "version": 1, "paketFassung", "gesichert", "eintraege": [ … ] }`).
+  (`{ "format": "aether-flyer-aenderungen", "version": 2, "paketFassung", "versionNummer", "gesichert", "eintraege": [ … ],
+  "struktur": [ … ] }`; je Eintrag zusätzlich `ver` = Versionsnummer, `struktur` = geänderte Struktur-Felder der offenen
+  Version mit altem und neuem Wert – neue, kopierte, umbenannte, verschobene und ausgeblendete Seiten und Ordner kommen
+  so mit zurück). Eine Sicherung `version` 1 wird weiter gelesen (gilt für die offene Version). Sichern und Verwerfen
+  wirken auf die offene Version.
   „Änderungen einspielen“ (Dateiauswahl ohne `accept`) prüft den Inhalt selbst (Format, Version, Feldtypen, höchstens
   5 MB und 20 000 Einträge, nur Text-Werte) und ordnet die Einträge wie beim Abgleich gegen die aktuelle Basis ein;
   vorhandene eigene Einträge gehen vor, Widersprüche kommen in die Konfliktliste. Falsches Format oder zu neue Version
@@ -864,7 +957,39 @@ abgebrochen), nie zwei Prüfungen gleichzeitig.
    Rechte: Fehlerbox mit „Token eingeben ›“. Kaputte Online-Datei: „Online-Datei ist kein gültiges Flyer-Paket.“; zu neu:
    „Paket zu neu: Online-Version `<version>` braucht ein neueres Dashboard.“ – beide Male bleibt das gespeicherte Paket.
 
-**Paket-Format** (`formatVersion` 1; hier nur Platzhalter):
+**Paket-Format v2** (seit F3a; hier nur Platzhalter): eine Liste von Versionen statt Kategorien und Dokumenten. Die
+Export-Fassung (`version` `<JJJJ-MM-TT>.<n>`) bleibt der Stempel des ganzen Pakets.
+
+```json
+{
+  "format": "aether-flyer-paket", "formatVersion": 2, "version": "2026-11-20.1", "stand": "2026-11-20", "titel": "…",
+  "css": { "flyer": "<CSS>", "infografik": "<CSS>" },
+  "versionen": [
+    { "nummer": "1.1", "beschreibung": "", "ausgeblendet": false, "zaehler": { "seite": 1, "ordner": 1 },
+      "ordner": [{ "id": "kat1", "name": "…", "eltern": null }, { "id": "O1", "name": "…", "eltern": "kat1" }],
+      "seiten": [
+        { "id": "F1", "art": "flyer", "titel": "…", "herkunft": "original", "vorlage": null, "ordner": ["kat1"], "ausgeblendet": false, "breite": 794, "hoehe": 1123, "html": "<section class=\"page …\">…</section>" },
+        { "id": "N1", "art": "flyer", "titel": "Neue Seite (Leer)", "herkunft": "eigen", "vorlage": "leer", "ordner": ["O1"], "ausgeblendet": false, "breite": 794, "hoehe": 1123, "html": "…" }
+      ] }
+  ]
+}
+```
+
+- Version: `nummer` „x.y“ (ganze Zahlen ab 1, eindeutig; 1.1 ist Pflicht und darf nicht leer sein), `beschreibung`,
+  `ausgeblendet`, `zaehler` (höchste vergebene Kennung `N<n>`/`O<n>`), `ordner` (`id` eindeutig, `eltern` null oder ein
+  Ordner derselben Version, kein Kreis), `seiten` (Felder wie die Dokumente in v1 ohne `kategorie`, dazu `herkunft`
+  „original“ | „eigen“ – eigene Seiten heißen `N<n>` mit n ≤ `zaehler.seite` –, `vorlage` (null oder Text), `ordner`
+  (Liste von Ordner-ids), `ausgeblendet`).
+- Unbekannte Felder bleiben auf jeder Ebene erhalten (oben, je Version, je Ordner, je Seite); ein späteres Feld für
+  Medien (F3b) lässt sich so ergänzen, ohne das Format zu brechen.
+- **Umwandlung v1 → v2** (beim Import, Online-Laden und für gespeicherte Pakete, verlustfrei): eine Version 1.1 ohne
+  Beschreibung; jede Kategorie wird ein Ordner (gleiche id, Reihenfolge des Pakets, doppelte id: die erste gilt); jedes
+  Dokument eine Original-Seite im Ordner seiner Kategorie, das HTML bytegleich (am echten Paket: alle 38 Seiten
+  pixelgleich dargestellt wie vorher). Gespeichert bleibt die Basis so, wie sie kam (v1 oder v2).
+- Pakete `formatVersion` 1 werden weiter gelesen; `formatVersion` > 2: „Paket zu neu“ („… diese Seite kennt Version 2 …“).
+- Ältere Dashboard-Fassungen (vor F3a) lesen ein Paket v2 nicht („Paket zu neu“).
+
+**Paket-Format v1** (wird weiter gelesen; hier nur Platzhalter):
 
 ```json
 {
@@ -883,7 +1008,7 @@ abgebrochen), nie zwei Prüfungen gleichzeitig.
   `kategorien` (Liste von `{ id, name }`) und `dokumente` (mindestens eins; `id` eindeutig, `art` „flyer“ oder
   „infografik“, `kategorie`, `titel`, `breite` > 0, `hoehe` > 0 oder `null`, `html`). `titel` des Pakets ist optional.
   Sonst „Paket fehlerhaft.“ mit dem Grund (z. B. „Dokument 3: art fehlt“).
-- `formatVersion` > 1: „Paket zu neu“ („Das Paket hat formatVersion n; diese Seite kennt Version 1. Bitte das Dashboard
+- `formatVersion` > 2: „Paket zu neu“ („Das Paket hat formatVersion n; diese Seite kennt Version 2. Bitte das Dashboard
   aktualisieren.“), nichts wird überschrieben. Unbekannte Felder werden ignoriert (sie bleiben im gespeicherten Paket).
 - Flyer: Wurzel `<section class="page …" style="--s:<Wert>">`, 794 × 1123 px, Inhalt in `.body`; `--s` skaliert die
   Schrift, `.fill` ist ein Füllbild. Infografik: Wurzel `<section class="ig …">`, 1080 px breit, Höhe frei.
@@ -899,11 +1024,15 @@ abgebrochen), nie zwei Prüfungen gleichzeitig.
   | `data-block` mit `data-zaehler` | Block mit abhakbaren Listeneinträgen und seine Überschrift |
   | `data-stand="kurz"` / `"lang"` | Datum des Dokuments |
 
-**Speicher:** IndexedDB `aether-flyer`, Version 2, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
+**Speicher:** IndexedDB `aether-flyer`, Version 3, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
 'online'|'import', sha, uebernommen }`, das zuletzt übernommene Paket) und `online` (Schlüssel `stand`: `{ sha, version,
 stand, geprueft }`, die zuletzt bekannte Online-Datei) und – seit Teil 2 – `aenderungen` (je Eintrag Schlüssel
 `e:<dok>\n<art>\n<k>`: `{ dok, k, art, alt, neu, exportiert, zeit, konflikt }`, dazu `meta`: `{ exporte }`, die bisher
-exportierten Fassungen). Die Migration 1 → 2 legt nur `aenderungen` an; `basis` und `online` bleiben erhalten. Die Basis
+exportierten Fassungen) und – seit F3a – `struktur` (Schlüssel `lokal`: `{ paket, konflikte, exportiert }`, der lokale
+Stand aller Versionen im Format v2, offene Strukturkonflikte und die Prüfwerte des letzten Exports) und `geraet`
+(Schlüssel `version`: die offene Version dieses Geräts). Die Migration 1 → 2 legt nur `aenderungen` an; `basis` und
+`online` bleiben erhalten. Die Migration 2 → 3 legt `struktur` und `geraet` an und schreibt die Änderungsschicht auf
+Versionen um (Schlüssel `e:<ver>\n<dok>\n<art>\n<k>`, `ver` = „1.1“ für alles Bisherige). Die Basis
 bleibt immer das zuletzt übernommene Paket; dargestellt wird Basis + Änderungsschicht. Kein Token, keine API-Antworten im
 Ganzen, kein `localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
 Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Die Verbindung
@@ -954,22 +1083,28 @@ jedes in seinem eigenen Shadow Root.
 | Datei | Inhalt |
 |---|---|
 | `gemeinsam.js` | gemeinsame Hilfsfunktionen (`githubApi`, `AppError`, `meldung`, `mitGeste`, `kannTeilen`, `herunterladen`, Zeitlimit) |
-| `flyer-paket.js` | `AetherFlyerPaket`: Format lesen und prüfen, Versionen vergleichen, Datum, Bereinigung von HTML und CSS, CSS für Shadow Root und Dokument aufteilen |
+| `flyer-paket.js` | `AetherFlyerPaket`: Format v1 und v2 lesen und prüfen, Umwandlung v1 → v2 (`alsV2`), Fassungen vergleichen, Datum, Bereinigung von HTML und CSS, CSS für Shadow Root und Dokument aufteilen |
+| `flyer-struktur.js` | `AetherFlyerStruktur` (F3a): Versionen, Ordner und Seiten (reine Funktionen auf einer Kopie), Vorlagen, Sicht einer Version, Felder und Zusammenführen für den Abgleich |
 | `flyer-speicher.js` | `AetherFlyerSpeicher`: IndexedDB `aether-flyer`, `persist()` |
-| `flyer-ansicht.js` | `AetherFlyerAnsicht`: Chips, Kacheln, Vollbild, Tasten und Wischen, Schriftanpassung; `darstellen(dok, ziel, optionen)` stellt ein Dokument dar (für Teil 2 mit der Änderungsschicht über `optionen.anpassen`) |
+| `flyer-ansicht.js` | `AetherFlyerAnsicht`: Pfad, Ordner-Kacheln, Seiten-Kacheln mit Menü „···“, „Ausgeblendete zeigen“, Vollbild, Tasten und Wischen, Schriftanpassung; `darstellen(dok, ziel, optionen)` stellt ein Dokument dar (für Teil 2 mit der Änderungsschicht über `optionen.anpassen`) |
 | `flyer-online.js` | `AetherFlyerOnline`: Online-Prüfung |
-| `flyer-export.js` | `AetherFlyerExport`: PDF (Druck) und Bild, beide mit der Änderungsschicht |
+| `flyer-export.js` | `AetherFlyerExport`: PDF (Druck) und Bild, beide mit der Änderungsschicht; Seitenbild und SVG-Ausschnitt für den Export „Grafiken & Daten“ |
+| `flyer-zip.js` | `AetherFlyerZip` (F3a): ZIP „stored“ mit CRC-32, ohne Bibliothek |
 | `flyer-aenderungen.js` | `AetherFlyerAenderungen`: Änderungsschicht (Text, Status, Stand), Zähler und Balken, Abgleich, Export-Paket, Sicherung |
-| `flyer-bearbeiten.js` | `AetherFlyerBearbeiten`: Umschalter und Leisten im Vollbild, Konfliktliste, „Paket exportieren“, Hilfe „Online stellen“, Sichern/Einspielen/Verwerfen |
-| `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile; Schnittstelle für Tests und Teil 2 |
+| `flyer-bearbeiten.js` | `AetherFlyerBearbeiten`: Umschalter und Leisten im Vollbild, Konfliktliste (auch Strukturkonflikte), „Paket exportieren“ (Hinweis ab 20 MB), Hilfe „Online stellen“, Sichern/Einspielen/Verwerfen |
+| `flyer-uebersicht.js` | `AetherFlyerUebersicht` (F3a): Tafeln, Versionsknopf und Tafel „Versionen“, Menüs „···“ für Version, Ordner und Seite, „+ Neuer Ordner“, „+ Seite“ |
+| `flyer-grafik.js` | `AetherFlyerGrafik` (F3a): Export „Grafiken & Daten“ (Erkennung, PNG, SVG, CSV, JSON, Einzelauswahl, ZIP der Version) |
+| `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile, Struktur (lokaler Stand v2, offene Version, Abgleich); Schnittstelle für Tests und Teil 2 |
 
-Fehlt eines der Module Ansicht, Online, Export oder Bearbeiten, bleiben seine Knöpfe verborgen und der Rest läuft weiter.
+Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht oder Grafik, bleiben seine Knöpfe verborgen und der
+Rest läuft weiter.
 
 **Testschalter:** Setzt man vor dem Laden `window.AETHER_TEST_FLYER_INTERVALL_MS` (positive Zahl), gilt dieses
 Intervall statt der 10 Minuten; `window.AETHER_TEST_FLYER_SCHRIFT_FRIST_MS` ersetzt die 5 s Wartezeit auf die
 Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur Freigabe einer Download-Blob-URL;
 `window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) verkürzt das Zeitlimit der Anfragen. Das nutzen nur die E2E-Tests. **Testschnittstelle:** `window.AetherFlyer` (`bereit`, `stand`, `paket`,
-`uebernehme`, `fehler`, `fehlerWeg`, `gespeichert`) und die Modul-Objekte.
+`paketV2`, `sicht`, `version`, `aendereStruktur`, `oeffneVersion`, `strukturZahl`, `strukturKonflikte`, `uebernehme`,
+`fehler`, `fehlerWeg`, `gespeichert`) und die Modul-Objekte.
 
 **Grenzen**
 
@@ -986,6 +1121,10 @@ Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur
   Import.
 - Die Tests nutzen nur Platzhalter-Pakete; Zähler-Regel und Stand-Formate wurden einmalig lokal am echten Paket
   geprüft (es liegt nie in diesem Repo). Änderungen liegen nur auf diesem Gerät, bis sie exportiert (oder gesichert) sind.
+- F3a (Versionen, Ordner, neue Seiten, Export „Grafiken & Daten“) ist auf iPhone/iPad noch nicht am Gerät geprüft. Der
+  Export braucht für PNG dieselbe Selbstprobe wie „Bild“ (sonst nur SVG und Daten); das ZIP der Version wird im
+  Speicher gebaut (am echten Paket ca. 47 MB). SVG mit eingebettetem HTML zeigen Grafikprogramme evtl. nicht genau.
+  Tabellenprogramme mit deutscher Einstellung können die Spalte `version` („1.1“) als Datum lesen.
 
 ## WebGPU-Check
 
@@ -1318,6 +1457,26 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   `box-shadow` an `.druck-seite` → PDF rot; in `flyer.js` `nachImport` nicht aufrufen oder `nurWennLeer` übergehen
   bzw. in `flyer-online.js` „Laden“ über den Pfad statt den sha laden → jeweilige Online-Gegenbeispiele rot.
 
+- `tests/flyer-v2.test.js` (F3a, ohne Browser) – a) Umwandlung v1 → v2 verlustfrei (HTML bytegleich, Kategorien →
+  Ordner, 1.1 in V1, unbekannte Felder bleiben, Prüfung v2); b) Versionen (Unter-/Hauptversion, Kopie unabhängig, 1.1
+  nie löschbar, Ausblenden, Beschreibung ≤ 80); c) Ordner (verschachtelt, mehrfach zugeordnet, „Alle“ ohne Doppelte,
+  Verschieben ohne Kreis, Löschen erhält Seiten); d) Seiten (Vorlagen mit gültigen Markierungen, Kopie, Kennungen `N…`
+  nie wiederverwendet, Original nie löschbar, Ausblenden); ZIP (CRC-32 gegen `zlib.crc32`, eigener ZIP-Leser) und CSV
+  (BOM, „;“, Umlaute, CRLF), Dateinamen nur ASCII.
+- `tests/flyer-f3a.test.js` (F3a, Chromium, Helfer `tests/flyer-hilfe.js`) – Versionen, Ordner, Seiten, Sichern/Einspielen
+  mit Struktur (e), Abgleich mit Strukturkonflikten (f), Export „Grafiken & Daten“ (g: Erkennung, PNG 2× mit Pixeln der
+  Seite, echte SVG und SVG mit eingebettetem HTML, CSV/JSON mit der Änderungsschicht, Einzelauswahl, ZIP der Version,
+  Teilen-Weg) und die Oberfläche auf dem iPhone (i: 390 px ohne waagerechtes Scrollen, Tippflächen ≥ 44 px, Ordner 2 je
+  Reihe, Backspace in Tafeln und Textfeldern).
+- `tests/flyer-echt.test.js` (h, nur lokal) – läuft nur mit `FLYER_ECHT=/pfad/aether-flyer-paket.json` (das echte Paket
+  kommt nie ins Repo oder in die CI, sonst übersprungen): stellt jede Seite mit dem Code vor F3a (`git archive` von
+  `FLYER_ALT_COMMIT`, Standard `3e35c4f`, oder `FLYER_ALT=<Verzeichnis>`) und dem neuen Code dar und vergleicht Pixel für
+  Pixel, zählt die Grafiken je Seite und misst die Paketgröße; Ausgaben (nur Zahlen und Kennungen) nach `FLYER_AUSGABE`.
+- Gegenproben F3a (von Hand, müssen rot werden): in `flyer-paket.js` das HTML bei der Umwandlung verändern (`trim()`) →
+  a) rot; in `flyer-struktur.js` die Version flach kopieren (`Object.assign({}, q)`) → b) rot, die Herkunftsprüfung in
+  `seiteLoeschen` abschalten → d) rot, beim Verschieben nur `ziel === id` prüfen → c) und Ordner-Test rot; in
+  `flyer-zip.js` die CRC verfälschen → ZIP-Tests rot; in `flyer-grafik.js` das BOM weglassen → CSV-Tests rot.
+
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
 
@@ -1327,7 +1486,8 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
-`gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
-`flyer-online.js`, `flyer-export.js`, `flyer-aenderungen.js` und `flyer-bearbeiten.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
+`gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-struktur.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
+`flyer-online.js`, `flyer-export.js`, `flyer-zip.js`, `flyer-aenderungen.js`, `flyer-bearbeiten.js`, `flyer-uebersicht.js`
+und `flyer-grafik.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

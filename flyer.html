@@ -17,9 +17,10 @@
   eigenen Shadow Root dargestellt (flyer-ansicht.js). Das Aussehen der Dokumente kommt allein aus dem Paket-CSS;
   die Regeln hier gelten nur für die Seite selbst. Die CSP oben sichert zusätzlich, dass nichts aus dem Paket
   etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API).
-  Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-speicher.js, flyer-ansicht.js,
+  Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-struktur.js (Versionen, Ordner,
+  Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
-  Export, Abgleich, Sicherung, Teil 2), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -87,11 +88,32 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .hinweis{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
 .hinweis b{ display:block; }
 .hinweis a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; font-weight:600; }
-/* Kategorie-Chips (gewählt wie .seg im Logo-Werkzeug) */
-.chips{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; min-width:0; }
-.chips:empty{ margin:0; }
-.chips button{ border-radius:999px; font-size:14px; padding:6px 14px; max-width:100%; overflow-wrap:anywhere; }
-.chips button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* F3a: Pfad „Alle › …“ mit ‹ zurück (statt der Kategorie-Chips) */
+.pfad{ display:flex; align-items:center; gap:8px; margin:0 0 12px; min-width:0; }
+.pfad ol{ display:flex; flex-wrap:wrap; align-items:center; gap:0 2px; list-style:none; margin:0; padding:0; flex:1; min-width:0; }
+.pfad li{ display:flex; align-items:center; min-width:0; }
+.pfad-glied{ border:0; background:none; font-size:18px; padding:6px 8px; max-width:100%; overflow-wrap:anywhere; text-align:left; }
+.pfad-glied[aria-current]{ font-weight:600; }
+.pfad-trenner{ color:var(--muted); padding:0 2px; }
+.pfad-zahl{ font-size:14px; color:var(--muted); white-space:nowrap; }
+/* F3a: Ordner-Kacheln (2 je Reihe auf schmalen Geräten) */
+.ordner-kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:0 0 12px; }
+.ordner-kacheln:empty{ margin:0; }
+@media (max-width:600px){ .ordner-kacheln{ grid-template-columns:1fr 1fr; gap:10px; } }
+.ordner-kachel{ position:relative; min-width:0; }
+.ok-oeffnen{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; min-height:88px; padding:12px 52px 12px 12px; text-align:left;
+  border-radius:12px; background:var(--panel); }
+.ok-symbol{ display:block; width:34px; height:24px; border-radius:4px 8px 6px 6px; background:var(--accent); opacity:.9; margin-bottom:4px; }
+.ok-name{ font-weight:600; font-size:17px; overflow-wrap:anywhere; min-width:0; max-width:100%; }
+.ok-zahl{ font-size:13px; color:var(--muted); }
+.ok-mehr, .kachel-mehr{ position:absolute; top:6px; right:6px; font-weight:700; letter-spacing:.08em; padding:4px 8px; background:var(--panel); }
+.ordner-neu{ min-height:88px; border-radius:12px; border:2px dashed var(--accent); color:var(--accent); background:transparent; font-weight:600; font-size:16px; }
+.ausgeblendet-zeile{ margin:14px 0 0; }
+/* Seiten-Kachel mit Menü „···“; ausgeblendete Seiten abgeblendet mit Marke */
+.kachel-platz{ position:relative; min-width:0; display:flex; }
+.kachel-platz > .kachel{ flex:1; }
+.kachel-platz.ausgeblendet > .kachel{ opacity:.5; }
+.kachel .marke{ align-self:flex-start; }
 .leer{ color:var(--muted); font-size:15px; text-align:center; margin:24px 0; overflow-wrap:anywhere; }
 /* Kacheln: Vorschau (Host per transform auf Kachelbreite skaliert), Id, Titel, Warnung */
 .kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
@@ -152,6 +174,73 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .hilfe li{ margin:0 0 6px; }
 .hilfe a{ color:var(--accent); font-weight:600; display:inline-flex; align-items:center; min-height:44px; }
 .hilfe code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
+/* F3a: Version (Knopf unter den Werkzeugen) */
+.versionszeile{ margin:0 0 10px; min-width:0; }
+#btnVersion{ display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; max-width:100%; text-align:left; }
+#btnVersion .zusatz{ font-size:13px; color:var(--muted); }
+/* F3a: Tafeln (Dialoge über Seite und Vollbild; unter dem Sichern-Dialog) */
+.tafel-huelle{ position:fixed; inset:0; z-index:24; background:rgba(4,5,14,.55); display:flex; align-items:flex-start; justify-content:center;
+  padding:calc(12px + env(safe-area-inset-top,0px)) 12px 12px; overflow:auto; }
+.tafel-huelle[hidden]{ display:none; }
+.tafel{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; width:min(560px,100%); min-width:0; padding:0 14px 14px; }
+.tafel-kopf{ display:flex; align-items:center; gap:8px; padding:10px 0; position:sticky; top:0; background:var(--panel); }
+.tafel-kopf h2{ flex:1; margin:0; font-size:18px; font-weight:600; min-width:0; overflow-wrap:anywhere; }
+.tafel-inhalt{ min-width:0; }
+.t-abschnitt{ font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:12px 0 6px; }
+.t-liste{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+.t-liste > button{ text-align:left; width:100%; }
+.t-menue > button{ font-size:16px; }
+.t-zeile{ display:flex; gap:6px; align-items:stretch; min-width:0; }
+.t-zeile .t-haupt{ flex:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; text-align:left; min-width:0; }
+.t-zeile.aktuell .t-haupt{ border-color:var(--sel); box-shadow:inset 0 0 0 1px var(--sel); }
+.t-text{ overflow-wrap:anywhere; min-width:0; }
+.t-klein{ font-size:13px; color:var(--muted); }
+.t-mehr{ flex:none; font-weight:700; letter-spacing:.08em; }
+.marke{ display:inline-block; font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--chip); border:1px solid var(--line); }
+.marke.aktuell{ background:var(--sel); color:var(--sel-ink); border-color:transparent; }
+.abgeblendet{ opacity:.55; }
+button.neu{ border-style:dashed; color:var(--accent); font-weight:600; }
+button.gefahr{ color:var(--danger); }
+.t-label{ display:block; font-size:14px; color:var(--muted); margin:8px 0 4px; }
+.tafel input[type="text"], .tafel select{ font:inherit; font-size:16px; width:100%; min-height:44px; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.t-zaehler{ display:block; font-size:12px; color:var(--muted); text-align:right; margin-top:2px; }
+.t-hinweis{ color:var(--warn-text); font-size:14px; margin:4px 0 8px; min-height:1em; overflow-wrap:anywhere; }
+/* F3a: neue Knöpfe oben (hellblau umrandet wie in der Vorschau) */
+button.hervor{ border:2px solid var(--accent); color:var(--accent); font-weight:600; }
+/* F3a: Tafel „Neue Seite“ – Vorlagen als Kacheln mit kleiner Skizze */
+.vorlagen{ display:grid; grid-template-columns:1fr 1fr; gap:10px; min-width:0; }
+.vorlage{ display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:8px; min-height:44px; border-radius:12px; text-align:center; }
+.vorlage[aria-pressed="true"]{ border:2px solid var(--sel); box-shadow:0 0 0 1px var(--sel); }
+.vorlage small{ display:block; font-size:12px; color:var(--muted); }
+.skizze{ display:flex; flex-direction:column; gap:5px; height:64px; padding:6px; border-radius:6px; background:var(--field); border:1px solid var(--line); overflow:hidden; }
+.skizze i{ display:block; height:5px; border-radius:3px; background:var(--muted); opacity:.55; }
+.skizze i.t{ height:8px; width:60%; background:var(--accent); opacity:1; }
+.skizze i.p{ width:70%; }
+.skizze .zahlen, .skizze .kaesten{ display:flex; gap:6px; flex:1; }
+.skizze .zahlen b{ flex:1; font-size:13px; color:var(--text); text-align:center; }
+.skizze .kaesten span{ flex:1; border:1px solid var(--muted); border-radius:4px; }
+.skizze.gesperrt{ opacity:.5; }
+.t-check{ display:flex; align-items:center; gap:10px; min-height:44px; padding:4px 6px; border-radius:8px; cursor:pointer; overflow-wrap:anywhere; }
+.t-check input{ width:22px; height:22px; flex:none; accent-color:var(--sel); }
+/* F3a: Tafel „Grafiken & Daten“ (Export) */
+.g-tafel{ min-width:0; }
+button.g-knopf{ display:flex; align-items:center; gap:10px; width:100%; min-height:56px; text-align:left; }
+.g-knopf .g-text{ flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.g-knopf b{ font-size:16px; font-weight:600; }
+.g-knopf small{ font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.g-knopf .g-pfeil{ flex:none; font-size:20px; color:var(--accent); }
+.g-kopf{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 10px; margin:12px 0 6px; }
+.g-kopf .t-abschnitt{ margin:0; }
+.g-raster{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; min-width:0; }
+button.g-mini{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-width:0; min-height:64px; padding:4px; border-radius:10px; }
+.g-mini canvas{ display:block; max-width:100%; height:auto; border-radius:4px; }
+.g-mini small{ font-size:11px; color:var(--muted); }
+.g-mini .g-ersatz{ font-size:13px; }
+.g-mini[aria-pressed="true"]{ border:2px solid var(--sel); box-shadow:0 0 0 1px var(--sel); }
+button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+.g-fortschritt{ display:block; width:100%; height:14px; margin:6px 0; }
+.g-fertig{ font-weight:600; margin:6px 0; }
+.g-hinweis{ margin:6px 0 0; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -202,7 +291,10 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="btnEinspielen" hidden>Änderungen einspielen</button>
     <input type="file" id="dateiEinspielen" hidden>
     <button type="button" id="btnVerwerfen" hidden>Alle Änderungen verwerfen</button>
+    <button type="button" id="btnNeueSeite" class="hervor" hidden>+ Seite</button>
+    <button type="button" id="btnGrafikenVersion" class="hervor" hidden>Grafiken &amp; Daten exportieren</button>
   </div>
+  <div id="versionsZeile" class="versionszeile" hidden><button type="button" id="btnVersion" aria-haspopup="dialog"><b id="versionName">Version 1.1 ▾</b> <span id="versionZusatz" class="zusatz"></span></button></div>
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
@@ -220,9 +312,12 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
   </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
-  <nav id="chips" class="chips" aria-label="Kategorien"></nav>
+  <nav id="pfad" class="pfad" aria-label="Ordner" hidden><button type="button" id="pfadZurueck" aria-label="Einen Ordner zurück">‹</button><ol id="pfadListe"></ol><span id="pfadZahl" class="pfad-zahl"></span></nav>
+  <div id="ordnerKacheln" class="ordner-kacheln"></div>
+  <div id="seitenTitel" class="t-abschnitt" hidden>Seiten</div>
   <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>
   <div id="kacheln" class="kacheln"></div>
+  <div id="ausgeblendetZeile" class="ausgeblendet-zeile" hidden><button type="button" id="btnAusgeblendete" aria-pressed="false">Ausgeblendete zeigen (0)</button></div>
 </main>
 
 <div id="vollbild" class="vollbild" role="dialog" aria-modal="true" aria-labelledby="vbTitel" hidden>
@@ -238,6 +333,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <button type="button" id="vbReset" hidden>Dokument zurücksetzen</button>
     <button type="button" id="vbPdf" hidden>PDF</button>
     <button type="button" id="vbBild" hidden>Bild</button>
+    <button type="button" id="vbExport" class="hervor" hidden>Export</button>
     <button type="button" id="vbZu" aria-label="Schließen">✕</button>
   </div>
   <div id="vbBuehne" class="buehne"></div>
@@ -254,6 +350,11 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
   </div>
 </div>
 
+<div id="tafel" class="tafel-huelle" hidden><div class="tafel" role="dialog" aria-modal="true" aria-labelledby="tafelTitel">
+  <div class="tafel-kopf"><button type="button" id="tafelZurueck" aria-label="Zurück" hidden>‹</button><h2 id="tafelTitel"></h2><button type="button" id="tafelZu" aria-label="Schließen">✕</button></div>
+  <div id="tafelInhalt" class="tafel-inhalt"></div>
+</div></div>
+
 <div id="druck" aria-hidden="true"></div>
 
 <div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitel">
@@ -265,12 +366,16 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 
 <script src="gemeinsam.js"></script>
 <script src="flyer-paket.js"></script>
+<script src="flyer-struktur.js"></script>
 <script src="flyer-speicher.js"></script>
 <script src="flyer-ansicht.js"></script>
 <script src="flyer-online.js"></script>
 <script src="flyer-export.js"></script>
+<script src="flyer-zip.js"></script>
 <script src="flyer-aenderungen.js"></script>
 <script src="flyer-bearbeiten.js"></script>
+<script src="flyer-uebersicht.js"></script>
+<script src="flyer-grafik.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

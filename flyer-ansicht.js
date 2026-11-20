@@ -1,5 +1,9 @@
-// Ansicht der Flyer-Seite (flyer.html, Teil C): zeigt die Dokumente des Flyer-Pakets als Kacheln (gefiltert über
-// Kategorie-Chips) und im Vollbild (Blättern per ‹/›, Wischen und Pfeiltasten; Esc/Backspace schließt).
+// Ansicht der Flyer-Seite (flyer.html, Teil C): zeigt die Dokumente des Flyer-Pakets als Kacheln und im Vollbild
+// (Blättern per ‹/›, Wischen und Pfeiltasten; Esc/Backspace schließt).
+// F3a: Ordner statt Kategorie-Chips – Pfad „Alle › …“ mit ‹ zurück, Ordner-Kacheln („n Seiten · m Ordner“, Menü „···“,
+// „+ Neuer Ordner“), darunter „SEITEN“ mit den Seiten-Kacheln (Menü „···“) und „Ausgeblendete zeigen (n)“. „Alle“ zeigt
+// jede Seite der Version genau einmal. Menüs und „+ Neuer Ordner“ kommen über setzeUebersicht (flyer-uebersicht.js);
+// ohne sie gibt es keine Menü-Knöpfe. Backspace in der Übersicht (nicht in Texteingaben) geht einen Ordner zurück.
 // Jedes Dokument steht in einem eigenen Shadow Root (div.flyer-host): Das Paket-CSS (bereinigt, :root/html/body → :host,
 // aus AetherFlyerPaket.zerlegeCss) wirkt nur dort, und nichts von der Seite wirkt hinein. @font-face und @page des
 // Pakets stehen im Dokument (<style id="flyerDokRegeln">), weil Chromium @font-face im Shadow Root nicht beachtet und
@@ -50,8 +54,10 @@
   let sCache = new Map();                               // Dokument-Id → zuletzt ermitteltes s (wird immer nachgeprüft)
   let messungen = new Map();                            // Dokument-Id → { inhalt, s, zuLang, aus[] } letzte echte Messung
 
-  let kategorie = 'alle';
-  let liste = [];                                       // Dokumente der gewählten Kategorie (Reihenfolge des Pakets)
+  let ordner = null;                                    // geöffneter Ordner (id; null = „Alle“)
+  let mitAusgeblendeten = false;                        // „Ausgeblendete zeigen“
+  let uebersicht = null;                                // F3a: { ordnerMenue(o, knopf), seitenMenue(dok, knopf), neuerOrdner(eltern) }
+  let liste = [];                                       // Dokumente des Ordners (Reihenfolge des Pakets)
   let generation = 0;                                   // zählt Kachel-Darstellungen (veraltete Ergebnisse verwerfen)
   let kachelSkalen = new Map();                         // .kachel-bild → { host, breite }
   let kachelFlyer = [];                                 // Flyer-Kacheln der aktuellen Darstellung: { wurzel, warnung }
@@ -321,21 +327,33 @@
   function kachelFuer(id) {
     const ziel = $('kacheln');
     if (!ziel) return null;
-    for (const k of ziel.children) if (k.getAttribute('data-id') === String(id)) return k;
+    for (const k of ziel.querySelectorAll('.kachel')) if (k.getAttribute('data-id') === String(id)) return k;
     return null;
   }
 
+  // Dokumente des geöffneten Ordners (Alle: jedes Dokument genau einmal); Ausgeblendete nur mit „Ausgeblendete zeigen“
+  function listeBerechnen() {
+    const alle = aktPaket ? aktPaket.dokumente : [];
+    return alle.filter((d) => (ordner === null || (Array.isArray(d.ordner) && d.ordner.indexOf(ordner) >= 0)) &&
+      (mitAusgeblendeten || d.ausgeblendet !== true));
+  }
+  function ausgeblendeteHier() {
+    const alle = aktPaket ? aktPaket.dokumente : [];
+    return alle.filter((d) => d.ausgeblendet === true && (ordner === null || (Array.isArray(d.ordner) && d.ordner.indexOf(ordner) >= 0))).length;
+  }
   function kachelnZeichnen() {
     const gen = ++generation;
     if (kachelBeobachter) kachelBeobachter.disconnect();
     kachelSkalen = new Map();
     kachelFlyer = [];
-    const alle = aktPaket ? aktPaket.dokumente : [];
-    liste = kategorie === 'alle' ? alle.slice() : alle.filter((d) => d.kategorie === kategorie);
+    liste = listeBerechnen();
     const ziel = $('kacheln');
     if (!ziel) return Promise.resolve([]);
     leeren(ziel);
     const warten = liste.map((dok, i) => {
+      const platz = document.createElement('div');
+      platz.className = 'kachel-platz' + (dok.ausgeblendet === true ? ' ausgeblendet' : '');
+      platz.setAttribute('data-id', String(dok.id));
       const k = document.createElement('button');
       k.type = 'button';
       k.className = 'kachel';
@@ -349,12 +367,42 @@
       const warnung = span('kachel-warnung warnung', 'Text zu lang');
       warnung.hidden = true;
       k.append(bild, span('kachel-id', String(dok.id)), span('kachel-titel', String(dok.titel)), warnung);
+      if (dok.ausgeblendet === true) k.appendChild(span('marke', 'ausgeblendet'));
       k.addEventListener('click', () => { oeffne(i); });
-      ziel.appendChild(k);
+      platz.appendChild(k);
+      if (uebersicht && typeof uebersicht.seitenMenue === 'function') {
+        const mehr = document.createElement('button');
+        mehr.type = 'button';
+        mehr.className = 'kachel-mehr';
+        mehr.textContent = '···';
+        mehr.setAttribute('aria-label', 'Menü ' + dok.id);
+        mehr.addEventListener('click', () => { uebersicht.seitenMenue(dok, mehr); });
+        platz.appendChild(mehr);
+      }
+      ziel.appendChild(platz);
       return kachelBild(dok, bild, warnung, gen);
     });
     alleKachelnSkalieren();
+    ausgeblendetKnopf();
     return Promise.all(warten);
+  }
+  // „Ausgeblendete zeigen (n)“ / „Ausgeblendete verbergen“ (nur, wenn es hier ausgeblendete Seiten gibt)
+  function ausgeblendetKnopf() {
+    const z = $('ausgeblendetZeile'), b = $('btnAusgeblendete');
+    if (!z || !b) return;
+    const n = ausgeblendeteHier();
+    if (n === 0) mitAusgeblendeten = false;   // nichts mehr ausgeblendet: Umschalter zurück
+    z.hidden = !aktPaket || n === 0;
+    b.textContent = mitAusgeblendeten ? 'Ausgeblendete verbergen' : 'Ausgeblendete zeigen (' + n + ')';
+    b.setAttribute('aria-pressed', String(mitAusgeblendeten));
+  }
+  function zeigeAusgeblendete(an) {
+    mitAusgeblendeten = an === true;
+    if (!aktPaket) { ausgeblendetKnopf(); return Promise.resolve([]); }
+    if (vb) schliesse();
+    const fertig = kachelnZeichnen();
+    melde('flyer:kategorie', ereignis());
+    return fertig;
   }
 
   // Dokument in ein Kachelbild darstellen (auch zum Neu-Darstellen nach einer Änderung) → Promise (Ergebnis von fertig)
@@ -389,43 +437,108 @@
     return Promise.all(warten).then((r) => { melde('flyer:aktualisiert', { id: id }); return r; });
   }
 
-  /* ---------- Chips ---------- */
-  function chipsZeichnen() {
-    const nav = $('chips');
-    const chips = [{ id: 'alle', name: 'Alle' }];
-    if (aktPaket) {
-      const mitDok = new Set(aktPaket.dokumente.map((d) => d.kategorie));
-      const gesehen = new Set(['alle']);
-      for (const k of aktPaket.kategorien || []) {
-        if (!k || gesehen.has(k.id) || !mitDok.has(k.id)) continue;
-        gesehen.add(k.id);
-        chips.push({ id: k.id, name: k.name });
-      }
-    }
-    if (!kategorieGibtEs(chips)) kategorie = 'alle';
-    if (!nav) return;
-    leeren(nav);
+  /* ---------- Ordner (F3a) ---------- */
+  function alleOrdner() { return aktPaket && Array.isArray(aktPaket.ordner) ? aktPaket.ordner : []; }
+  function ordnerVon(id) { return alleOrdner().find((o) => o.id === id) || null; }
+  function kinderVon(id) { return alleOrdner().filter((o) => o.eltern === id); }
+  function zahlText(n, eins, mehr) { return n + ' ' + (n === 1 ? eins : mehr); }
+  function pfadVon(id) {
+    const r = [], gesehen = new Set();
+    let o = id === null ? null : ordnerVon(id);
+    while (o && !gesehen.has(o.id)) { gesehen.add(o.id); r.unshift(o); o = o.eltern === null ? null : ordnerVon(o.eltern); }
+    return r;
+  }
+  function ereignis() { return { kategorie: ordner === null ? 'alle' : ordner, ordner: ordner, liste: liste.slice() }; }
+  // Pfad „Alle › …“ (jedes Glied anklickbar, das letzte ist der geöffnete Ordner) und ‹ (eine Ebene zurück)
+  function pfadZeichnen() {
+    const nav = $('pfad'), ol = $('pfadListe'), zur = $('pfadZurueck');
+    if (!nav || !ol) return;
+    leeren(ol);
+    nav.hidden = !aktPaket;
     if (!aktPaket) return;
-    for (const c of chips) {
+    const glieder = [{ id: null, name: 'Alle' }].concat(pfadVon(ordner));
+    glieder.forEach((g, i) => {
+      const li = document.createElement('li');
+      if (i) li.appendChild(span('pfad-trenner', '›'));
       const b = document.createElement('button');
       b.type = 'button';
-      b.setAttribute('data-kategorie', String(c.id));
-      b.setAttribute('aria-pressed', String(c.id === kategorie));
-      b.textContent = String(c.name);
-      b.addEventListener('click', () => waehleKategorie(c.id));
-      nav.appendChild(b);
-    }
+      b.className = 'pfad-glied';
+      b.textContent = String(g.name);
+      b.setAttribute('data-ordner', g.id === null ? '' : String(g.id));
+      if (i === glieder.length - 1) b.setAttribute('aria-current', 'location');
+      b.addEventListener('click', () => waehleOrdner(g.id));
+      li.appendChild(b);
+      ol.appendChild(li);
+    });
+    if (zur) zur.disabled = ordner === null;
+    const zahl = $('pfadZahl');
+    if (zahl) zahl.textContent = zahlText(listeBerechnen().length, 'Seite', 'Seiten');
   }
-  function kategorieGibtEs(chips) { return chips.some((c) => c.id === kategorie); }
-  function waehleKategorie(id) {
-    if (!aktPaket || id === kategorie) return;
-    kategorie = id;
-    const nav = $('chips');
-    if (nav) {
-      for (const b of nav.querySelectorAll('button[data-kategorie]')) b.setAttribute('aria-pressed', String(b.getAttribute('data-kategorie') === id));
+  // Ordner-Kacheln des geöffneten Ordners und „+ Neuer Ordner“
+  function ordnerZeichnen() {
+    const ziel = $('ordnerKacheln');
+    if (!ziel) return;
+    leeren(ziel);
+    if (!aktPaket) return;
+    for (const o of kinderVon(ordner)) {
+      const kachel = document.createElement('div');
+      kachel.className = 'ordner-kachel';
+      kachel.setAttribute('data-ordner', String(o.id));
+      const auf = document.createElement('button');
+      auf.type = 'button';
+      auf.className = 'ok-oeffnen';
+      const n = aktPaket.dokumente.filter((d) => d.ausgeblendet !== true && Array.isArray(d.ordner) && d.ordner.indexOf(o.id) >= 0).length;
+      const m = kinderVon(o.id).length;
+      const sym = span('ok-symbol', '');
+      sym.setAttribute('aria-hidden', 'true');
+      auf.append(sym, span('ok-name', String(o.name)), span('ok-zahl', zahlText(n, 'Seite', 'Seiten') + (m ? ' · ' + zahlText(m, 'Ordner', 'Ordner') : '')));
+      auf.addEventListener('click', () => waehleOrdner(o.id));
+      kachel.appendChild(auf);
+      if (uebersicht && typeof uebersicht.ordnerMenue === 'function') {
+        const mehr = document.createElement('button');
+        mehr.type = 'button';
+        mehr.className = 'ok-mehr';
+        mehr.textContent = '···';
+        mehr.setAttribute('aria-label', 'Menü Ordner ' + o.name);
+        mehr.addEventListener('click', () => { uebersicht.ordnerMenue(o, mehr); });
+        kachel.appendChild(mehr);
+      }
+      ziel.appendChild(kachel);
     }
+    if (uebersicht && typeof uebersicht.neuerOrdner === 'function') {
+      const neu = document.createElement('button');
+      neu.type = 'button';
+      neu.className = 'ordner-neu';
+      neu.id = 'btnNeuerOrdner';
+      neu.textContent = '+ Neuer Ordner';
+      neu.addEventListener('click', () => { uebersicht.neuerOrdner(ordner); });
+      ziel.appendChild(neu);
+    }
+    const titel = $('seitenTitel');
+    if (titel) titel.hidden = false;
+  }
+  function uebersichtZeichnen() { pfadZeichnen(); ordnerZeichnen(); }
+  function waehleOrdner(id) {
+    if (!aktPaket) return;
+    const neu = id === null || id === undefined || !ordnerVon(id) ? null : id;
+    if (neu === ordner) return;
+    ordner = neu;
+    if (vb) schliesse();
+    uebersichtZeichnen();
     kachelnZeichnen();
-    melde('flyer:kategorie', { kategorie: kategorie, liste: liste.slice() });
+    pfadZeichnen();
+    melde('flyer:kategorie', ereignis());
+  }
+  function ordnerZurueck() {
+    if (ordner === null) return false;
+    const o = ordnerVon(ordner);
+    waehleOrdner(o ? o.eltern : null);
+    return true;
+  }
+  // flyer-uebersicht.js: Menüs und „+ Neuer Ordner“ (danach neu zeichnen)
+  function setzeUebersicht(u) {
+    uebersicht = u && typeof u === 'object' ? u : null;
+    if (aktPaket) { uebersichtZeichnen(); kachelnZeichnen(); }
   }
 
   /* ---------- Vollbild ---------- */
@@ -553,11 +666,19 @@
     return n === 'textarea' || n === 'select';
   }
   function taste(e) {
-    if (!vb) return;                                   // ohne offenes Vollbild bewirken die Tasten nichts
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (istTexteingabe(tiefesAktivesElement())) return;
+    if (!vb) {
+      // F3a: Übersicht – Backspace geht einen Ordner zurück (nicht in Texteingaben, nicht unter Dialog oder Tafel)
+      const m = $('modal'), t = $('tafel');
+      if (e.key !== 'Backspace' || e.repeat || (m && !m.hidden) || (t && !t.hidden)) return;
+      if (ordnerZurueck()) e.preventDefault();
+      return;
+    }
     const modal = $('modal');
     if (modal && !modal.hidden) return;                // Sichern-Dialog liegt darüber: der hat Vorrang
+    const tafel = $('tafel');
+    if (tafel && !tafel.hidden) return;                // F3a: Tafel liegt darüber (flyer-uebersicht.js)
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       blaettere(e.key === 'ArrowRight' ? 1 : -1);
@@ -600,6 +721,9 @@
     });
     document.addEventListener('keydown', taste);
     const zurueck = $('vbZurueck'), weiter = $('vbWeiter'), zu = $('vbZu'), buehne = $('vbBuehne');
+    const pz = $('pfadZurueck'), aus = $('btnAusgeblendete');
+    if (pz) pz.addEventListener('click', () => { ordnerZurueck(); });
+    if (aus) aus.addEventListener('click', () => { zeigeAusgeblendete(!mitAusgeblendeten); });
     if (zurueck) zurueck.addEventListener('click', () => blaettere(-1));
     if (weiter) weiter.addEventListener('click', () => blaettere(1));
     if (zu) zu.addEventListener('click', () => schliesse());
@@ -619,23 +743,27 @@
     if (!paket || !Array.isArray(paket.dokumente) || !paket.dokumente.length) {
       schliesse();
       aktPaket = null;
-      kategorie = 'alle';
+      ordner = null;
       liste = [];
       generation++;
       if (kachelBeobachter) kachelBeobachter.disconnect();
       kachelSkalen = new Map();
       kachelFlyer = [];
-      const nav = $('chips'), ziel = $('kacheln');
-      if (nav) leeren(nav);
+      const ziel = $('kacheln'), ok = $('ordnerKacheln'), titel = $('seitenTitel');
       if (ziel) leeren(ziel);
-      melde('flyer:kategorie', { kategorie: kategorie, liste: [] });
+      if (ok) leeren(ok);
+      if (titel) titel.hidden = true;
+      pfadZeichnen();
+      ausgeblendetKnopf();
+      melde('flyer:kategorie', ereignis());
       return Promise.resolve([]);
     }
     vorbereiten(paket);
     aktPaket = paket;
-    chipsZeichnen();
+    if (ordner !== null && !ordnerVon(ordner)) ordner = null;   // Ordner gibt es nicht mehr: „Alle“
     const fertig = kachelnZeichnen();
-    melde('flyer:kategorie', { kategorie: kategorie, liste: liste.slice() });
+    uebersichtZeichnen();
+    melde('flyer:kategorie', ereignis());
     if (offenId !== null) {
       const i = liste.findIndex((d) => d.id === offenId);
       if (i >= 0) oeffne(i); else schliesse();
@@ -654,7 +782,15 @@
     oeffne: oeffne,
     schliesse: schliesse,
     aktuelleListe: () => liste.slice(),
-    aktuelleKategorie: () => kategorie,
+    aktuelleKategorie: () => (ordner === null ? 'alle' : ordner),   // wie bisher: 'alle' oder der geöffnete Ordner
+    // F3a: Ordner
+    aktuellerOrdner: () => ordner,
+    oeffneDok: (id) => { const i = liste.findIndex((d) => d.id === id); return i >= 0 ? oeffne(i) : Promise.resolve(null); },
+    oeffneOrdner: (id) => waehleOrdner(id === undefined ? null : id),
+    ordnerZurueck: ordnerZurueck,
+    zeigeAusgeblendete: zeigeAusgeblendete,
+    ausgeblendeteSichtbar: () => mitAusgeblendeten,
+    setzeUebersicht: setzeUebersicht,
     offenesDokument: () => (vb ? vb.dok : null),
     paket: () => aktPaket,
     // Teil 2

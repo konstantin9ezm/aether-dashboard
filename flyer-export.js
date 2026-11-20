@@ -11,6 +11,8 @@
 // Teil 2: Druck und Bild zeigen dieselbe Änderungsschicht wie Kacheln und Vollbild (AetherFlyerAnsicht.optionen mit
 // ort 'druck' bzw. 'bild'); nach einer Änderung ('flyer:aenderungen') wird ein vorbereitetes Bild verworfen und neu
 // vorbereitet. Blob-URLs eines Downloads werden nach FREIGABE_MS wieder freigegeben (weitergeben).
+// F3a: seitenBild(dok, optionen, messen) zeichnet eine Seite genauso wie „Bild“ (für den Export „Grafiken & Daten“,
+// flyer-grafik.js) und misst dabei die Grafiken auf der dargestellten Wurzel; svgAusschnitt schneidet daraus eine SVG.
 //
 // Safari-Eigenheiten (iPhone/iPad), soweit bekannt und hier berücksichtigt:
 // - SVG mit foreignObject als Bild: Safari meldet „load“ teils, bevor die eingebetteten Schriften/Bilder im SVG
@@ -100,13 +102,14 @@
   }
 
   /* ---------- Knöpfe ---------- */
-  // „Alle als PDF“: Kategorie „alle“ → alle Flyer (Reihenfolge des Pakets), sonst alle Dokumente der Kategorie.
+  // „Alle als PDF“: „Alle“ → alle Flyer der Version (Reihenfolge des Pakets), sonst alle Dokumente des geöffneten Ordners;
+  // ausgeblendete Seiten nie (F3a).
   function druckListe() {
     const a = A();
     const pk = a ? a.paket() : null;
     if (!pk || !Array.isArray(pk.dokumente)) return [];
-    if (a.aktuelleKategorie() === 'alle') return pk.dokumente.filter((d) => d && d.art === 'flyer');
-    return a.aktuelleListe();
+    if (a.aktuelleKategorie() === 'alle') return pk.dokumente.filter((d) => d && d.art === 'flyer' && d.ausgeblendet !== true);
+    return a.aktuelleListe().filter((d) => d.ausgeblendet !== true);
   }
   function knopfAllePdf() {
     const b = $('btnAllePdf');
@@ -330,7 +333,7 @@
   }
   // Dokument abseits (unsichtbar, außerhalb des Bildes) darstellen und anpassen, wie auf dem Bildschirm; zurück kommt
   // ein Klon der Wurzel (mit --s und .fill.off) samt Maßen.
-  async function abseitsDarstellen(dok, optionen) {
+  async function abseitsDarstellen(dok, optionen, messen) {
     const box = document.createElement('div');
     box.setAttribute('aria-hidden', 'true');
     box.inert = true;
@@ -340,10 +343,12 @@
     try {
       const d = A().darstellen(dok, box, optionen);
       const r = await d.fertig;
+      // F3a: Messen auf der dargestellten Wurzel (Lage und Größe, berechnete Stile), solange sie im Dokument steht
+      const mess = typeof messen === 'function' ? messen(d.wurzel) : null;
       const klon = d.wurzel.cloneNode(true);
       // Ein SVG-Bild lädt verzögerte Bilder womöglich nie: im Klon sofort laden lassen.
       if (typeof klon.querySelectorAll === 'function') klon.querySelectorAll('img[loading]').forEach((i) => i.removeAttribute('loading'));
-      return { klon: klon, r: r };
+      return { klon: klon, r: r, mess: mess };
     } finally {
       box.remove();
     }
@@ -409,6 +414,57 @@
       }
     })();
     return b.promise;
+  }
+
+  /* ---------- F3a: Seitenbild für „Grafiken & Daten“ ---------- */
+  // Wie bildVorbereiten, aber ohne den Zustand des Vollbilds: → { img, w, h, breite, hoehe, faktor, teile, klon, mess,
+  // bildFehler }. Lässt sich das Bild nicht laden (oder ist „Bild“ hier nicht möglich), ist img null und bildFehler
+  // gesetzt – Messung, Klon und CSS (für SVG und Daten) gibt es trotzdem.
+  async function seitenBild(dok, optionen, messen) {
+    const a = A();
+    if (!a || !P() || !dok || !document.body) throw new Error('nicht bereit');
+    if (optionen === undefined) optionen = optionenFuer(dok, 'bild');
+    const pk = a.paket();
+    await a.schriftenBereit();
+    const teile = await bildCss(pk, art(dok));
+    const { klon, r, mess } = await abseitsDarstellen(dok, optionen, messen);
+    const breite = dok.breite > 0 ? dok.breite : Math.max(1, r.breite || 0);
+    const hoehe = art(dok) === 'flyer' && dok.hoehe > 0 ? dok.hoehe : Math.max(1, r.hoehe || dok.hoehe || 0);
+    const m = pixelMasse(breite, hoehe);
+    let img = null, bildFehler = null;
+    try {
+      if (probe) await probe;
+      if (!bildMoeglich) throw new Error('Bild in diesem Browser nicht möglich');
+      img = await ladeBild(svgDatenUrl(svgText(teile, klon, breite, hoehe, m)));
+      if (typeof img.decode === 'function') { try { await img.decode(); } catch (e) { /* Safari: decode von SVG kann ablehnen */ } }
+      await aufwaermen(img);
+    } catch (e) { img = null; bildFehler = e; }
+    return { img: img, w: m.w, h: m.h, breite: breite, hoehe: hoehe, faktor: m.w / breite, verkleinert: m.verkleinert, teile: teile, klon: klon, mess: mess, bildFehler: bildFehler };
+  }
+  // SVG eines Ausschnitts (x, y, w, h in CSS-Pixeln der Seite) mit der ganzen Seite als eingebettetem HTML
+  // (foreignObject; nur im Browser genau) – für HTML-Kästen. Gleiche @font-face-Regeln (beide Arten binden dieselben
+  // Schriften ein) stehen nur einmal darin; das Bild der Seite („Bild“, PNG) bleibt davon unberührt.
+  function ohneDoppelteSchriften(teile) {
+    const gesehen = new Set();
+    return teile.map((t) => (typeof t !== 'string' ? t : t.replace(/@font-face\s*\{[^}]*\}/gi, (m) => {
+      const k = m.replace(/\s+/g, ' ');
+      if (gesehen.has(k)) return '';
+      gesehen.add(k);
+      return m;
+    })));
+  }
+  function svgAusschnitt(bild, x, y, w, h) {
+    if (!bild.svgVoll) bild.svgVoll = svgText(ohneDoppelteSchriften(bild.teile), bild.klon, bild.breite, bild.hoehe, { w: bild.breite, h: bild.hoehe });
+    const voll = bild.svgVoll;
+    return voll.replace(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="[^"]*" height="[^"]*" viewBox="[^"]*" preserveAspectRatio="none">/,
+      () => '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="' + x + ' ' + y + ' ' + w + ' ' + h + '">');
+  }
+  // @font-face-Regeln des Pakets mit eingebetteten Schriften (für echte SVG mit Text)
+  async function schriftRegeln() {
+    const a = A(), pk = a ? a.paket() : null, css = (pk && pk.css) || {};
+    const r = [];
+    for (const k of ['flyer', 'infografik']) if (typeof css[k] === 'string') r.push(String(P().zerlegeCss(css[k]).dokument || ''));
+    return mitDaten((r.join('\n').match(/@font-face\s*\{[^}]*\}/gi) || []).join('\n'));
   }
 
   /* ---------- Bild: zeichnen und sichern ---------- */
@@ -611,6 +667,9 @@
     druckeEins: druckeEins,
     bildVorbereiten: bildVorbereiten,
     bildDatei: bildDatei,
-    herunterladenUndFreigeben: herunterladenUndFreigeben
+    herunterladenUndFreigeben: herunterladenUndFreigeben,
+    seitenBild: seitenBild,
+    svgAusschnitt: svgAusschnitt,
+    schriftRegeln: schriftRegeln
   });
 })();

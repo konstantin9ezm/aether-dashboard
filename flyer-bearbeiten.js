@@ -16,6 +16,9 @@
   const DATEI_PAKET = 'aether-flyer-paket.json';
   const DATEI_SICHERUNG = 'aether-flyer-aenderungen.json';
   const COMMIT = (f) => 'Flyer-Paket ' + f + ' [skip ci]';
+  // F1: ab 20 MB ein deutlicher Hinweis (die GitHub-Weboberfläche nimmt nach Angabe des Chats ca. 25 MB je Datei an –
+  // nicht nachgeprüft). Exportiert wird trotzdem vollständig: nie still teilen oder kürzen.
+  const GROSS_BYTES = 20 * 1024 * 1024;
 
   const $ = (id) => document.getElementById(id);
   const G = () => window.AetherGemeinsam;
@@ -41,6 +44,9 @@
     const t = (e && e.title) || 'Unerwarteter Fehler.', x = (e && e.text) || (e && !e.title ? String(e.message || e) : '');
     try { h.fehler(t, x, false); } catch (z) { meldung(t); }
   }
+  function mb(bytes) { return (Math.round(bytes / 1024 / 1024 * 10) / 10).toLocaleString('de-DE'); }
+  // Mehr als eine Version im Paket? Dann steht die Version vor jeder Konfliktzeile.
+  function mehrereVersionen() { try { const pk = h && h.paketV2 ? h.paketV2() : null; return !!pk && pk.versionen.length > 1; } catch (e) { return false; } }
   function kurz(t) { t = String(t === null || t === undefined ? '' : t).replace(/\s+/g, ' ').trim(); return t.length > 60 ? t.slice(0, 59) + '…' : t; }
   // Neu darstellen: Kachel und (offenes) Vollbild der betroffenen Dokumente
   function neuDarstellen(doks) {
@@ -220,7 +226,12 @@
     if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
     let r;
     try { r = AE().exportPaket(onlineVersion); } catch (e) { fehlerZeigen(e); return; }
-    try { h.fehlerWeg(); } catch (e) { /* egal */ }
+    try {
+      if (r.bytes >= GROSS_BYTES) {
+        h.fehler('Großes Paket: ' + mb(r.bytes) + ' MB', 'Die GitHub-Weboberfläche nimmt nach bisheriger Angabe nur ca. 25 MB je Datei an. ' +
+          'Das Paket wird trotzdem vollständig exportiert (nicht geteilt, nicht gekürzt). Bei Problemen weniger Versionen behalten.', false);
+      } else h.fehlerWeg();
+    } catch (e) { /* egal */ }
     const datei = new File([r.text], DATEI_PAKET, { type: 'application/json' });
     weitergeben(datei, 'Aether Flyer-Paket ' + r.fassung, (wie) => {
       AE().markiereExportiert(r.fassung).then(() => {
@@ -264,28 +275,39 @@
     const g = G();
     if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
     const s = AE().sicherung();
+    // F3a: Struktur-Änderungen der geöffneten Version (neue, kopierte, umbenannte, ausgeblendete, gelöschte Seiten …)
+    try { s.struktur = h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung() : []; } catch (e) { s.struktur = []; }
     const datei = new File([JSON.stringify(s, null, 2)], DATEI_SICHERUNG, { type: 'application/json' });
-    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge gesichert'));
+    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert'));
   }
   async function einspielen(datei) {
     // Größe vor dem Lesen prüfen (eine sehr große falsche Datei nicht erst ganz in den Speicher holen)
     if (datei && typeof datei.size === 'number' && datei.size > 5 * 1024 * 1024) throw new (G().AppError)('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
     let text;
     try { text = await datei.text(); } catch (e) { throw new (G().AppError)('datei', 'Datei ließ sich nicht lesen.', String((e && e.message) || e || '')); }
-    const r = await AE().einspielen(text);
+    // F3a: erst prüfen (Einträge und Struktur), dann die Struktur einspielen (neue Seiten sind danach da), dann die Einträge
+    const gelesen = AE().leseSicherung(text);
+    let rs = { uebernommen: 0, verworfen: 0, konflikte: 0 };
+    if (gelesen.struktur.length && h && typeof h.strukturEinspielen === 'function') rs = await h.strukturEinspielen(gelesen.struktur);
+    const r = await AE().einspielenEintraege(gelesen.eintraege);
     try { h.fehlerWeg(); } catch (e) { /* egal */ }
     await neuDarstellen(r.doks);
-    meldung(r.uebernommen + ' Änderungen eingespielt' + (r.konflikte ? ', ' + r.konflikte + ' Konflikte' : '') + (r.verworfen ? ', ' + r.verworfen + ' schon vorhanden' : ''));
-    return r;
+    const n = r.uebernommen + rs.uebernommen, k = r.konflikte + rs.konflikte, v = r.verworfen + rs.verworfen;
+    meldung(n + ' Änderungen eingespielt' + (k ? ', ' + k + ' Konflikte' : '') + (v ? ', ' + v + ' schon vorhanden' : ''));
+    konflikteZeigen();
+    return { uebernommen: r.uebernommen, verworfen: r.verworfen, konflikte: r.konflikte, doks: r.doks, struktur: rs };
   }
+  function strukturZahl() { try { return h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung().length : 0; } catch (e) { return 0; } }
+  // „Alle Änderungen verwerfen“: Texte, Status und Struktur der geöffneten Version
   async function verwerfen() {
-    const n = AE().alle().length;
-    if (!n) { meldung('Keine Änderungen'); return false; }
+    const n = AE().alle().length, ns = strukturZahl();
+    if (!n && !ns) { meldung('Keine Änderungen'); return false; }
     let ja = false;
     try { ja = window.confirm('Alle Änderungen verwerfen? Das lässt sich nicht rückgängig machen.'); } catch (e) { ja = false; }
     if (!ja) return false;
     const doks = Array.from(new Set(AE().alle().map((e) => e.dok)));
     leisteZu(false);
+    if (ns && h && typeof h.strukturVerwerfen === 'function') { try { await h.strukturVerwerfen(); } catch (e) { fehlerZeigen(e); } }
     await AE().verwerfen();
     await neuDarstellen(doks);
     knopfReset();
@@ -311,13 +333,43 @@
     if (art === 'status') return STATUS_NAMEN[v] || v;
     return v === '' ? '(leer)' : v;
   }
+  // F3a: Struktur-Konflikte (Versionen, Ordner, Seiten) aus flyer.js
+  function strukturKonflikte() { try { return h && typeof h.strukturKonflikte === 'function' ? h.strukturKonflikte() : []; } catch (e) { return []; } }
+  function strukturKarte(k) {
+    const karte = el('div', undefined, 'konflikt struktur');
+    karte.setAttribute('data-schluessel', k.id);
+    karte.appendChild(el('b', k.was));
+    const dl = el('dl');
+    const andere = k.quelle === 'sicherung' ? 'Sicherung' : 'Online';
+    for (const z of k.zeilen) {
+      dl.appendChild(el('dt', z.feld));
+      const dd = el('dd');
+      dd.append(el('span', 'Lokal: ' + z.lokal, 'k-lokal'), document.createElement('br'), el('span', andere + ': ' + z.andere, 'k-andere'));
+      dl.appendChild(dd);
+    }
+    karte.appendChild(dl);
+    const row = el('div', undefined, 'row');
+    const lokal = el('button', 'Lokal behalten'); lokal.type = 'button'; lokal.setAttribute('data-wahl', 'lokal');
+    const fremd = el('button', andere + ' übernehmen'); fremd.type = 'button'; fremd.setAttribute('data-wahl', 'andere');
+    const waehle = async (wahl) => {
+      lokal.disabled = fremd.disabled = true;
+      try { await h.strukturEntscheide(k.id, wahl); } catch (e) { fehlerZeigen(e); }
+      konflikteZeigen();
+    };
+    lokal.addEventListener('click', () => { waehle('lokal'); });
+    fremd.addEventListener('click', () => { waehle('andere'); });
+    row.append(lokal, fremd);
+    karte.appendChild(row);
+    return karte;
+  }
   function konflikteZeigen() {
-    const liste = AE().konflikte();
+    const liste = AE().konflikte(), struktur = strukturKonflikte();
     const banner = $('konflikte'), box = $('konfliktListe');
     if (!banner || !box) return;
-    banner.hidden = !liste.length;
-    $('konflikteText').textContent = liste.length + (liste.length === 1 ? ' Konflikt' : ' Konflikte') + ' nach dem Abgleich mit der neuen Fassung';
-    if (!liste.length) listeOffen = false;
+    const n = liste.length + struktur.length;
+    banner.hidden = !n;
+    $('konflikteText').textContent = n + (n === 1 ? ' Konflikt' : ' Konflikte') + ' nach dem Abgleich mit der neuen Fassung';
+    if (!n) listeOffen = false;
     $('konflikteZeigen').textContent = listeOffen ? 'Ausblenden' : 'Anzeigen';
     $('konflikteZeigen').setAttribute('aria-expanded', String(listeOffen));
     box.hidden = !listeOffen;
@@ -326,7 +378,7 @@
     for (const k of liste) {
       const karte = el('div', undefined, 'konflikt');
       karte.setAttribute('data-schluessel', k.schluessel);
-      karte.appendChild(el('b', k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
+      karte.appendChild(el('b', (mehrereVersionen() ? 'Version ' + k.ver + ' · ' : '') + k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
       const dl = el('dl');
       const zeile = (t, v) => { dl.appendChild(el('dt', t)); const dd = el('dd', v); dl.appendChild(dd); return dd; };
       zeile('Basis', wertText(k.art, k.basis)).className = 'k-basis';
@@ -347,11 +399,12 @@
       karte.appendChild(row);
       box.appendChild(karte);
     }
+    for (const k of struktur) box.appendChild(strukturKarte(k));
   }
 
   /* ---------- Einrichten ---------- */
   function knoepfeZeigen() {
-    const n = AE().alle().length;
+    const n = AE().alle().length + strukturZahl();
     const pk = !!paket();
     for (const id of ['btnExport', 'btnSichern', 'btnEinspielen', 'btnVerwerfen']) { const b = $(id); if (b) b.hidden = !pk; }
     const v = $('btnVerwerfen'); if (v) v.disabled = !n;
@@ -403,6 +456,7 @@
     document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); konflikteZeigen(); knopfReset(); hilfeZeigen(); });
     // Neues Paket gezeigt (auch nach einem Abgleich): Knöpfe und Konfliktliste (Titel aus der neuen Basis) neu
     document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); konflikteZeigen(); });
+    document.addEventListener('flyer:struktur', () => { knoepfeZeigen(); konflikteZeigen(); });
     document.addEventListener('flyer:onlinefassung', (e) => { const v = e && e.detail && e.detail.version; if (typeof v === 'string' && v) onlineVersion = v; });
     knoepfeZeigen();
     hilfeZeigen();
@@ -419,6 +473,7 @@
     einspielen: einspielen,
     verwerfen: verwerfen,
     konflikteZeigen: konflikteZeigen,
-    onlineVersion: () => onlineVersion
+    onlineVersion: () => onlineVersion,
+    weitergeben: weitergeben   // F3a: auch für den Export „Grafiken & Daten“ (flyer-grafik.js)
   });
 })();

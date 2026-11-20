@@ -258,7 +258,7 @@ async function idbEintraege(page) {
   const st = await speicher(page);
   const s = st.idb.find((e) => e.db === 'aether-flyer' && e.store === 'aenderungen');
   assert.ok(s, 'Store aenderungen in IndexedDB aether-flyer');
-  assert.equal(s.version, 2, 'IndexedDB aether-flyer Version 2');
+  assert.equal(s.version, 3, 'IndexedDB aether-flyer Version 3 (F3a)');
   return s.werte.filter((w) => w && typeof w.dok === 'string')
     .map((w) => ({ dok: w.dok, k: w.k, art: w.art, alt: w.alt, neu: w.neu, exportiert: w.exportiert }))
     .sort((a, b) => (a.dok + a.art + a.k).localeCompare(b.dok + b.art + b.k));
@@ -1069,7 +1069,9 @@ describe('Flyer bearbeiten: Zähler wie im echten Paket', () => {
       // Export: Zähler-Span und Variablen im Block eins, Markierungen gleich, Block zwei unverändert
       const ex = await page.evaluate(() => {
         const e = window.AetherFlyerAenderungen.exportPaket(null);
-        const doc = new DOMParser().parseFromString(e.paket.dokumente[0].html, 'text/html');
+        // F3a: Export im Format v2 – die Seite steht in Version 1.1
+        if (e.paket.formatVersion !== 2 || e.paket.versionen.length !== 1 || e.paket.versionen[0].nummer !== '1.1') return ['Format v2 mit Version 1.1 erwartet'];
+        const doc = new DOMParser().parseFromString(e.paket.versionen[0].seiten[0].html, 'text/html');
         return [...doc.querySelectorAll('[data-zaehler]')].map((z) => z.outerHTML);
       });
       assert.deepEqual(ex, ['<h3 data-zaehler="" style="--anteil: 0.25; --anteil-laeuft: 0.25;"><ae-t data-t="t1">Platzhalter-Block eins</ae-t><span class="zaehler">1 von 4 fertig</span></h3>',
