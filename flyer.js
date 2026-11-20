@@ -248,6 +248,11 @@
   const bearbeitenHilfen = Object.freeze({
     paket: () => sicht(),
     paketV2: () => effektiv(),
+    strukturSicherung: () => strukturSicherung(),
+    strukturEinspielen: (l) => strukturEinspielen(l),
+    strukturKonflikte: () => strukturKonflikte(),
+    strukturEntscheide: (id, wahl) => strukturEntscheide(id, wahl),
+    strukturVerwerfen: () => strukturVerwerfen(),
     onlineVersion: async () => { const o = await ladeOnline(); return o && typeof o.version === 'string' ? o.version : null; },
     fehler: fehler,
     fehlerWeg: fehlerWeg,
@@ -312,6 +317,106 @@
       zeigeKopf();
       melde('flyer:struktur', {});
       return ergebnis;
+    });
+    reihe = auftrag.catch(() => {});
+    return auftrag;
+  }
+  // Lokalen Stand aus Feldern setzen (prüft, speichert, zeigt); entfernt Einträge der Änderungsschicht von Seiten und
+  // Versionen, die es danach nicht mehr gibt (nur nach einer ausdrücklichen Wahl: Konflikt, Verwerfen)
+  async function lokalAusFeldern(f, reihe2) {
+    const alt = effektiv();
+    const neu = ST.ausFeldern(f, alt, reihe2 || [alt, basisV2]);
+    ST.verweise(neu);   // Sicherheitsnetz: Verweise und Zähler (die Wahl selbst hält sie stimmig)
+    try { P.pruefe(neu); } catch (e) {
+      const x = alsFehler(e);
+      throw new G.AppError('struktur', 'Änderung nicht möglich.', [x.title, x.text].filter(Boolean).join(' '));
+    }
+    lokal = ST.gleich(neu, basisV2) ? null : neu;
+    sichtCache = null;
+    await schichtAufraeumen(alt, effektiv());
+  }
+  async function schichtAufraeumen(alt, neu) {
+    if (!AE || typeof AE.entferne !== 'function') return;
+    for (const v of alt.versionen) {
+      const nv = ST.version(neu, v.nummer);
+      if (!nv) { try { await AE.entferne(v.nummer); } catch (e) { /* egal */ } continue; }
+      for (const sx of v.seiten) if (!nv.seiten.some((y) => y.id === sx.id)) { try { await AE.entferne(v.nummer, sx.id); } catch (e) { /* egal */ } }
+    }
+  }
+  // Texte/Status in einem Objekt der Struktur (Seite, Version)? – lokal geändert, auch wenn kein Struktur-Feld anders ist
+  function eigeneEintraege() {
+    const r = new Set();
+    if (AE && typeof AE.alleVersionen === 'function') for (const e of AE.alleVersionen()) { r.add('V|' + e.ver); r.add('P|' + e.ver + '|' + e.dok); }
+    return (objekt) => r.has(objekt);
+  }
+  let konfliktNr = 0;
+  function konflikteDazu(liste, quelle) {
+    for (const k of liste) {
+      strukturRest.konflikte = strukturRest.konflikte.filter((x) => x.objekt !== k.objekt);
+      strukturRest.konflikte.push(Object.assign({ id: 's' + Date.now().toString(36) + '-' + (++konfliktNr), quelle: quelle }, k));
+    }
+  }
+  // „Änderungen sichern“: Struktur-Felder der geöffneten Version, die anders sind als in der Basis
+  function strukturSicherung() { return lokal && basisV2 ? ST.feldAenderungen(basisV2, lokal, sicht() ? sicht().nummer : version) : []; }
+  // „Änderungen einspielen“: Struktur-Felder einordnen (eigene Änderung geht vor, sonst wie bei Texten) → Zahlen
+  function strukturEinspielen(liste) {
+    const auftrag = reihe.then(async () => {
+      const pk = effektiv();
+      if (!pk) throw new G.AppError('einspielen', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.');
+      const fa = new Map(), alt = new Map();
+      for (const e of liste) { if (e.neu !== null) fa.set(e.k, e.neu); if (e.alt !== null) alt.set(e.k, e.alt); }
+      const r = ST.zusammenfuehren(ST.felder(basisV2), ST.felder(pk), fa, { modus: 'sicherung', alt: alt, schluessel: liste.map((e) => e.k), eigene: eigeneEintraege() });
+      await lokalAusFeldern(r.felder, [pk, basisV2]);
+      konflikteDazu(r.konflikte, 'sicherung');
+      zahlCache = null;
+      await strukturSpeichern();
+      await anzeigen();
+      zeigeKopf();
+      melde('flyer:struktur', {});
+      return { uebernommen: r.uebernommen, verworfen: r.verworfen, konflikte: r.konflikte.length };
+    });
+    reihe = auftrag.catch(() => {});
+    return auftrag;
+  }
+  // Offene Struktur-Konflikte für die Konfliktliste
+  function strukturKonflikte() {
+    const fl = ST.felder(effektiv());
+    return strukturRest.konflikte.map((k) => Object.assign({ id: k.id, quelle: k.quelle, objekt: k.objekt }, ST.konfliktText(k, fl, null)));
+  }
+  // Wahl in einem Struktur-Konflikt: 'lokal' (bleibt) oder 'andere' (Wert der Online-Datei bzw. Sicherung)
+  function strukturEntscheide(id, wahl) {
+    const auftrag = reihe.then(async () => {
+      const k = strukturRest.konflikte.find((x) => x.id === id);
+      if (!k) return false;
+      if (wahl === 'andere') await lokalAusFeldern(ST.waehle(ST.felder(effektiv()), k, 'andere'));
+      strukturRest.konflikte = strukturRest.konflikte.filter((x) => x.id !== id);
+      zahlCache = null;
+      await strukturSpeichern();
+      await anzeigen();
+      zeigeKopf();
+      melde('flyer:struktur', {});
+      return true;
+    });
+    reihe = auftrag.catch(() => {});
+    return auftrag;
+  }
+  // „Alle Änderungen verwerfen“: Struktur der geöffneten Version wie in der Basis (eine neue Version entfällt ganz)
+  function strukturVerwerfen() {
+    const auftrag = reihe.then(async () => {
+      if (!lokal) return false;
+      const nr = sicht() ? sicht().nummer : version;
+      const fl = ST.felder(lokal), fb = ST.felder(basisV2), m = new Map();
+      fl.forEach((w, k) => { if (k.split('|')[1] !== nr) m.set(k, w); });
+      fb.forEach((w, k) => { if (k.split('|')[1] === nr) m.set(k, w); });
+      await lokalAusFeldern(m, [basisV2, lokal]);
+      strukturRest.konflikte = strukturRest.konflikte.filter((x) => x.objekt.split('|')[1] !== nr);
+      if (!ST.version(effektiv(), version)) await setzeVersion(ST.STANDARD_VERSION);
+      zahlCache = null;
+      await strukturSpeichern();
+      await anzeigen();
+      zeigeKopf();
+      melde('flyer:struktur', {});
+      return true;
     });
     reihe = auftrag.catch(() => {});
     return auftrag;
@@ -408,6 +513,7 @@
     aendereStruktur: aendereStruktur,                       // F3a: (fn(kopie)) → Promise
     oeffneVersion: oeffneVersion,                           // F3a: (nummer) → Promise
     strukturZahl: () => strukturZahl(),
+    strukturKonflikte: () => strukturKonflikte(),
     uebernehme: uebernehme,                                 // (paket, { quelle:'online'|'import', sha, nurWennLeer }) → Promise<Boolean|'schonDa'>
     fehler: fehler,                                         // (titel, text, mitTokenLink)
     fehlerWeg: fehlerWeg,

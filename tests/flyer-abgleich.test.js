@@ -822,14 +822,18 @@ describe('Flyer Teil 2: Sicherung', () => {
       const s = await sichernDownload(page);
       assert.equal(s.name, 'aether-flyer-aenderungen.json');
       const o = JSON.parse(s.inhalt);
-      assert.deepEqual(Object.keys(o).sort(), ['eintraege', 'format', 'gesichert', 'paketFassung', 'version']);
+      // F3a: Sicherung im Format v2 (Version der Sicherung, Einträge mit ver, Struktur-Felder; Teil 2 prüfte v1)
+      assert.deepEqual(Object.keys(o).sort(), ['eintraege', 'format', 'gesichert', 'paketFassung', 'struktur', 'version', 'versionNummer']);
       assert.equal(o.format, 'aether-flyer-aenderungen');
-      assert.equal(o.version, 1);
+      assert.equal(o.version, 2);
+      assert.equal(o.versionNummer, '1.1');
+      assert.deepEqual(o.struktur, [], 'keine Struktur-Änderungen');
       assert.equal(o.paketFassung, '2020-02-01.1');
       assert.match(o.gesichert, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/);
-      for (const e of o.eintraege) assert.deepEqual(Object.keys(e).sort(), ['alt', 'art', 'dok', 'exportiert', 'k', 'neu', 'zeit']);
+      for (const e of o.eintraege) assert.deepEqual(Object.keys(e).sort(), ['alt', 'art', 'dok', 'exportiert', 'k', 'neu', 'ver', 'zeit']);
+      assert.ok(o.eintraege.every((e) => e.ver === '1.1'));
       const sortiert = (l) => l.slice().sort((a, b) => (a.dok + a.art + a.k < b.dok + b.art + b.k ? -1 : 1));
-      assert.deepEqual(sortiert(o.eintraege), stand);
+      assert.deepEqual(sortiert(o.eintraege.map(({ ver, ...r }) => r)), stand);
       // Verwerfen: Rückfrage abgelehnt → nichts passiert
       let frage = null;
       page.once('dialog', (dlg) => { frage = { typ: dlg.type(), text: dlg.message() }; dlg.dismiss(); });
@@ -861,7 +865,7 @@ describe('Flyer Teil 2: Sicherung', () => {
         ['falsches Format', JSON.stringify({ format: 'etwas-anderes', version: 1, eintraege: [gueltig] }), /Keine Änderungs-Sicherung/],
         ['kaputtes JSON', '{ "format": "aether-flyer-aenderungen", ', /kein gültiges JSON/],
         ['falscher Feldtyp', JSON.stringify({ format: 'aether-flyer-aenderungen', version: 1, paketFassung: 'x', gesichert: 'y', eintraege: [gueltig, { ...gueltig, k: 't2', neu: 5 }] }), /Sicherung fehlerhaft/],
-        ['zu neue Version', JSON.stringify({ format: 'aether-flyer-aenderungen', version: 2, eintraege: [gueltig] }), /Sicherung zu neu/],
+        ['zu neue Version', JSON.stringify({ format: 'aether-flyer-aenderungen', version: 3, eintraege: [gueltig] }), /Sicherung zu neu/],
         ['über 5 MB', JSON.stringify({ format: 'aether-flyer-aenderungen', version: 1, eintraege: [gueltig], fuell: 'x'.repeat(5 * 1024 * 1024) }), /zu groß/]
       ];
       for (const [label, inhalt, re] of faelle) {

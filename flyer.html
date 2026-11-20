@@ -205,6 +205,23 @@ button.gefahr{ color:var(--danger); }
 .tafel input[type="text"], .tafel select{ font:inherit; font-size:16px; width:100%; min-height:44px; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
 .t-zaehler{ display:block; font-size:12px; color:var(--muted); text-align:right; margin-top:2px; }
 .t-hinweis{ color:var(--warn-text); font-size:14px; margin:4px 0 8px; min-height:1em; overflow-wrap:anywhere; }
+/* F3a: neue Knöpfe oben (hellblau umrandet wie in der Vorschau) */
+button.hervor{ border:2px solid var(--accent); color:var(--accent); font-weight:600; }
+/* F3a: Tafel „Neue Seite“ – Vorlagen als Kacheln mit kleiner Skizze */
+.vorlagen{ display:grid; grid-template-columns:1fr 1fr; gap:10px; min-width:0; }
+.vorlage{ display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:8px; min-height:44px; border-radius:12px; text-align:center; }
+.vorlage[aria-pressed="true"]{ border:2px solid var(--sel); box-shadow:0 0 0 1px var(--sel); }
+.vorlage small{ display:block; font-size:12px; color:var(--muted); }
+.skizze{ display:flex; flex-direction:column; gap:5px; height:64px; padding:6px; border-radius:6px; background:var(--field); border:1px solid var(--line); overflow:hidden; }
+.skizze i{ display:block; height:5px; border-radius:3px; background:var(--muted); opacity:.55; }
+.skizze i.t{ height:8px; width:60%; background:var(--accent); opacity:1; }
+.skizze i.p{ width:70%; }
+.skizze .zahlen, .skizze .kaesten{ display:flex; gap:6px; flex:1; }
+.skizze .zahlen b{ flex:1; font-size:13px; color:var(--text); text-align:center; }
+.skizze .kaesten span{ flex:1; border:1px solid var(--muted); border-radius:4px; }
+.skizze.gesperrt{ opacity:.5; }
+.t-check{ display:flex; align-items:center; gap:10px; min-height:44px; padding:4px 6px; border-radius:8px; cursor:pointer; overflow-wrap:anywhere; }
+.t-check input{ width:22px; height:22px; flex:none; accent-color:var(--sel); }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -255,6 +272,8 @@ button.gefahr{ color:var(--danger); }
     <button type="button" id="btnEinspielen" hidden>Änderungen einspielen</button>
     <input type="file" id="dateiEinspielen" hidden>
     <button type="button" id="btnVerwerfen" hidden>Alle Änderungen verwerfen</button>
+    <button type="button" id="btnNeueSeite" class="hervor" hidden>+ Seite</button>
+    <button type="button" id="btnGrafikenVersion" class="hervor" hidden>Grafiken &amp; Daten exportieren</button>
   </div>
   <div id="versionsZeile" class="versionszeile" hidden><button type="button" id="btnVersion" aria-haspopup="dialog"><b id="versionName">Version 1.1 ▾</b> <span id="versionZusatz" class="zusatz"></span></button></div>
   <p id="paketInfo" class="paketinfo"></p>

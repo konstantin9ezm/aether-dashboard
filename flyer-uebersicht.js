@@ -1,6 +1,8 @@
 // Übersicht der Flyer-Seite (flyer.html, F3a): Knopf „Version <n> ▾“ mit der Tafel „Versionen“ (Versions-Ordner V1,
 // V2 …, „+ Neue Unterversion“, „+ Neue Hauptversion“, Menü „···“ je Version) und die Tafeln dazu; Menü „···“ je Ordner
-// (Öffnen, Umbenennen, Verschieben, Löschen) und „+ Neuer Ordner“ (Teil C). Eine Tafel ist ein
+// (Öffnen, Umbenennen, Verschieben, Löschen) und „+ Neuer Ordner“ (Teil C); „+ Seite“ mit der Tafel „Neue Seite“
+// (Vorlagen, Kopie einer bestehenden Seite) und Menü „···“ je Seite (Öffnen, Kopie anlegen, Umbenennen, In Ordner …,
+// Grafiken & Daten exportieren, Ausblenden/Einblenden bzw. Löschen) (Teil D). Eine Tafel ist ein
 // Dialog über der Seite (auch über dem Vollbild); Tafeln stapeln sich („‹“ zurück, „✕“ schließt alle).
 // Tasten: Esc schließt die Tafel, Backspace geht eine Ebene zurück (beide nicht in Texteingaben).
 // Die Änderungen selbst rechnet AetherFlyerStruktur auf einer Kopie, flyer.js speichert und zeigt sie (h.aendere).
@@ -300,6 +302,158 @@
     schliesseTafel();
   }
 
+  /* ---------- Seiten (Teil D) ---------- */
+  function seiteJetzt(id) { const v = versionJetzt(); return v ? v.seiten.find((x) => x.id === id) || null : null; }
+  function heute() { const ae = AE(); return ae && typeof ae.heute === 'function' ? ae.heute() : new Date().toISOString().slice(0, 10); }
+  // HTML, wie die Seite gerade dargestellt wird (Basis + Änderungsschicht) – für Kopien
+  function htmlJetzt(nr, seite) { const ae = AE(); return ae && typeof ae.htmlMitSchicht === 'function' ? ae.htmlMitSchicht(nr, seite) : seite.html; }
+  // Kleine Skizze einer Vorlage (nur Flächen, kein Text außer den Zahlen)
+  function skizze(id) {
+    const d = el('div', undefined, 'skizze' + (id === 'bild-video' ? ' gesperrt' : ''));
+    d.setAttribute('aria-hidden', 'true');
+    const i = (k) => el('i', undefined, k || '');
+    if (id === 'titel-text') d.append(i('t'), i(), i(), i(), i('p'));
+    else if (id === 'liste-status') d.append(i('t'), i(), i(), i(), i('p'));
+    else if (id === 'kennzahlen') { const z = el('div', undefined, 'zahlen'); for (let n = 0; n < 3; n++) z.appendChild(el('b', '42')); d.append(i('t'), z); }
+    else if (id === 'zwei-kaesten') { const z = el('div', undefined, 'kaesten'); z.append(el('span'), el('span')); d.append(i('t'), z); }
+    else if (id === 'bild-video') { const z = el('div', undefined, 'kaesten'); z.append(el('span')); d.append(i('t'), z); }
+    return d;
+  }
+  // Neue Seite anlegen und im Vollbild öffnen
+  async function anlegen(opt) {
+    const nr = offen();
+    try {
+      const s = await h.aendere((p) => ST().seiteAnlegen(p, nr, Object.assign({ heute: heute() }, opt)));
+      schliesseTafel();
+      if (A()) await A().oeffneDok(s.id);
+      meldung('Seite ' + s.id + ' angelegt');
+      return s;
+    } catch (e) { return null; }
+  }
+  function neueSeiteTafel() {
+    let wahl = null;   // { vorlage } | { kopieVon }
+    tafel('Neue Seite', (inhalt) => {
+      const v = versionJetzt();
+      if (!v) { schliesseTafel(); return; }
+      const oid = A() ? A().aktuellerOrdner() : null, o = oid ? v.ordner.find((x) => x.id === oid) : null;
+      inhalt.appendChild(el('p', 'Ordner: ' + (o ? o.name : 'Alle (ohne Ordner)'), 't-klein'));
+      inhalt.appendChild(abschnitt('Aus Vorlage'));
+      const gitter = el('div', undefined, 'vorlagen');
+      const anlegenKnopf = knopf('Anlegen', () => {
+        if (!wahl) return;
+        if (wahl.kopieVon) {
+          const q = seiteJetzt(wahl.kopieVon);
+          if (q) anlegen({ kopieVon: q.id, html: htmlJetzt(offen(), q), ordner: o ? [o.id] : [] });
+        } else anlegen({ vorlage: wahl.vorlage, ordner: o ? [o.id] : [] });
+      }, 'primary');
+      anlegenKnopf.id = 'btnAnlegen';
+      const auswahl = el('select');
+      auswahl.id = 'kopieQuelle';
+      auswahl.setAttribute('aria-label', 'Kopie einer bestehenden Seite');
+      const zeige = () => {
+        for (const b of gitter.querySelectorAll('button[data-vorlage]')) b.setAttribute('aria-pressed', String(!!wahl && wahl.vorlage === b.getAttribute('data-vorlage')));
+        auswahl.value = wahl && wahl.kopieVon ? wahl.kopieVon : '';
+        anlegenKnopf.disabled = !wahl;
+      };
+      for (const vl of ST().VORLAGEN) {
+        const b = knopf('', () => { wahl = { vorlage: vl.id }; zeige(); }, 'vorlage');
+        b.setAttribute('data-vorlage', vl.id);
+        b.append(skizze(vl.id), el('span', vl.name));
+        if (vl.gesperrt) { b.disabled = true; b.appendChild(el('small', vl.hinweis)); b.title = vl.name + ' kommt ' + vl.hinweis; }
+        gitter.appendChild(b);
+      }
+      inhalt.appendChild(gitter);
+      inhalt.appendChild(abschnitt('Oder'));
+      const leer = el('option', 'Kopie einer bestehenden Seite …');
+      leer.value = '';
+      auswahl.appendChild(leer);
+      for (const x of v.seiten) { const op = el('option', x.id + ' · ' + x.titel); op.value = x.id; auswahl.appendChild(op); }
+      auswahl.addEventListener('change', () => { wahl = auswahl.value ? { kopieVon: auswahl.value } : null; zeige(); });
+      inhalt.appendChild(auswahl);
+      const row = el('div', undefined, 'row t-unten');
+      row.append(knopf('Abbrechen', () => schliesseTafel()), anlegenKnopf);
+      inhalt.appendChild(row);
+      zeige();
+    });
+  }
+  function seitenMenue(dok) {
+    const id = dok.id;
+    tafel(id + ' · ' + dok.titel, (inhalt) => {
+      const s = seiteJetzt(id);
+      if (!s) { zurueck(); return; }
+      $('tafelTitel').textContent = s.id + ' · ' + s.titel;
+      const nr = offen();
+      const liste = el('div', undefined, 't-liste t-menue');
+      liste.appendChild(knopf('Öffnen', () => { schliesseTafel(); if (A()) A().oeffneDok(id); }));
+      liste.appendChild(knopf('Kopie anlegen', () => anlegen({ kopieVon: id, html: htmlJetzt(nr, s), ordner: s.ordner.slice() })));
+      liste.appendChild(knopf('Umbenennen', () => seiteUmbenennen(id)));
+      liste.appendChild(knopf('In Ordner …', () => inOrdnerTafel(id)));
+      const gr = window.AetherFlyerGrafik;
+      if (gr && typeof gr.seitenTafel === 'function') liste.appendChild(knopf('Grafiken & Daten exportieren', () => gr.seitenTafel(id)));
+      if (s.herkunft === 'eigen') liste.appendChild(knopf('Löschen', () => seiteLoeschen(id), 'gefahr'));
+      else {
+        liste.appendChild(knopf(s.ausgeblendet ? 'Einblenden' : 'Ausblenden', () => {
+          const an = !s.ausgeblendet;
+          aendere((p) => ST().seiteAusblenden(p, nr, id, an), 'Seite ' + id + (an ? ' ausgeblendet' : ' eingeblendet')).then(() => schliesseTafel(), () => {});
+        }));
+        const b = knopf('Löschen (nur eigene Seiten)', () => {});
+        b.disabled = true;
+        liste.appendChild(b);
+      }
+      inhalt.appendChild(liste);
+    });
+  }
+  function seiteUmbenennen(id) {
+    const s = seiteJetzt(id), nr = offen();
+    if (!s) return;
+    eingabeTafel('Seite umbenennen', 'Name der Kachel (der Inhalt der Seite bleibt)', s.titel, ST().MAX_SEITENNAME,
+      (w) => (!w.trim() ? 'Die Seite braucht einen Namen.' : ''),
+      async (w) => { await h.aendere((p) => ST().seiteUmbenennen(p, nr, id, w)); meldung('Seite umbenannt'); zurueck(); });
+  }
+  // F3: Ankreuzliste aller Ordner der Version, eingerückt nach Ebene, mehrere möglich (wirkt sofort)
+  function inOrdnerTafel(id) {
+    const nr = offen();
+    tafel('In Ordner · ' + id, (inhalt) => {
+      const v = versionJetzt(), s = seiteJetzt(id);
+      if (!v || !s) { zurueck(); return; }
+      inhalt.appendChild(abschnitt('In Ordner (mehrere möglich)'));
+      const baum = ST().ordnerBaum(v);
+      if (!baum.length) { inhalt.appendChild(el('p', 'In dieser Version gibt es noch keine Ordner.', 't-klein')); return; }
+      const liste = el('div', undefined, 't-liste');
+      for (const x of baum) {
+        const lab = el('label', undefined, 't-check');
+        lab.style.paddingLeft = (6 + x.ebene * 22) + 'px';
+        const cb = el('input');
+        cb.type = 'checkbox';
+        cb.checked = s.ordner.indexOf(x.ordner.id) >= 0;
+        cb.setAttribute('data-ordner', x.ordner.id);
+        cb.addEventListener('change', () => {
+          const jetzt = seiteJetzt(id);
+          if (!jetzt) return;
+          const ids = new Set(jetzt.ordner);
+          if (cb.checked) ids.add(x.ordner.id); else ids.delete(x.ordner.id);
+          aendere((p) => ST().seiteInOrdner(p, nr, id, Array.from(ids))).then(neuZeichnen, neuZeichnen);
+        });
+        lab.append(cb, el('span', x.ordner.name));
+        liste.appendChild(lab);
+      }
+      inhalt.appendChild(liste);
+    });
+  }
+  async function seiteLoeschen(id) {
+    const s = seiteJetzt(id), nr = offen();
+    if (!s) return;
+    if (!frage('Seite ' + id + ' („' + s.titel + '“) löschen? Das lässt sich nicht rückgängig machen.')) return;
+    try {
+      await aendere((p) => ST().seiteLoeschen(p, nr, id));
+      const ae = AE();
+      if (ae && typeof ae.entferne === 'function') await ae.entferne(nr, id);
+      meldung('Seite ' + id + ' gelöscht');
+    } catch (e) { return; }
+    schliesseTafel();
+  }
+  function knopfNeueSeite() { const b = $('btnNeueSeite'); if (b) b.hidden = !paket(); }
+
   /* ---------- Tasten ---------- */
   function taste(e) {
     if (!tafelOffen() || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -329,11 +483,14 @@
     $('tafel').addEventListener('click', (e) => { if (e.target === $('tafel')) schliesseTafel(); });   // Klick neben die Tafel
     window.addEventListener('keydown', taste, true);
     document.addEventListener('flyer:struktur', () => { versionsKnopf(); neuZeichnen(); });
-    document.addEventListener('flyer:kategorie', versionsKnopf);
+    document.addEventListener('flyer:kategorie', () => { versionsKnopf(); knopfNeueSeite(); });
+    const ns = $('btnNeueSeite');
+    if (ns) ns.addEventListener('click', neueSeiteTafel);
     if (A() && typeof A().setzeUebersicht === 'function') {
-      A().setzeUebersicht({ ordnerMenue: (o) => ordnerMenue(o), neuerOrdner: (eltern) => neuerOrdner(eltern) });
+      A().setzeUebersicht({ ordnerMenue: (o) => ordnerMenue(o), neuerOrdner: (eltern) => neuerOrdner(eltern), seitenMenue: (d) => seitenMenue(d) });
     }
     versionsKnopf();
+    knopfNeueSeite();
   }
 
   window.AetherFlyerUebersicht = Object.freeze({
@@ -347,6 +504,8 @@
     versionMenue: versionMenue,
     neueVersion: neueVersion,
     neuerOrdner: neuerOrdner,
-    ordnerMenue: ordnerMenue
+    ordnerMenue: ordnerMenue,
+    neueSeiteTafel: neueSeiteTafel,
+    seitenMenue: seitenMenue
   });
 })();

@@ -275,28 +275,39 @@
     const g = G();
     if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
     const s = AE().sicherung();
+    // F3a: Struktur-Änderungen der geöffneten Version (neue, kopierte, umbenannte, ausgeblendete, gelöschte Seiten …)
+    try { s.struktur = h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung() : []; } catch (e) { s.struktur = []; }
     const datei = new File([JSON.stringify(s, null, 2)], DATEI_SICHERUNG, { type: 'application/json' });
-    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge gesichert'));
+    weitergeben(datei, 'Aether Flyer-Änderungen', () => meldung(s.eintraege.length + ' Einträge' + (s.struktur.length ? ' und ' + s.struktur.length + ' Struktur-Felder' : '') + ' gesichert'));
   }
   async function einspielen(datei) {
     // Größe vor dem Lesen prüfen (eine sehr große falsche Datei nicht erst ganz in den Speicher holen)
     if (datei && typeof datei.size === 'number' && datei.size > 5 * 1024 * 1024) throw new (G().AppError)('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
     let text;
     try { text = await datei.text(); } catch (e) { throw new (G().AppError)('datei', 'Datei ließ sich nicht lesen.', String((e && e.message) || e || '')); }
-    const r = await AE().einspielen(text);
+    // F3a: erst prüfen (Einträge und Struktur), dann die Struktur einspielen (neue Seiten sind danach da), dann die Einträge
+    const gelesen = AE().leseSicherung(text);
+    let rs = { uebernommen: 0, verworfen: 0, konflikte: 0 };
+    if (gelesen.struktur.length && h && typeof h.strukturEinspielen === 'function') rs = await h.strukturEinspielen(gelesen.struktur);
+    const r = await AE().einspielenEintraege(gelesen.eintraege);
     try { h.fehlerWeg(); } catch (e) { /* egal */ }
     await neuDarstellen(r.doks);
-    meldung(r.uebernommen + ' Änderungen eingespielt' + (r.konflikte ? ', ' + r.konflikte + ' Konflikte' : '') + (r.verworfen ? ', ' + r.verworfen + ' schon vorhanden' : ''));
-    return r;
+    const n = r.uebernommen + rs.uebernommen, k = r.konflikte + rs.konflikte, v = r.verworfen + rs.verworfen;
+    meldung(n + ' Änderungen eingespielt' + (k ? ', ' + k + ' Konflikte' : '') + (v ? ', ' + v + ' schon vorhanden' : ''));
+    konflikteZeigen();
+    return { uebernommen: r.uebernommen, verworfen: r.verworfen, konflikte: r.konflikte, doks: r.doks, struktur: rs };
   }
+  function strukturZahl() { try { return h && typeof h.strukturSicherung === 'function' ? h.strukturSicherung().length : 0; } catch (e) { return 0; } }
+  // „Alle Änderungen verwerfen“: Texte, Status und Struktur der geöffneten Version
   async function verwerfen() {
-    const n = AE().alle().length;
-    if (!n) { meldung('Keine Änderungen'); return false; }
+    const n = AE().alle().length, ns = strukturZahl();
+    if (!n && !ns) { meldung('Keine Änderungen'); return false; }
     let ja = false;
     try { ja = window.confirm('Alle Änderungen verwerfen? Das lässt sich nicht rückgängig machen.'); } catch (e) { ja = false; }
     if (!ja) return false;
     const doks = Array.from(new Set(AE().alle().map((e) => e.dok)));
     leisteZu(false);
+    if (ns && h && typeof h.strukturVerwerfen === 'function') { try { await h.strukturVerwerfen(); } catch (e) { fehlerZeigen(e); } }
     await AE().verwerfen();
     await neuDarstellen(doks);
     knopfReset();
@@ -322,13 +333,43 @@
     if (art === 'status') return STATUS_NAMEN[v] || v;
     return v === '' ? '(leer)' : v;
   }
+  // F3a: Struktur-Konflikte (Versionen, Ordner, Seiten) aus flyer.js
+  function strukturKonflikte() { try { return h && typeof h.strukturKonflikte === 'function' ? h.strukturKonflikte() : []; } catch (e) { return []; } }
+  function strukturKarte(k) {
+    const karte = el('div', undefined, 'konflikt struktur');
+    karte.setAttribute('data-schluessel', k.id);
+    karte.appendChild(el('b', k.was));
+    const dl = el('dl');
+    const andere = k.quelle === 'sicherung' ? 'Sicherung' : 'Online';
+    for (const z of k.zeilen) {
+      dl.appendChild(el('dt', z.feld));
+      const dd = el('dd');
+      dd.append(el('span', 'Lokal: ' + z.lokal, 'k-lokal'), document.createElement('br'), el('span', andere + ': ' + z.andere, 'k-andere'));
+      dl.appendChild(dd);
+    }
+    karte.appendChild(dl);
+    const row = el('div', undefined, 'row');
+    const lokal = el('button', 'Lokal behalten'); lokal.type = 'button'; lokal.setAttribute('data-wahl', 'lokal');
+    const fremd = el('button', andere + ' übernehmen'); fremd.type = 'button'; fremd.setAttribute('data-wahl', 'andere');
+    const waehle = async (wahl) => {
+      lokal.disabled = fremd.disabled = true;
+      try { await h.strukturEntscheide(k.id, wahl); } catch (e) { fehlerZeigen(e); }
+      konflikteZeigen();
+    };
+    lokal.addEventListener('click', () => { waehle('lokal'); });
+    fremd.addEventListener('click', () => { waehle('andere'); });
+    row.append(lokal, fremd);
+    karte.appendChild(row);
+    return karte;
+  }
   function konflikteZeigen() {
-    const liste = AE().konflikte();
+    const liste = AE().konflikte(), struktur = strukturKonflikte();
     const banner = $('konflikte'), box = $('konfliktListe');
     if (!banner || !box) return;
-    banner.hidden = !liste.length;
-    $('konflikteText').textContent = liste.length + (liste.length === 1 ? ' Konflikt' : ' Konflikte') + ' nach dem Abgleich mit der neuen Fassung';
-    if (!liste.length) listeOffen = false;
+    const n = liste.length + struktur.length;
+    banner.hidden = !n;
+    $('konflikteText').textContent = n + (n === 1 ? ' Konflikt' : ' Konflikte') + ' nach dem Abgleich mit der neuen Fassung';
+    if (!n) listeOffen = false;
     $('konflikteZeigen').textContent = listeOffen ? 'Ausblenden' : 'Anzeigen';
     $('konflikteZeigen').setAttribute('aria-expanded', String(listeOffen));
     box.hidden = !listeOffen;
@@ -358,11 +399,12 @@
       karte.appendChild(row);
       box.appendChild(karte);
     }
+    for (const k of struktur) box.appendChild(strukturKarte(k));
   }
 
   /* ---------- Einrichten ---------- */
   function knoepfeZeigen() {
-    const n = AE().alle().length;
+    const n = AE().alle().length + strukturZahl();
     const pk = !!paket();
     for (const id of ['btnExport', 'btnSichern', 'btnEinspielen', 'btnVerwerfen']) { const b = $(id); if (b) b.hidden = !pk; }
     const v = $('btnVerwerfen'); if (v) v.disabled = !n;
@@ -414,6 +456,7 @@
     document.addEventListener('flyer:aenderungen', () => { knoepfeZeigen(); konflikteZeigen(); knopfReset(); hilfeZeigen(); });
     // Neues Paket gezeigt (auch nach einem Abgleich): Knöpfe und Konfliktliste (Titel aus der neuen Basis) neu
     document.addEventListener('flyer:kategorie', () => { knoepfeZeigen(); konflikteZeigen(); });
+    document.addEventListener('flyer:struktur', () => { knoepfeZeigen(); konflikteZeigen(); });
     document.addEventListener('flyer:onlinefassung', (e) => { const v = e && e.detail && e.detail.version; if (typeof v === 'string' && v) onlineVersion = v; });
     knoepfeZeigen();
     hilfeZeigen();

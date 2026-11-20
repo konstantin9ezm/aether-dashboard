@@ -9,7 +9,9 @@
 // Text wird nur als Text eingesetzt (Textknoten, nie HTML); Zeilenumbrüche nur, wenn das Element in der Basis schon
 // <br> hat (dann als <br>), sonst als Leerzeichen.
 // Export: Paket = Basis + Änderungsschicht (Markierungen bleiben), Fassung „<JJJJ-MM-TT>.<n>“, muss
-// AetherFlyerPaket.pruefe bestehen. Abgleich bei jeder Übernahme (abgleichen). Sicherung „aether-flyer-aenderungen“ v1.
+// AetherFlyerPaket.pruefe bestehen. Abgleich bei jeder Übernahme (abgleichen). Sicherung „aether-flyer-aenderungen“ v2
+// (F3a: Einträge mit ver, dazu struktur = Feld-Änderungen der Version; v1 wird weiter gelesen und gilt für die
+// geöffnete Version).
 // F3a: Jeder Eintrag gehört zu einer Version (ver, z. B. „1.1“). Bearbeitet wird immer die geöffnete Version (h.version),
 // dargestellt über ihre Sicht (h.paket: Dokumente wie im Format v1). Abgleich und Export arbeiten auf dem ganzen Paket
 // im Format v2 (h.lokal: lokaler Stand aller Versionen; Abgleich gegen das neue Paket im Format v2).
@@ -22,7 +24,7 @@
   const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const STANDARD_VERSION = '1.1';
   const SICHERUNG_FORMAT = 'aether-flyer-aenderungen';
-  const SICHERUNG_VERSION = 1;
+  const SICHERUNG_VERSION = 2;
   // Selbst gewählt: Sicherungsdatei höchstens 5 MB und 20 000 Einträge (der Paket-Import aus Teil 1 hat keine eigene
   // Grenze); höchstens 50 gemerkte Export-Fassungen (für die Zählung n der Fassung).
   const MAX_SICHERUNG_BYTES = 5 * 1024 * 1024;
@@ -663,18 +665,21 @@
   function letzteFassung() { return exporte.length ? exporte[exporte.length - 1] : null; }
 
   /* ---------- Sicherung (Teil G) ---------- */
+  // Sicherung der geöffneten Version; struktur (Feld-Änderungen) setzt flyer-bearbeiten.js über flyer.js ein
   function sicherung() {
     const pk = basis(), vv = ver();
     return {
       format: SICHERUNG_FORMAT,
       version: SICHERUNG_VERSION,
       paketFassung: pk ? String(pk.version) : '',
+      versionNummer: vv,
       gesichert: jetztIso(),
-      eintraege: liste().filter((e) => e.ver === vv).map(rein)
+      eintraege: liste().filter((e) => e.ver === vv).map(reinMitVer),
+      struktur: []
     };
   }
   function istTextOderNull(v) { return v === null || typeof v === 'string'; }
-  // Inhalt einer Sicherungsdatei prüfen → Liste der Einträge; wirft AppError (dann ändert sich nichts)
+  // Inhalt einer Sicherungsdatei prüfen → { eintraege, struktur }; wirft AppError (dann ändert sich nichts)
   function pruefeSicherung(text) {
     if (typeof text !== 'string') throw fehler('format', 'Datei ist kein gültiges JSON.', 'Die Datei enthält keinen Text.');
     if (text.length > MAX_SICHERUNG_BYTES || new TextEncoder().encode(text).length > MAX_SICHERUNG_BYTES) throw fehler('format', 'Datei zu groß.', 'Eine Sicherung hat höchstens 5 MB.');
@@ -687,10 +692,14 @@
     if (o.gesichert !== undefined && typeof o.gesichert !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', 'gesichert muss ein Text sein.');
     if (!Array.isArray(o.eintraege)) throw fehler('format', 'Sicherung fehlerhaft.', 'eintraege muss eine Liste sein.');
     if (o.eintraege.length > MAX_EINTRAEGE) throw fehler('format', 'Sicherung fehlerhaft.', 'Zu viele Einträge.');
+    const v2 = o.version >= 2;
+    if (v2 && o.versionNummer !== undefined && !istNummer(o.versionNummer)) throw fehler('format', 'Sicherung fehlerhaft.', 'versionNummer muss „x.y“ sein.');
     const gesehen = new Set();
-    return o.eintraege.map((e, i) => {
+    const eintraegeS = o.eintraege.map((e, i) => {
       const wo = 'Eintrag ' + (i + 1) + ': ';
       if (!istObjekt(e)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'kein Objekt.');
+      if (v2 && !istNummer(e.ver)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'ver muss eine Versionsnummer „x.y“ sein.');
+      const vv = v2 ? e.ver : ver();
       if (typeof e.dok !== 'string' || !e.dok) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'dok fehlt.');
       if (typeof e.k !== 'string' || !e.k) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'k fehlt.');
       if (ARTEN.indexOf(e.art) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'art muss text, status oder stand sein.');
@@ -699,19 +708,40 @@
       if (e.zeit !== undefined && typeof e.zeit !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'zeit muss ein Text sein.');
       if (e.art === 'status' && e.neu && STATUS.indexOf(e.neu) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannter Status.');
       if (e.art === 'stand' && !/^stand\d+$/.test(e.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannte Stand-Kennung.');
-      const key = schluessel(ver(), e.dok, e.art, e.k);
+      const key = schluessel(vv, e.dok, e.art, e.k);
       if (gesehen.has(key)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');
       gesehen.add(key);
-      return { ver: ver(), dok: e.dok, k: e.k, art: e.art, alt: e.alt === undefined ? null : e.alt, neu: e.neu,
+      return { ver: vv, dok: e.dok, k: e.k, art: e.art, alt: e.alt === undefined ? null : e.alt, neu: e.neu,
         exportiert: e.exportiert === undefined ? null : e.exportiert, zeit: typeof e.zeit === 'string' && e.zeit ? e.zeit : jetztIso(), konflikt: null };
     });
+    // Struktur (v2): [{ k: Feld, alt: JSON-Text|null, neu: JSON-Text|null }]
+    const struktur = v2 && o.struktur !== undefined ? o.struktur : [];
+    if (!Array.isArray(struktur)) throw fehler('format', 'Sicherung fehlerhaft.', 'struktur muss eine Liste sein.');
+    if (struktur.length > MAX_EINTRAEGE) throw fehler('format', 'Sicherung fehlerhaft.', 'Zu viele Struktur-Einträge.');
+    const felder = new Set();
+    const strukturS = struktur.map((f, i) => {
+      const wo = 'Struktur ' + (i + 1) + ': ';
+      if (!istObjekt(f) || typeof f.k !== 'string' || !/^(V|O|P)\|[1-9]\d*\.[1-9]\d*\|.+|^Z\|[1-9]\d*\.[1-9]\d*$/.test(f.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekanntes Feld.');
+      if (!istTextOderNull(f.alt) || !istTextOderNull(f.neu)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'alt und neu müssen Text oder null sein.');
+      for (const w of [f.alt, f.neu]) { if (w !== null) { try { JSON.parse(w); } catch (e) { throw fehler('format', 'Sicherung fehlerhaft.', wo + 'Wert ist kein JSON.'); } } }
+      if (felder.has(f.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');
+      felder.add(f.k);
+      return { k: f.k, alt: f.alt, neu: f.neu };
+    });
+    return { eintraege: eintraegeS, struktur: strukturS };
   }
+  function istNummer(v) { return typeof v === 'string' && /^[1-9]\d*\.[1-9]\d*$/.test(v); }
   // Eingespielte Einträge gegen die aktuelle Basis einordnen (Regeln wie beim Abgleich); vorhandene eigene Einträge
   // gehen vor. → { uebernommen, verworfen, konflikte, doks }
   function einspielen(text) {
     if (gesperrt) return gesperrtFehler();
     let neue;
-    try { neue = pruefeSicherung(text); } catch (e) { return Promise.reject(e); }
+    try { neue = pruefeSicherung(text).eintraege; } catch (e) { return Promise.reject(e); }
+    return einspielenEintraege(neue);
+  }
+  // Geprüfte Einträge einspielen (flyer-bearbeiten.js spielt vorher die Struktur ein, damit neue Seiten schon da sind)
+  function einspielenEintraege(neue) {
+    if (gesperrt) return gesperrtFehler();
     const pk = lokal();
     if (!pk || !basis()) return Promise.reject(fehler('einspielen', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.'));
     const aus = { uebernommen: 0, verworfen: 0, konflikte: 0, doks: new Set() };
@@ -781,7 +811,9 @@
     markiereExportiert: markiereExportiert,
     letzteFassung: letzteFassung,
     sicherung: sicherung,
+    leseSicherung: pruefeSicherung,
     einspielen: einspielen,
+    einspielenEintraege: einspielenEintraege,
     // Abfragen (alle: Einträge der geöffneten Version; alleVersionen: mit ver)
     alle: () => liste().filter((e) => e.ver === ver()).map(rein),
     alleVersionen: () => liste().map(reinMitVer),

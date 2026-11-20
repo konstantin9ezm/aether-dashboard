@@ -391,7 +391,8 @@
     const z = $('ausgeblendetZeile'), b = $('btnAusgeblendete');
     if (!z || !b) return;
     const n = ausgeblendeteHier();
-    z.hidden = !aktPaket || (n === 0 && !mitAusgeblendeten);
+    if (n === 0) mitAusgeblendeten = false;   // nichts mehr ausgeblendet: Umschalter zurück
+    z.hidden = !aktPaket || n === 0;
     b.textContent = mitAusgeblendeten ? 'Ausgeblendete verbergen' : 'Ausgeblendete zeigen (' + n + ')';
     b.setAttribute('aria-pressed', String(mitAusgeblendeten));
   }
@@ -784,6 +785,7 @@
     aktuelleKategorie: () => (ordner === null ? 'alle' : ordner),   // wie bisher: 'alle' oder der geöffnete Ordner
     // F3a: Ordner
     aktuellerOrdner: () => ordner,
+    oeffneDok: (id) => { const i = liste.findIndex((d) => d.id === id); return i >= 0 ? oeffne(i) : Promise.resolve(null); },
     oeffneOrdner: (id) => waehleOrdner(id === undefined ? null : id),
     ordnerZurueck: ordnerZurueck,
     zeigeAusgeblendete: zeigeAusgeblendete,
