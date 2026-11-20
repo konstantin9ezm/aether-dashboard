@@ -6,19 +6,29 @@
 // „versionchange“, damit eine neuere Seite die Datenbank aufrüsten kann.
 // Version 2 (Teil 2): Store „aenderungen“ mit der Änderungsschicht (eigene Texte, Status, Stand je Dokument) und einem
 // Meta-Eintrag (bisher exportierte Fassungen). Die Migration 1 → 2 legt nur den Store an; basis und online bleiben.
+// Version 3 (F3a): Stores „struktur“ (lokaler Stand der Versionen, Ordner und Seiten samt offener Struktur-Konflikte)
+// und „geraet“ (was sich nur dieses Gerät merkt, z. B. die geöffnete Version). Die Migration 2 → 3 gibt jedem Eintrag
+// der Änderungsschicht die Version 1.1 (Feld ver, Schlüssel „e:<ver>\n<dok>\n<art>\n<k>“); basis (bleibt, wie es
+// gespeichert wurde – ein v1-Paket wird erst beim Lesen in v2 umgewandelt), online und meta bleiben unverändert.
 (function () {
   'use strict';
 
   var DB_NAME = 'aether-flyer';
-  var DB_VERSION = 2;
+  var DB_VERSION = 3;
   var STORES = Object.freeze(['basis', 'online']);
   var SCHLUESSEL_BASIS = 'aktuell';  // Store basis:  { paket, quelle:'online'|'import', sha:String|null, uebernommen:ISO }
   var SCHLUESSEL_ONLINE = 'stand';   // Store online: { sha, version, stand, geprueft:ISO } – zuletzt bekannte Online-Datei
-  // Store aenderungen: je Eintrag Schlüssel „e:<dok>\n<art>\n<k>“ → { dok, k, art, alt, neu, exportiert, zeit, konflikt }
+  // Store aenderungen: je Eintrag Schlüssel „e:<ver>\n<dok>\n<art>\n<k>“ → { ver, dok, k, art, alt, neu, exportiert, zeit, konflikt }
   // (konflikt: null oder { online, titel } bzw. { fehlt, titel } – offener Konflikt aus dem Abgleich), dazu „meta“ → { exporte: [Fassung …] }.
   var STORE_AENDERUNGEN = 'aenderungen';
   var SCHLUESSEL_META = 'meta';
   var ARTEN = ['text', 'status', 'stand'];
+  var STANDARD_VERSION = '1.1';      // Einträge ohne ver (vor F3a) gehören zu Version 1.1
+  // Store struktur: „lokal“ → { paket: v2-Paket|null (lokaler Stand; null = wie die Basis), konflikte: [...], exportiert: {...}|null }
+  // Store geraet:   „version“ → Nummer der zuletzt geöffneten Version (nur dieses Gerät, nie im Paket)
+  var STORE_STRUKTUR = 'struktur';
+  var STORE_GERAET = 'geraet';
+  var SCHLUESSEL_LOKAL = 'lokal';
   // Selbst gewählt: Öffnen höchstens 5 s, ein Lese-/Schreibvorgang höchstens 10 s (Paket kann einige MB haben).
   var ZEIT_OEFFNEN_MS = 5000;
   var ZEIT_VORGANG_MS = 10000;
@@ -49,6 +59,7 @@
         var db = req.result, alt = ev.oldVersion;
         if (alt < 1) { db.createObjectStore('basis'); db.createObjectStore('online'); }
         if (alt < 2) db.createObjectStore('aenderungen');   // Teil 2: Änderungsschicht (basis und online bleiben)
+        if (alt < 3) { db.createObjectStore('struktur'); db.createObjectStore('geraet'); verschiebeAufVersion(req.transaction); }
       };
       req.onsuccess = function () {
         clearTimeout(timer);
@@ -64,6 +75,26 @@
       };
       req.onblocked = function () { /* andere Verbindung hält eine alte Version offen – das Zeitlimit beendet das Warten */ };
     });
+  }
+
+  // Migration 2 → 3 (in der Upgrade-Transaktion): Einträge „e:<dok>\n<art>\n<k>“ ohne ver → ver 1.1 unter dem neuen
+  // Schlüssel. Andere Schlüssel (meta) und schon versionierte Einträge bleiben, wie sie sind.
+  function verschiebeAufVersion(tx) {
+    try {
+      var st = tx.objectStore('aenderungen');
+      var c = st.openCursor();
+      c.onsuccess = function () {
+        var cur = c.result;
+        if (!cur) return;
+        var k = cur.key, w = cur.value;
+        if (typeof k === 'string' && k.indexOf('e:') === 0 && istObjekt(w) && typeof w.ver !== 'string' && k.split('\n').length === 3) {
+          var neu = Object.assign({}, w, { ver: STANDARD_VERSION });
+          st.put(neu, 'e:' + STANDARD_VERSION + '\n' + k.slice(2));
+          cur.delete();
+        }
+        cur.continue();
+      };
+    } catch (e) { /* ohne Store aenderungen (frisch angelegt) nichts zu tun */ }
   }
 
   async function verbinde() {
@@ -186,17 +217,18 @@
   // Nur die bekannten Felder, nur Text-Werte (exportiert, alt dürfen null sein); sonst null.
   function eintragSauber(e) {
     if (!istObjekt(e) || typeof e.dok !== 'string' || !e.dok || typeof e.k !== 'string' || !e.k || ARTEN.indexOf(e.art) < 0) return null;
+    var ver = typeof e.ver === 'string' && /^[1-9]\d*\.[1-9]\d*$/.test(e.ver) ? e.ver : STANDARD_VERSION;
     if (typeof e.neu !== 'string') return null;
     var k = istObjekt(e.konflikt) && typeof e.konflikt.online === 'string' ? { online: e.konflikt.online } :
       (istObjekt(e.konflikt) && e.konflikt.fehlt === true ? { fehlt: true } : null);
     if (k && typeof e.konflikt.titel === 'string') k.titel = e.konflikt.titel;   // Titel des Dokuments beim Abgleich
     return {
-      dok: e.dok, k: e.k, art: e.art,
+      ver: ver, dok: e.dok, k: e.k, art: e.art,
       alt: textOderLeer(e.alt), neu: e.neu, exportiert: textOderLeer(e.exportiert),
       zeit: textOderNull(e.zeit) || jetztIso(), konflikt: k
     };
   }
-  function eintragSchluessel(e) { return 'e:' + e.dok + '\n' + e.art + '\n' + e.k; }
+  function eintragSchluessel(e) { return 'e:' + e.ver + '\n' + e.dok + '\n' + e.art + '\n' + e.k; }
 
   // → { eintraege: [...], exporte: [...] } | null (ohne Store oder ohne IndexedDB)
   async function ladeAenderungen() {
@@ -243,6 +275,57 @@
     } catch (err) { return false; }
   }
 
+  // ---------------------------------------------------------------------------
+  // Struktur und Gerät (F3a)
+  // ---------------------------------------------------------------------------
+  async function hatStore(name) {
+    var db = await datenbank();
+    return !!db && db.objectStoreNames.contains(name);
+  }
+  // → { paket, konflikte, exportiert } | null
+  async function ladeStruktur() {
+    try {
+      if (!(await hatStore(STORE_STRUKTUR))) return null;
+      var r = await vorgang(STORE_STRUKTUR, 'readonly', function (s) { return s.get(SCHLUESSEL_LOKAL); });
+      var w = r.ok ? r.wert : null;
+      if (!istObjekt(w)) return null;
+      return {
+        paket: istObjekt(w.paket) ? w.paket : null,
+        konflikte: Array.isArray(w.konflikte) ? w.konflikte.filter(istObjekt) : [],
+        exportiert: istObjekt(w.exportiert) ? w.exportiert : null
+      };
+    } catch (e) { return null; }
+  }
+  // s = { paket: v2|null, konflikte: [...], exportiert: {...}|null } → true|false
+  async function speichereStruktur(s) {
+    try {
+      if (!istObjekt(s) || (s.paket !== null && !istObjekt(s.paket))) return false;
+      if (!(await hatStore(STORE_STRUKTUR))) return false;
+      var eintrag = {
+        paket: s.paket,
+        konflikte: Array.isArray(s.konflikte) ? s.konflikte : [],
+        exportiert: istObjekt(s.exportiert) ? s.exportiert : null
+      };
+      var r = await vorgang(STORE_STRUKTUR, 'readwrite', function (st) { return st.put(eintrag, SCHLUESSEL_LOKAL); });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+  // Nur dieses Gerät: einfache Texte (z. B. „version“ → „1.2“) → Text | null
+  async function ladeGeraet(name) {
+    try {
+      if (!(await hatStore(STORE_GERAET))) return null;
+      var r = await vorgang(STORE_GERAET, 'readonly', function (s) { return s.get(String(name)); });
+      return r.ok && typeof r.wert === 'string' ? r.wert : null;
+    } catch (e) { return null; }
+  }
+  async function speichereGeraet(name, wert) {
+    try {
+      if (typeof wert !== 'string' || !(await hatStore(STORE_GERAET))) return false;
+      var r = await vorgang(STORE_GERAET, 'readwrite', function (s) { return s.put(wert, String(name)); });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+
   // Dauerhaften Speicher anfragen (damit der Browser das Paket nicht bei Platzmangel löscht) → true, wenn dauerhaft
   async function persistAnfragen() {
     try {
@@ -263,6 +346,10 @@
     speichereOnline: speichereOnline,
     ladeAenderungen: ladeAenderungen,
     speichereAenderungen: speichereAenderungen,
+    ladeStruktur: ladeStruktur,
+    speichereStruktur: speichereStruktur,
+    ladeGeraet: ladeGeraet,
+    speichereGeraet: speichereGeraet,
     persistAnfragen: persistAnfragen
   });
 })();

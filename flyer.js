@@ -13,6 +13,10 @@
 // AetherFlyerAnsicht.setzeAnpasser in jede Darstellung gelegt; jede Übernahme (Import, online) gleicht sie genau einmal
 // mit dem neuen Paket ab. Bearbeiten, Export und Sicherung richtet AetherFlyerBearbeiten ein (optional wie die übrigen).
 // window.AetherFlyer: Schnittstelle für die Tests und Teil 2 (siehe unten).
+// F3a: Die Basis bleibt gespeichert, wie sie kam (Format v1 oder v2), und gilt hier als v2 (AetherFlyerPaket.alsV2).
+// Der lokale Stand (Versionen, Ordner, Seiten – AetherFlyerStruktur) liegt in IndexedDB „struktur“ (null = wie die
+// Basis), die geöffnete Version merkt sich das Gerät („geraet“, beim ersten Start 1.1). Ansicht, Änderungsschicht,
+// Druck und Bild sehen die Sicht der geöffneten Version; Export und Online-Prüfung das ganze Paket.
 (function () {
   'use strict';
 
@@ -32,9 +36,15 @@
   const E = window.AetherFlyerExport || null;
   const AE = window.AetherFlyerAenderungen || null;
   const B = window.AetherFlyerBearbeiten || null;
+  const ST = window.AetherFlyerStruktur;
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
+  let basisV2 = null;             // dasselbe Paket im Format v2
+  let lokal = null;               // lokaler Stand (v2) mit Struktur-Änderungen; null = wie die Basis
+  let strukturRest = { konflikte: [], exportiert: null };   // weitere Teile des Stores „struktur“
+  let version = ST.STANDARD_VERSION;   // geöffnete Version (gemerkt je Gerät)
+  let sichtCache = null;          // { pk, nummer, sicht } – dieselben Objekte, solange Paket und Version gleich bleiben
   let gesichert = false;          // liegt genau dieses Paket offline auf dem Gerät?
   let reihe = Promise.resolve();  // Übernahmen und die erste Anzeige nacheinander
 
@@ -44,6 +54,15 @@
   function datum(iso) { try { return P.datum(iso); } catch (e) { return String(iso || ''); } }
   function anzahlText(n) { return n + (n === 1 ? ' Dokument' : ' Dokumente'); }
   function paketTitel(p) { return typeof p.titel === 'string' && p.titel.trim() ? p.titel.trim() : STANDARD_TITEL; }
+  // Stand aller Versionen, wie er hier gilt (lokal, sonst die Basis), und die Sicht der geöffneten Version
+  function effektiv() { return lokal || basisV2; }
+  function sicht() {
+    const pk = effektiv();
+    if (!pk) return null;
+    if (!ST.version(pk, version)) version = ST.STANDARD_VERSION;
+    if (!sichtCache || sichtCache.pk !== pk || sichtCache.nummer !== version) sichtCache = { pk: pk, nummer: version, sicht: ST.sicht(pk, version) };
+    return sichtCache.sicht;
+  }
   function alsFehler(e, titel) {
     if (e instanceof G.AppError) return e;
     return new G.AppError('unknown', titel || 'Unerwarteter Fehler.', String((e && e.message) || e || ''));
@@ -70,7 +89,7 @@
 
   /* ---------- Anzeige ---------- */
   function zeigeKopf() {
-    const p = basis && basis.paket;
+    const p = effektiv();
     const n = AE && p ? AE.nichtExportiert() : 0;
     $('status').textContent = (!p ? 'noch kein Paket'
       : gesichert ? 'offline bereit · Stand ' + datum(p.stand)
@@ -78,8 +97,8 @@
       (n > 0 ? ' · ' + n + (n === 1 ? ' Änderung' : ' Änderungen') + ' nicht exportiert' : '');
   }
   function zeigeInfo() {
-    const p = basis && basis.paket;
-    $('paketInfo').textContent = p ? paketTitel(p) + ' · Version ' + p.version + ' · ' + anzahlText(p.dokumente.length) : '';
+    const p = effektiv(), s = sicht();
+    $('paketInfo').textContent = p && s ? paketTitel(p) + ' · Version ' + p.version + ' · ' + anzahlText(s.dokumente.length) : '';
     $('leer').hidden = !!p;
   }
   // Paket-Zeile und Ansicht (Chips, Kacheln); Promise endet, wenn alle Kacheln dargestellt und angepasst sind.
@@ -87,7 +106,7 @@
     zeigeInfo();
     if (!A || typeof A.zeigePaket !== 'function') return Promise.resolve();
     let arbeit;
-    try { arbeit = Promise.resolve(A.zeigePaket(basis ? basis.paket : null)); } catch (e) { arbeit = Promise.reject(e); }
+    try { arbeit = Promise.resolve(A.zeigePaket(sicht())); } catch (e) { arbeit = Promise.reject(e); }
     return mitFrist(arbeit.catch((e) => {
       const f = alsFehler(e, 'Anzeige fehlgeschlagen.');
       fehler(f.title, f.text, false);
@@ -135,13 +154,13 @@
     return auftrag;
   }
   async function uebernehmeJetzt(paket, opt) {
-    P.pruefe(paket);
+    const neuV2 = P.alsV2(paket);   // prüft (v1 oder v2) und wandelt v1 um
     if (opt.nurWennLeer === true && basis && basis.paket) return 'schonDa';
     // Teil 2: Änderungsschicht genau einmal mit dem neuen Paket abgleichen (Konflikte zeigt flyer-bearbeiten.js)
-    if (AE) { AE.sperre(true); try { await AE.abgleichen(paket); } catch (e) { /* Schicht bleibt, wie sie war */ } }
-    try { return await basisWechseln(paket, opt); } finally { if (AE) AE.sperre(false); }
+    if (AE) { AE.sperre(true); try { await AE.abgleichen(neuV2); } catch (e) { /* Schicht bleibt, wie sie war */ } }
+    try { return await basisWechseln(paket, neuV2, opt); } finally { if (AE) AE.sperre(false); }
   }
-  async function basisWechseln(paket, opt) {
+  async function basisWechseln(paket, neuV2, opt) {
     const eintrag = {
       paket: paket,
       quelle: opt.quelle === 'online' ? 'online' : 'import',
@@ -150,6 +169,7 @@
     };
     const ok = await speichereBasis(eintrag);
     basis = eintrag;
+    basisV2 = neuV2;
     gesichert = ok;
     await anzeigen();
     zeigeKopf();
@@ -165,7 +185,8 @@
     const paket = P.lies(text);
     await uebernehme(paket, { quelle: 'import' });
     fehlerWeg();
-    G.meldung('Paket importiert (Version ' + paket.version + ', ' + anzahlText(paket.dokumente.length) + ')');
+    const s = sicht();
+    G.meldung('Paket importiert (Version ' + paket.version + ', ' + anzahlText(s ? s.dokumente.length : 0) + ')');
     // Banner/„Aktuell …“ der Online-Prüfung gehörten zum vorigen Paket: neu prüfen lassen.
     if (O && typeof O.nachImport === 'function') {
       try { Promise.resolve(O.nachImport()).catch(() => {}); } catch (e) { /* Seite läuft ohne Online-Prüfung */ }
@@ -210,7 +231,8 @@
 
   /* ---------- Hilfen für flyer-bearbeiten.js (Teil 2) ---------- */
   const bearbeitenHilfen = Object.freeze({
-    paket: () => (basis ? basis.paket : null),
+    paket: () => sicht(),
+    paketV2: () => effektiv(),
     onlineVersion: async () => { const o = await ladeOnline(); return o && typeof o.version === 'string' ? o.version : null; },
     fehler: fehler,
     fehlerWeg: fehlerWeg,
@@ -221,13 +243,30 @@
   // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
   function anpasserSetzen() {
     if (!AE || !A || typeof A.setzeAnpasser !== 'function') return;
-    AE.einrichten({ paket: () => (basis ? basis.paket : null) });
+    AE.einrichten({ paket: () => sicht(), version: () => (effektiv() ? sicht().nummer : version), lokal: () => effektiv() });
     A.setzeAnpasser((wurzel, dok, ort) => {
       let markieren = false;
       try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
       AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren });
     });
     document.addEventListener('flyer:aenderungen', () => { zeigeKopf(); });
+  }
+
+  /* ---------- Lokaler Stand und geöffnete Version (F3a) ---------- */
+  async function ladeLokal() {
+    let st = null, v = null;
+    try { st = S && typeof S.ladeStruktur === 'function' ? await S.ladeStruktur() : null; } catch (e) { st = null; }
+    try { v = S && typeof S.ladeGeraet === 'function' ? await S.ladeGeraet('version') : null; } catch (e) { v = null; }
+    lokal = null;
+    strukturRest = { konflikte: [], exportiert: null };
+    if (st && st.paket) {
+      try { P.pruefe(st.paket); lokal = st.paket; } catch (e) {
+        const f = alsFehler(e);
+        fehler('Lokaler Stand nicht lesbar.', [f.title, f.text].filter(Boolean).join(' '), false);
+      }
+    }
+    if (st) strukturRest = { konflikte: st.konflikte || [], exportiert: st.exportiert || null };
+    version = typeof v === 'string' && ST.version(effektiv(), v) ? v : ST.STANDARD_VERSION;
   }
 
   /* ---------- Start ---------- */
@@ -250,9 +289,10 @@
     const b = await ladeBasis();
     if (b && b.paket) {
       try {
-        P.pruefe(b.paket);
+        basisV2 = P.alsV2(b.paket);
         basis = { paket: b.paket, quelle: b.quelle === 'online' ? 'online' : 'import', sha: typeof b.sha === 'string' && b.sha ? b.sha : null, uebernommen: b.uebernommen || null };
         gesichert = true;
+        await ladeLokal();
       } catch (e) {
         const f = alsFehler(e);
         fehler('Gespeichertes Paket nicht lesbar.', [f.title, f.text].filter(Boolean).join(' '), false);
@@ -276,7 +316,10 @@
   window.AetherFlyer = Object.freeze({
     bereit: bereit,                                         // Start fertig: Basis geladen, Kacheln dargestellt und angepasst
     stand: () => (basis && basis.paket ? 'paket' : 'leer'),
-    paket: () => (basis ? basis.paket : null),
+    paket: () => (basis ? basis.paket : null),              // Basis, wie gespeichert (v1 oder v2)
+    paketV2: () => effektiv(),                              // F3a: Stand aller Versionen (lokal, sonst Basis) im Format v2
+    sicht: () => sicht(),                                   // F3a: Sicht der geöffneten Version
+    version: () => (effektiv() ? sicht().nummer : version), // F3a: Nummer der geöffneten Version
     uebernehme: uebernehme,                                 // (paket, { quelle:'online'|'import', sha, nurWennLeer }) → Promise<Boolean|'schonDa'>
     fehler: fehler,                                         // (titel, text, mitTokenLink)
     fehlerWeg: fehlerWeg,

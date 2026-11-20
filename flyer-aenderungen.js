@@ -10,6 +10,9 @@
 // <br> hat (dann als <br>), sonst als Leerzeichen.
 // Export: Paket = Basis + Änderungsschicht (Markierungen bleiben), Fassung „<JJJJ-MM-TT>.<n>“, muss
 // AetherFlyerPaket.pruefe bestehen. Abgleich bei jeder Übernahme (abgleichen). Sicherung „aether-flyer-aenderungen“ v1.
+// F3a: Jeder Eintrag gehört zu einer Version (ver, z. B. „1.1“). Bearbeitet wird immer die geöffnete Version (h.version),
+// dargestellt über ihre Sicht (h.paket: Dokumente wie im Format v1). Abgleich und Export arbeiten auf dem ganzen Paket
+// im Format v2 (h.lokal: lokaler Stand aller Versionen; Abgleich gegen das neue Paket im Format v2).
 // Gespeichert wird über AetherFlyerSpeicher (IndexedDB „aether-flyer“, Store „aenderungen“) – nie das Token.
 (function () {
   'use strict';
@@ -17,6 +20,7 @@
   const ARTEN = ['text', 'status', 'stand'];
   const STATUS = ['ok', 'run', 'next', 'plan'];          // dazu '' = ohne Status
   const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  const STANDARD_VERSION = '1.1';
   const SICHERUNG_FORMAT = 'aether-flyer-aenderungen';
   const SICHERUNG_VERSION = 1;
   // Selbst gewählt: Sicherungsdatei höchstens 5 MB und 20 000 Einträge (der Paket-Import aus Teil 1 hat keine eigene
@@ -40,7 +44,9 @@
   let exporte = [];                // bisher exportierte Fassungen (neueste zuletzt)
   let gespeichertOk = true;        // letzter Speichervorgang gelungen?
   let reihe = Promise.resolve();   // Speichervorgänge nacheinander
-  let paketQuelle = () => null;    // → Basis-Paket (von flyer.js)
+  let paketQuelle = () => null;    // → Sicht der geöffneten Version (von flyer.js)
+  let versionQuelle = () => STANDARD_VERSION;   // → Nummer der geöffneten Version
+  let lokalQuelle = () => null;    // → lokaler Stand aller Versionen (Format v2)
   const werteCache = new Map();    // html → { text, status, stand } der Basis (bereinigt gelesen)
   let gesperrt = false;            // läuft gerade eine Übernahme (Abgleich bis Basiswechsel)? Dann keine Eingaben
 
@@ -51,10 +57,18 @@
     const e = new Error(title); e.kind = kind; e.title = title; e.text = text || ''; return e;
   }
   function istObjekt(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
-  function schluessel(dok, art, k) { return dok + '\n' + art + '\n' + k; }
-  function sk(e) { return schluessel(e.dok, e.art, e.k); }
-  function kopie(e) { return { dok: e.dok, k: e.k, art: e.art, alt: e.alt, neu: e.neu, exportiert: e.exportiert, zeit: e.zeit, konflikt: e.konflikt ? Object.assign({}, e.konflikt) : null }; }
+  function schluessel(ver, dok, art, k) { return ver + '\n' + dok + '\n' + art + '\n' + k; }
+  function sk(e) { return schluessel(e.ver, e.dok, e.art, e.k); }
+  function kopie(e) { return { ver: e.ver, dok: e.dok, k: e.k, art: e.art, alt: e.alt, neu: e.neu, exportiert: e.exportiert, zeit: e.zeit, konflikt: e.konflikt ? Object.assign({}, e.konflikt) : null }; }
   function rein(e) { return { dok: e.dok, k: e.k, art: e.art, alt: e.alt, neu: e.neu, exportiert: e.exportiert, zeit: e.zeit }; }
+  function reinMitVer(e) { return Object.assign({ ver: e.ver }, rein(e)); }
+  function ver() { try { const v = versionQuelle(); return typeof v === 'string' && v ? v : STANDARD_VERSION; } catch (e) { return STANDARD_VERSION; } }
+  function lokal() { try { return lokalQuelle() || null; } catch (e) { return null; } }
+  // Seite dok der Version v im Paket pk (Format v2)
+  function seiteV2(pk, v, dok) {
+    const vs = pk && Array.isArray(pk.versionen) ? pk.versionen.find((x) => x && x.nummer === v) : null;
+    return vs && Array.isArray(vs.seiten) ? vs.seiten.find((d) => d && d.id === dok) || null : null;
+  }
   function jetztIso() { return new Date().toISOString(); }
   const zwei = (n) => (n < 10 ? '0' : '') + n;
   // Heutiges Datum (Ortszeit des Geräts) als JJJJ-MM-TT
@@ -185,15 +199,16 @@
     if (!paket || !Array.isArray(paket.dokumente)) return null;
     return paket.dokumente.find((d) => d && d.id === id) || null;
   }
-  // Wert in einem Paket (undefined, wenn es das Dokument oder die Kennung dort nicht gibt)
-  function wertIn(paket, dokId, art, k) {
-    const dok = dokIn(paket, dokId);
+  // Wert eines Dokuments (undefined, wenn es das Dokument oder die Kennung dort nicht gibt)
+  function wertVon(dok, art, k) {
     if (!dok) return undefined;
     const m = werte(dok)[art];
     if (!m || !m.has(k)) return undefined;
     const v = m.get(k);
     return typeof v === 'string' ? v : v.wert;
   }
+  function wertIn(paket, dokId, art, k) { return wertVon(dokIn(paket, dokId), art, k); }
+  function wertInV2(pk, v, dokId, art, k) { return wertVon(seiteV2(pk, v, dokId), art, k); }
 
   /* ---------- Zähler und Balken ---------- */
   function zahl(v) { return String(Math.round(v * 10000) / 10000); }
@@ -380,24 +395,26 @@
   function sperre(an) { gesperrt = an === true; }
   function gesperrtFehler() { return Promise.reject(fehler('gesperrt', 'Gerade wird ein neues Paket übernommen.', 'Bitte gleich noch einmal versuchen.')); }
   function basis() { try { return paketQuelle() || null; } catch (e) { return null; } }
-  function hatAenderungen(dokId) {
-    for (const e of eintraege.values()) if (e.dok === dokId && e.art !== 'stand') return true;
+  function hatAenderungen(dokId, v) {
+    const vv = v || ver();
+    for (const e of eintraege.values()) if (e.ver === vv && e.dok === dokId && e.art !== 'stand') return true;
     return false;
   }
   // Stand-Einträge eines Dokuments: nach einer Änderung auf heute (heute = true), ohne Änderungen weg.
-  function standNachziehen(dokId, aufHeute) {
-    const pk = basis(), dok = dokIn(pk, dokId);
-    const mit = hatAenderungen(dokId);
-    for (const e of liste()) if (e.dok === dokId && e.art === 'stand' && (!mit || !dok)) eintraege.delete(sk(e));
+  function standNachziehen(dokId, aufHeute, v) {
+    const vv = v || ver();
+    const dok = vv === ver() ? dokIn(basis(), dokId) : seiteV2(lokal(), vv, dokId);
+    const mit = hatAenderungen(dokId, vv);
+    for (const e of liste()) if (e.ver === vv && e.dok === dokId && e.art === 'stand' && (!mit || !dok)) eintraege.delete(sk(e));
     if (!mit || !dok || !aufHeute) return;
     const iso = heute(), zeit = jetztIso();
     werte(dok).stand.forEach((b, k) => {
-      const key = schluessel(dokId, 'stand', k);
+      const key = schluessel(vv, dokId, 'stand', k);
       const neu = normalisiere(standText(b.wert, b.format, iso), b.umbruch);
       const vorhanden = eintraege.get(key);
       if (neu === b.wert) { if (vorhanden && !vorhanden.konflikt) eintraege.delete(key); return; }
       if (vorhanden) { if (vorhanden.neu !== neu) { vorhanden.neu = neu; vorhanden.zeit = zeit; } return; }
-      eintraege.set(key, { dok: dokId, k: k, art: 'stand', alt: b.wert, neu: neu, exportiert: null, zeit: zeit, konflikt: null });
+      eintraege.set(key, { ver: vv, dok: dokId, k: k, art: 'stand', alt: b.wert, neu: neu, exportiert: null, zeit: zeit, konflikt: null });
     });
   }
   // Eigenen Wert setzen (aus dem Vollbild). neu = Basis-Wert → Eintrag weg. → Promise<Boolean> (gespeichert)
@@ -416,7 +433,7 @@
       neu = wert === null || wert === undefined ? '' : String(wert);
       if (neu && STATUS.indexOf(neu) < 0) return Promise.reject(fehler('bearbeiten', 'Unbekannter Status.', neu));
     }
-    const key = schluessel(dokId, art, k);
+    const key = schluessel(ver(), dokId, art, k);
     const vorher = eintraege.get(key);
     // Unverändert (auch wenn sich nur Quelltext-Zeilenumbrüche der Basis zu Leerzeichen normalisiert haben) → kein Eintrag
     if (neu === altWert || (art === 'text' && neu === normalisiere(altWert, b.umbruch))) eintraege.delete(key);
@@ -425,7 +442,7 @@
       // Neue eigene Eingabe entscheidet einen offenen Konflikt für „meins“ (alt = jetziger Basis-Wert)
       if (vorher.konflikt) { vorher.alt = altWert; vorher.konflikt = null; }
     } else {
-      eintraege.set(key, { dok: dokId, k: k, art: art, alt: altWert, neu: neu, exportiert: null, zeit: jetztIso(), konflikt: null });
+      eintraege.set(key, { ver: ver(), dok: dokId, k: k, art: art, alt: altWert, neu: neu, exportiert: null, zeit: jetztIso(), konflikt: null });
     }
     standNachziehen(dokId, true);
     const p = speichern();
@@ -435,7 +452,7 @@
   // „Original“: Eintrag weg (Basis-Wert gilt); ohne weitere Änderungen auch der Stand-Eintrag.
   function original(dokId, art, k) {
     if (gesperrt) return gesperrtFehler();
-    eintraege.delete(schluessel(dokId, art, k));
+    eintraege.delete(schluessel(ver(), dokId, art, k));
     standNachziehen(dokId, false);
     const p = speichern();
     melde({ dok: dokId });
@@ -444,23 +461,25 @@
   // Alle Änderungen eines Dokuments zurücknehmen (samt Stand)
   function dokumentZuruecksetzen(dokId) {
     if (gesperrt) return gesperrtFehler();
-    for (const e of liste()) if (e.dok === dokId) eintraege.delete(sk(e));
+    const vv = ver();
+    for (const e of liste()) if (e.ver === vv && e.dok === dokId) eintraege.delete(sk(e));
     const p = speichern();
     melde({ dok: dokId });
     return p;
   }
-  // „Alle Änderungen verwerfen“ (Rückfrage stellt die Oberfläche)
+  // „Alle Änderungen verwerfen“ (Rückfrage stellt die Oberfläche) – in der geöffneten Version
   function verwerfen() {
     if (gesperrt) return gesperrtFehler();
-    const doks = Array.from(new Set(liste().map((e) => e.dok)));
-    eintraege.clear();
+    const vv = ver();
+    const doks = Array.from(new Set(liste().filter((e) => e.ver === vv).map((e) => e.dok)));
+    for (const e of liste()) if (e.ver === vv) eintraege.delete(sk(e));
     const p = speichern();
     melde({ doks: doks });
     return p;
   }
   // Aktueller (eigener) Wert einer Stelle für das Bearbeitungsfeld bzw. die Auswahl
   function aktuellerWert(dokId, art, k) {
-    const e = eintraege.get(schluessel(dokId, art, k));
+    const e = eintraege.get(schluessel(ver(), dokId, art, k));
     if (e) return e.neu;
     const v = wertIn(basis(), dokId, art, k);
     return v === undefined ? null : v;
@@ -480,19 +499,20 @@
     if (r === e.alt || (e.exportiert !== null && r === e.exportiert)) return 'bleibt';
     return 'konflikt';
   }
-  // Abgleich bei jeder Übernahme eines neuen Pakets R (aus flyer.js uebernehme, genau einmal je Übernahme).
-  // Idempotent: derselbe Abgleich noch einmal ändert nichts. → { entfallen, behalten, konflikte, doks }
+  // Abgleich bei jeder Übernahme eines neuen Pakets R (aus flyer.js uebernehme, genau einmal je Übernahme; R im
+  // Format v2, Werte je Version und Seite). Idempotent: derselbe Abgleich noch einmal ändert nichts.
+  // → { entfallen, behalten, konflikte, doks }
   function abgleichRechnen(paketR, liste_) {
     const aus = { entfallen: 0, behalten: 0, konflikte: 0, doks: new Set(), neu: [] };
     for (const e of liste_) {
-      const r = wertIn(paketR, e.dok, e.art, e.k);
+      const r = wertInV2(paketR, e.ver, e.dok, e.art, e.k);
       const was = einordnen(e, r);
       if (was === 'entfaellt') { aus.entfallen++; aus.doks.add(e.dok); continue; }
       const n = kopie(e);
       if (was === 'bleibt') { n.alt = r; n.konflikt = null; aus.behalten++; }
       else {
-        // Titel merken: aus R, sonst (Dokument in R entfernt) aus der bisherigen Basis
-        const d = dokIn(paketR, e.dok) || dokIn(basis(), e.dok);
+        // Titel merken: aus R, sonst (Dokument in R entfernt) aus dem bisherigen Stand
+        const d = seiteV2(paketR, e.ver, e.dok) || seiteV2(lokal(), e.ver, e.dok);
         n.konflikt = r === undefined ? { fehlt: true } : { online: r };
         if (d) n.konflikt.titel = String(d.titel);
         aus.konflikte++;
@@ -509,18 +529,18 @@
     eintraege.clear();
     for (const n of aus.neu) eintraege.set(sk(n), n);
     // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
-    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
     const ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
     if (JSON.stringify(liste().map(kopie)) === vorher) return Promise.resolve(ergebnis);
     return speichern().then(() => { melde({ doks: ergebnis.doks, abgleich: true }); return ergebnis; });
   }
   // Offene Konflikte für die Liste
   function konflikte() {
-    const pk = basis();
+    const pk = lokal();
     return liste().filter((e) => e.konflikt).map((e) => {
-      const d = dokIn(pk, e.dok);
+      const d = seiteV2(pk, e.ver, e.dok);
       return {
-        schluessel: sk(e), dok: e.dok, titel: d ? String(d.titel) : (typeof e.konflikt.titel === 'string' ? e.konflikt.titel : ''), art: e.art, k: e.k,
+        schluessel: sk(e), ver: e.ver, dok: e.dok, titel: d ? String(d.titel) : (typeof e.konflikt.titel === 'string' ? e.konflikt.titel : ''), art: e.art, k: e.k,
         basis: e.alt, meins: e.neu, online: e.konflikt.fehlt ? null : e.konflikt.online, fehlt: !!e.konflikt.fehlt
       };
     });
@@ -535,7 +555,7 @@
       e.konflikt = null;
     } else if (wahl === 'online') {
       eintraege.delete(key);
-      standNachziehen(e.dok, false);
+      standNachziehen(e.dok, false, e.ver);
     } else return Promise.resolve(false);
     const p = speichern();
     melde({ dok: e.dok });
@@ -585,30 +605,42 @@
     anwenden(wurzel, dokId, eigene, { nurVorhandene: true });
     return doc.body.innerHTML;
   }
-  // Paket = Basis + Änderungsschicht. → { paket, fassung, text } oder wirft (AppError) – dann wird nichts ausgegeben.
+  // Paket = lokaler Stand aller Versionen (Format v2) + Änderungsschicht. → { paket, fassung, text, bytes } oder wirft
+  // (AppError) – dann wird nichts ausgegeben.
   function exportPaket(onlineVersion) {
-    const pk = basis();
+    const pk = lokal();
     if (!pk) throw fehler('export', 'Kein Paket zum Exportieren.', 'Erst ein Paket laden oder importieren.');
     const fassung = naechsteFassung(bekannteFassungen(pk, onlineVersion));
     const neu = JSON.parse(JSON.stringify(pk));
     const proDok = new Map();
     for (const e of eintraege.values()) {
-      if (!proDok.has(e.dok)) proDok.set(e.dok, []);
-      proDok.get(e.dok).push(e);
+      const key = e.ver + '\n' + e.dok;
+      if (!proDok.has(key)) proDok.set(key, []);
+      proDok.get(key).push(e);
     }
-    for (const d of neu.dokumente) {
-      const eigene = proDok.get(d.id);
-      if (!eigene || !eigene.length) continue;
-      const vorher = markierungen(d.html);
-      d.html = htmlMitAenderungen(d.html, d.id, eigene);
-      if (markierungen(d.html) !== vorher) throw fehler('export', 'Export fehlgeschlagen.', 'Dokument ' + d.id + ': Markierungen wären verändert worden.');
+    for (const v of neu.versionen) {
+      for (const d of v.seiten) {
+        const eigene = proDok.get(v.nummer + '\n' + d.id);
+        if (!eigene || !eigene.length) continue;
+        const vorher = markierungen(d.html);
+        d.html = htmlMitAenderungen(d.html, d.id, eigene);
+        if (markierungen(d.html) !== vorher) throw fehler('export', 'Export fehlgeschlagen.', 'Version ' + v.nummer + ', Seite ' + d.id + ': Markierungen wären verändert worden.');
+      }
     }
     neu.version = fassung;
     neu.stand = heute();
     try { P().pruefe(neu); } catch (e) {
       throw fehler('export', 'Export fehlgeschlagen.', 'Das Ergebnis ist kein gültiges Paket: ' + [e && e.title, e && e.text].filter(Boolean).join(' '));
     }
-    return { paket: neu, fassung: fassung, text: JSON.stringify(neu, null, 2) };
+    const text = JSON.stringify(neu, null, 2);
+    return { paket: neu, fassung: fassung, text: text, bytes: new TextEncoder().encode(text).length };
+  }
+  // HTML einer Seite mit den Änderungen ihrer Version (für Kopien von Seiten und Versionen: die Kopie zeigt, was die
+  // Quelle gerade zeigt)
+  function htmlMitSchicht(v, dok) {
+    const eigene = [];
+    for (const e of eintraege.values()) if (e.ver === v && e.dok === dok.id) eigene.push(e);
+    return eigene.length ? htmlMitAenderungen(dok.html, dok.id, eigene) : dok.html;
   }
   // Nach erfolgreicher Weitergabe: exportiert := neu für alle Einträge, Fassung merken
   function markiereExportiert(fassung) {
@@ -622,13 +654,13 @@
 
   /* ---------- Sicherung (Teil G) ---------- */
   function sicherung() {
-    const pk = basis();
+    const pk = basis(), vv = ver();
     return {
       format: SICHERUNG_FORMAT,
       version: SICHERUNG_VERSION,
       paketFassung: pk ? String(pk.version) : '',
       gesichert: jetztIso(),
-      eintraege: liste().map(rein)
+      eintraege: liste().filter((e) => e.ver === vv).map(rein)
     };
   }
   function istTextOderNull(v) { return v === null || typeof v === 'string'; }
@@ -657,10 +689,10 @@
       if (e.zeit !== undefined && typeof e.zeit !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'zeit muss ein Text sein.');
       if (e.art === 'status' && e.neu && STATUS.indexOf(e.neu) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannter Status.');
       if (e.art === 'stand' && !/^stand\d+$/.test(e.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannte Stand-Kennung.');
-      const key = schluessel(e.dok, e.art, e.k);
+      const key = schluessel(ver(), e.dok, e.art, e.k);
       if (gesehen.has(key)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');
       gesehen.add(key);
-      return { dok: e.dok, k: e.k, art: e.art, alt: e.alt === undefined ? null : e.alt, neu: e.neu,
+      return { ver: ver(), dok: e.dok, k: e.k, art: e.art, alt: e.alt === undefined ? null : e.alt, neu: e.neu,
         exportiert: e.exportiert === undefined ? null : e.exportiert, zeit: typeof e.zeit === 'string' && e.zeit ? e.zeit : jetztIso(), konflikt: null };
     });
   }
@@ -670,8 +702,8 @@
     if (gesperrt) return gesperrtFehler();
     let neue;
     try { neue = pruefeSicherung(text); } catch (e) { return Promise.reject(e); }
-    const pk = basis();
-    if (!pk) return Promise.reject(fehler('einspielen', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.'));
+    const pk = lokal();
+    if (!pk || !basis()) return Promise.reject(fehler('einspielen', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.'));
     const aus = { uebernommen: 0, verworfen: 0, konflikte: 0, doks: new Set() };
     const kandidaten = neue.filter((e) => { if (eintraege.has(sk(e))) { aus.verworfen++; return false; } return true; });
     const r = abgleichRechnen(pk, kandidaten);
@@ -681,15 +713,16 @@
       aus.doks.add(n.dok);
       if (n.konflikt) aus.konflikte++; else aus.uebernommen++;
     }
-    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
     const ergebnis = { uebernommen: aus.uebernommen, verworfen: aus.verworfen, konflikte: aus.konflikte, doks: Array.from(aus.doks) };
     return speichern().then(() => { melde({ doks: ergebnis.doks, eingespielt: true }); return ergebnis; });
   }
 
   /* ---------- Abfragen ---------- */
-  function fuerDok(dokId) {
+  function fuerDok(dokId, v) {
+    const vv = v || ver();
     const r = [];
-    for (const e of eintraege.values()) if (e.dok === dokId) r.push(e);
+    for (const e of eintraege.values()) if (e.ver === vv && e.dok === dokId) r.push(e);
     return r;
   }
   // Nicht exportierte Änderungen (Texte und Status; der Stand folgt ihnen von selbst)
@@ -698,10 +731,13 @@
     for (const e of eintraege.values()) if (e.art !== 'stand' && e.exportiert !== e.neu) n++;
     return n;
   }
-  function geaendert(dokId, art, k) { return eintraege.has(schluessel(dokId, art, k)); }
+  function geaendert(dokId, art, k) { return eintraege.has(schluessel(ver(), dokId, art, k)); }
 
+  // h = { paket() → Sicht der geöffneten Version, version() → ihre Nummer, lokal() → lokaler Stand (v2) }
   function einrichten(h) {
     if (h && typeof h.paket === 'function') paketQuelle = h.paket;
+    if (h && typeof h.version === 'function') versionQuelle = h.version;
+    if (h && typeof h.lokal === 'function') lokalQuelle = h.lokal;
   }
 
   window.AetherFlyerAenderungen = Object.freeze({
@@ -729,13 +765,15 @@
     konflikte: konflikte,
     entscheide: entscheide,
     exportPaket: exportPaket,
+    htmlMitSchicht: htmlMitSchicht,
     naechsteFassung: (onlineVersion) => naechsteFassung(bekannteFassungen(basis(), onlineVersion)),
     markiereExportiert: markiereExportiert,
     letzteFassung: letzteFassung,
     sicherung: sicherung,
     einspielen: einspielen,
-    // Abfragen
-    alle: () => liste().map(rein),
+    // Abfragen (alle: Einträge der geöffneten Version; alleVersionen: mit ver)
+    alle: () => liste().filter((e) => e.ver === ver()).map(rein),
+    alleVersionen: () => liste().map(reinMitVer),
     fuerDok: fuerDok,
     hatAenderungen: hatAenderungen,
     geaendert: geaendert,

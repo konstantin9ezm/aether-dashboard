@@ -10,11 +10,16 @@
 //         (background-image, content, border-image, list-style-image, shape-outside …) holt Chromium für url(#x) die
 //         Seite selbst noch einmal (geprüft) – das wäre eine Netzanfrage.
 // Zusätzlich sichert die Content-Security-Policy von flyer.html ab. Das Token kommt hier nie vor.
+// Format (F3a): formatVersion 1 (ein Flyer: kategorien, dokumente) und 2 (versionen, je Version ordner und seiten).
+// lies/pruefe nehmen beide an und geben das Paket unverändert zurück; alsV2 wandelt v1 verlustfrei in v2 um (eine
+// Version 1.1, Ordner = Kategorien, alle Dokumente als Original-Seiten, HTML Byte für Byte gleich). Repariert wird nie:
+// Fehlerhafte Pakete werden mit Fundstelle abgelehnt. Unbekannte Felder bleiben überall erhalten (z. B. später medien).
 (function () {
   'use strict';
 
   var FORMAT = 'aether-flyer-paket';
-  var FORMAT_VERSION = 1;
+  var FORMAT_VERSION = 2;            // höchste Version, die diese Seite liest (1 wird weiter gelesen)
+  var STANDARD_VERSION = '1.1';      // Version, die jedes v2-Paket hat (der heutige Flyer; nie löschbar)
   var DATEI = 'aether-flyer-paket.json';
 
   // AppError aus gemeinsam.js (wird vorher geladen); ohne gemeinsam.js ein gleich gebauter Error.
@@ -103,7 +108,7 @@
     if (!leerErlaubt && !wert.trim()) throw formatFehler(wo + ' ist leer');
   }
 
-  // Prüft ein gelesenes Paket und gibt es unverändert zurück (unbekannte Felder werden ignoriert).
+  // Prüft ein gelesenes Paket (formatVersion 1 oder 2) und gibt es unverändert zurück (unbekannte Felder werden ignoriert).
   function pruefe(obj) {
     var format = istObjekt(obj) ? obj.format : undefined;
     if (format !== FORMAT) {
@@ -127,7 +132,25 @@
       var c = obj.css[art];
       if (c !== undefined && typeof c !== 'string') throw formatFehler('css.' + art + ' muss ein Text sein (gefunden: „' + kurz(c) + '“)');
     });
+    if (fv === 1) pruefeV1(obj); else pruefeV2(obj);
+    return obj;
+  }
 
+  // Felder eines Dokuments (v1) bzw. einer Seite (v2), die beide Formate gleich haben
+  function pruefeDokFelder(d, wo) {
+    if (d.art === undefined) throw formatFehler(wo + ': art fehlt');
+    if (d.art !== 'flyer' && d.art !== 'infografik') throw formatFehler(wo + ': art muss „flyer“ oder „infografik“ sein (gefunden: „' + kurz(d.art) + '“)');
+    pruefeText(d.titel, wo + ': titel', true);
+    if (d.breite === undefined) throw formatFehler(wo + ': breite fehlt');
+    if (typeof d.breite !== 'number' || !isFinite(d.breite) || d.breite <= 0) throw formatFehler(wo + ': breite muss eine Zahl größer 0 sein (gefunden: „' + kurz(d.breite) + '“)');
+    // hoehe: Zahl > 0 oder null (Infografik: Höhe ergibt sich aus dem Inhalt); fehlend gilt wie null
+    if (d.hoehe !== undefined && d.hoehe !== null && (typeof d.hoehe !== 'number' || !isFinite(d.hoehe) || d.hoehe <= 0)) {
+      throw formatFehler(wo + ': hoehe muss eine Zahl größer 0 oder null sein (gefunden: „' + kurz(d.hoehe) + '“)');
+    }
+    pruefeText(d.html, wo + ': html', false);
+  }
+
+  function pruefeV1(obj) {
     if (obj.kategorien === undefined) throw formatFehler('kategorien fehlt');
     if (!Array.isArray(obj.kategorien)) throw formatFehler('kategorien muss eine Liste sein');
     obj.kategorien.forEach(function (k, i) {
@@ -147,19 +170,116 @@
       pruefeText(d.id, wo + ': id', false);
       if (ids.has(d.id)) throw formatFehler(wo + ': id „' + kurz(d.id) + '“ kommt doppelt vor (auch Dokument ' + ids.get(d.id) + ')');
       ids.set(d.id, i + 1);
-      if (d.art === undefined) throw formatFehler(wo + ': art fehlt');
-      if (d.art !== 'flyer' && d.art !== 'infografik') throw formatFehler(wo + ': art muss „flyer“ oder „infografik“ sein (gefunden: „' + kurz(d.art) + '“)');
       pruefeText(d.kategorie, wo + ': kategorie', true);
-      pruefeText(d.titel, wo + ': titel', true);
-      if (d.breite === undefined) throw formatFehler(wo + ': breite fehlt');
-      if (typeof d.breite !== 'number' || !isFinite(d.breite) || d.breite <= 0) throw formatFehler(wo + ': breite muss eine Zahl größer 0 sein (gefunden: „' + kurz(d.breite) + '“)');
-      // hoehe: Zahl > 0 oder null (Infografik: Höhe ergibt sich aus dem Inhalt); fehlend gilt wie null
-      if (d.hoehe !== undefined && d.hoehe !== null && (typeof d.hoehe !== 'number' || !isFinite(d.hoehe) || d.hoehe <= 0)) {
-        throw formatFehler(wo + ': hoehe muss eine Zahl größer 0 oder null sein (gefunden: „' + kurz(d.hoehe) + '“)');
-      }
-      pruefeText(d.html, wo + ': html', false);
+      pruefeDokFelder(d, wo);
     });
-    return obj;
+  }
+
+  // Versionsnummer „x.y“ (x, y ganze Zahlen ab 1, ohne führende Null)
+  function istVersionsNummer(v) { return typeof v === 'string' && /^[1-9]\d*\.[1-9]\d*$/.test(v); }
+  function istGanzzahlAb0(v) { return typeof v === 'number' && Number.isInteger(v) && v >= 0; }
+  var KENNUNG_EIGEN = /^N([1-9]\d*)$/;
+
+  function pruefeV2(obj) {
+    if (obj.versionen === undefined) throw formatFehler('versionen fehlt');
+    if (!Array.isArray(obj.versionen)) throw formatFehler('versionen muss eine Liste sein');
+    if (!obj.versionen.length) throw formatFehler('versionen ist leer (mindestens Version ' + STANDARD_VERSION + ' nötig)');
+    var nummern = new Map();
+    obj.versionen.forEach(function (v, i) {
+      var wo = 'Version ' + (i + 1);
+      if (!istObjekt(v)) throw formatFehler(wo + ': kein Objekt');
+      if (v.nummer === undefined) throw formatFehler(wo + ': nummer fehlt');
+      if (!istVersionsNummer(v.nummer)) throw formatFehler(wo + ': nummer muss „x.y“ sein (ganze Zahlen ab 1, gefunden: „' + kurz(v.nummer) + '“)');
+      if (nummern.has(v.nummer)) throw formatFehler(wo + ': nummer „' + v.nummer + '“ kommt doppelt vor (auch Version ' + nummern.get(v.nummer) + ')');
+      nummern.set(v.nummer, i + 1);
+      wo = 'Version ' + v.nummer;
+      pruefeText(v.beschreibung, wo + ': beschreibung', true);
+      if (typeof v.ausgeblendet !== 'boolean') throw formatFehler(wo + ': ausgeblendet muss true oder false sein (gefunden: „' + kurz(v.ausgeblendet) + '“)');
+      if (!istObjekt(v.zaehler) || !istGanzzahlAb0(v.zaehler.seite) || !istGanzzahlAb0(v.zaehler.ordner)) {
+        throw formatFehler(wo + ': zaehler muss { seite, ordner } mit ganzen Zahlen ab 0 sein (gefunden: „' + kurz(v.zaehler) + '“)');
+      }
+      // Ordner: eindeutige id, eltern null oder ein Ordner dieser Version, kein Kreis
+      if (!Array.isArray(v.ordner)) throw formatFehler(wo + ': ordner muss eine Liste sein');
+      var ordner = new Map();
+      v.ordner.forEach(function (o, j) {
+        var wo2 = wo + ': Ordner ' + (j + 1);
+        if (!istObjekt(o)) throw formatFehler(wo2 + ': kein Objekt');
+        pruefeText(o.id, wo2 + ': id', false);
+        if (ordner.has(o.id)) throw formatFehler(wo2 + ': id „' + kurz(o.id) + '“ kommt doppelt vor');
+        ordner.set(o.id, o);
+        pruefeText(o.name, wo2 + ': name', true);
+        if (o.eltern !== null && typeof o.eltern !== 'string') throw formatFehler(wo2 + ': eltern muss null oder eine Ordner-id sein (gefunden: „' + kurz(o.eltern) + '“)');
+      });
+      ordner.forEach(function (o) {
+        if (o.eltern === null) return;
+        if (!ordner.has(o.eltern)) throw formatFehler(wo + ': Ordner „' + kurz(o.id) + '“: eltern „' + kurz(o.eltern) + '“ gibt es nicht');
+        var gesehen = new Set([o.id]), p = ordner.get(o.eltern);
+        while (p) {
+          if (gesehen.has(p.id)) throw formatFehler(wo + ': Ordner „' + kurz(o.id) + '“ liegt in sich selbst (Kreis über „' + kurz(p.id) + '“)');
+          gesehen.add(p.id);
+          p = p.eltern === null ? null : ordner.get(p.eltern);
+        }
+      });
+      // Seiten
+      if (!Array.isArray(v.seiten)) throw formatFehler(wo + ': seiten muss eine Liste sein');
+      if (v.nummer === STANDARD_VERSION && !v.seiten.length) throw formatFehler(wo + ': seiten ist leer (mindestens eine Seite nötig)');
+      var ids = new Map();
+      v.seiten.forEach(function (d, j) {
+        var wo2 = wo + ': Seite ' + (j + 1);
+        if (!istObjekt(d)) throw formatFehler(wo2 + ': kein Objekt');
+        pruefeText(d.id, wo2 + ': id', false);
+        if (ids.has(d.id)) throw formatFehler(wo2 + ': id „' + kurz(d.id) + '“ kommt doppelt vor (auch Seite ' + ids.get(d.id) + ')');
+        ids.set(d.id, j + 1);
+        pruefeDokFelder(d, wo2);
+        if (d.herkunft !== 'original' && d.herkunft !== 'eigen') throw formatFehler(wo2 + ': herkunft muss „original“ oder „eigen“ sein (gefunden: „' + kurz(d.herkunft) + '“)');
+        if (d.herkunft === 'eigen') {
+          var m = KENNUNG_EIGEN.exec(d.id);
+          if (!m) throw formatFehler(wo2 + ': eigene Seiten haben die Kennung „N<n>“ (gefunden: „' + kurz(d.id) + '“)');
+          if (Number(m[1]) > v.zaehler.seite) throw formatFehler(wo2 + ': Kennung „' + d.id + '“ ist größer als zaehler.seite (' + v.zaehler.seite + ')');
+        }
+        if (d.vorlage !== null && typeof d.vorlage !== 'string') throw formatFehler(wo2 + ': vorlage muss null oder ein Text sein (gefunden: „' + kurz(d.vorlage) + '“)');
+        if (!Array.isArray(d.ordner)) throw formatFehler(wo2 + ': ordner muss eine Liste sein');
+        var zu = new Set();
+        d.ordner.forEach(function (oid) {
+          if (typeof oid !== 'string' || !ordner.has(oid)) throw formatFehler(wo2 + ': Ordner „' + kurz(oid) + '“ gibt es in dieser Version nicht');
+          if (zu.has(oid)) throw formatFehler(wo2 + ': Ordner „' + kurz(oid) + '“ doppelt zugeordnet');
+          zu.add(oid);
+        });
+        if (typeof d.ausgeblendet !== 'boolean') throw formatFehler(wo2 + ': ausgeblendet muss true oder false sein (gefunden: „' + kurz(d.ausgeblendet) + '“)');
+      });
+    });
+    if (!nummern.has(STANDARD_VERSION)) throw formatFehler('Version ' + STANDARD_VERSION + ' fehlt (jedes Paket hat sie)');
+  }
+
+  // v1 → v2 (verlustfrei): eine Version 1.1 mit den Kategorien als Ordner (Reihenfolge und id wie im Paket; doppelte
+  // Kategorie-id: die erste gilt) und allen Dokumenten als Original-Seiten im Ordner ihrer Kategorie. Das HTML wird
+  // nicht angefasst. Unbekannte Felder bleiben (oben, je Dokument); eine Kategorie ohne passenden Ordner bleibt als
+  // Feld kategorie an der Seite stehen. v2 kommt unverändert zurück. Wirft wie pruefe.
+  var V1_OBEN = new Set(['format', 'formatVersion', 'version', 'stand', 'titel', 'css', 'kategorien', 'dokumente']);
+  var V1_DOK = new Set(['id', 'art', 'kategorie', 'titel', 'breite', 'hoehe', 'html']);
+  function alsV2(obj) {
+    pruefe(obj);
+    if (obj.formatVersion !== 1) return obj;
+    var ordner = [], ids = new Set();
+    obj.kategorien.forEach(function (k) {
+      if (ids.has(k.id)) return;
+      ids.add(k.id);
+      ordner.push({ id: k.id, name: k.name, eltern: null });
+    });
+    var seiten = obj.dokumente.map(function (d) {
+      var s = { id: d.id, art: d.art, titel: d.titel, herkunft: 'original', vorlage: null,
+        ordner: ids.has(d.kategorie) ? [d.kategorie] : [], ausgeblendet: false,
+        breite: d.breite, hoehe: d.hoehe === undefined ? null : d.hoehe, html: d.html };
+      if (!ids.has(d.kategorie)) s.kategorie = d.kategorie;
+      Object.keys(d).forEach(function (k) { if (!V1_DOK.has(k)) s[k] = d[k]; });
+      return s;
+    });
+    var aus = { format: FORMAT, formatVersion: 2, version: obj.version, stand: obj.stand };
+    if (obj.titel !== undefined) aus.titel = obj.titel;
+    aus.css = obj.css;
+    aus.versionen = [{ nummer: STANDARD_VERSION, beschreibung: '', ausgeblendet: false, zaehler: { seite: 0, ordner: 0 }, ordner: ordner, seiten: seiten }];
+    Object.keys(obj).forEach(function (k) { if (!V1_OBEN.has(k)) aus[k] = obj[k]; });
+    return aus;
   }
 
   // ---------------------------------------------------------------------------
@@ -898,9 +1018,12 @@
   window.AetherFlyerPaket = Object.freeze({
     FORMAT: FORMAT,
     FORMAT_VERSION: FORMAT_VERSION,
+    STANDARD_VERSION: STANDARD_VERSION,
     DATEI: DATEI,
     lies: lies,
     pruefe: pruefe,
+    alsV2: alsV2,
+    istVersionsNummer: istVersionsNummer,
     vergleicheVersion: vergleicheVersion,
     datum: datum,
     bereinigeHtml: bereinigeHtml,

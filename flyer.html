@@ -17,7 +17,8 @@
   eigenen Shadow Root dargestellt (flyer-ansicht.js). Das Aussehen der Dokumente kommt allein aus dem Paket-CSS;
   die Regeln hier gelten nur für die Seite selbst. Die CSP oben sichert zusätzlich, dass nichts aus dem Paket
   etwas aus dem Netz lädt (nur eigener Ursprung, data:/blob:-Bilder und die GitHub-API).
-  Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-speicher.js, flyer-ansicht.js,
+  Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-struktur.js (Versionen, Ordner,
+  Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
   Export, Abgleich, Sicherung, Teil 2), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
@@ -265,6 +266,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 
 <script src="gemeinsam.js"></script>
 <script src="flyer-paket.js"></script>
+<script src="flyer-struktur.js"></script>
 <script src="flyer-speicher.js"></script>
 <script src="flyer-ansicht.js"></script>
 <script src="flyer-online.js"></script>

@@ -288,11 +288,23 @@ async function exportDownload(page) {
   await page.evaluate(() => window.AetherFlyerAenderungen.fertig());
   const paketR = JSON.parse(inhalt);
   await page.waitForFunction((f) => document.getElementById('hilfeFassung').textContent === f, paketR.version);
-  return { name, inhalt, paket: paketR };
+  return { name, inhalt, paket: wieV1(paketR), v2: paketR };
 }
 async function sichernDownload(page) {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#btnSichern')]);
   return { name: dl.suggestedFilename(), inhalt: fs.readFileSync(await dl.path(), 'utf8') };
+}
+// F3a: Ein exportiertes Paket hat das Format v2. Für die Prüfungen von Teil 2 (ein Flyer) zurückgerechnet wie v1:
+// Kategorien = Ordner der obersten Ebene, Dokumente = Seiten der Version 1.1 (kategorie = erster Ordner).
+function wieV1(p) {
+  assert.equal(p.formatVersion, 2, 'Export im Format v2');
+  assert.deepEqual(p.versionen.map((v) => v.nummer), ['1.1'], 'genau Version 1.1');
+  const v = p.versionen[0];
+  return {
+    ...p,
+    kategorien: v.ordner.filter((o) => o.eltern === null).map((o) => ({ id: o.id, name: o.name })),
+    dokumente: v.seiten.map((s) => ({ id: s.id, art: s.art, kategorie: s.ordner[0], titel: s.titel, breite: s.breite, hoehe: s.hoehe, html: s.html }))
+  };
 }
 // Markierungen je Dokument (im Browser per DOMParser gelesen)
 async function markierungen(page, pk) {
@@ -691,10 +703,11 @@ describe('Flyer Teil 2: Abgleich', () => {
       })));
       assert.equal(karten.length, 5);
       const karte = (s) => karten.find((x) => x.s === s);
-      assert.deepEqual(karte('T1\ntext\nt1'), { s: 'T1\ntext\nt1', basis: 'Platzhalter eins', meins: 'Mein Titel', online: 'Online-Titel', knoepfe: ['meins', 'online'] });
-      assert.equal(karte('T1\ntext\nt3').online, 'nicht mehr im Paket');
-      assert.equal(karte('T2\ntext\nt2').online, 'nicht mehr im Paket');
-      assert.ok(karte('T1\nstatus\ns2'), 'Status-Konflikt in der Liste');
+      // F3a: Schlüssel beginnt mit der Version („1.1\n…“)
+      assert.deepEqual(karte('1.1\nT1\ntext\nt1'), { s: '1.1\nT1\ntext\nt1', basis: 'Platzhalter eins', meins: 'Mein Titel', online: 'Online-Titel', knoepfe: ['meins', 'online'] });
+      assert.equal(karte('1.1\nT1\ntext\nt3').online, 'nicht mehr im Paket');
+      assert.equal(karte('1.1\nT2\ntext\nt2').online, 'nicht mehr im Paket');
+      assert.ok(karte('1.1\nT1\nstatus\ns2'), 'Status-Konflikt in der Liste');
       const waehle = async (s, wahl) => {
         const i = await page.$$eval('#konfliktListe .konflikt', (ks, s) => ks.findIndex((x) => x.getAttribute('data-schluessel') === s), s);
         assert.ok(i >= 0, `Karte ${JSON.stringify(s)}`);
@@ -703,23 +716,23 @@ describe('Flyer Teil 2: Abgleich', () => {
         await page.evaluate(() => window.AetherFlyerAenderungen.fertig());
       };
       // „Meins behalten“: Eintrag bleibt, alt := Online-Wert, Kachel zeigt meins
-      await waehle('T1\ntext\nt1', 'meins');
+      await waehle('1.1\nT1\ntext\nt1', 'meins');
       let e = (await alle(page)).find((x) => x.dok === 'T1' && x.k === 't1');
       assert.deepEqual([e.alt, e.neu], ['Online-Titel', 'Mein Titel']);
       await warteKachel(page, 'T1', 'return r.querySelector(\'[data-t="t1"]\').textContent === "Mein Titel";');
       // „Online übernehmen“: Eintrag entfällt, Kachel zeigt den Online-Wert
-      await waehle('T1\nstatus\ns2', 'online');
+      await waehle('1.1\nT1\nstatus\ns2', 'online');
       assert.equal((await alle(page)).find((x) => x.dok === 'T1' && x.k === 's2'), undefined);
       await warteKachel(page, 'T1', 'return r.querySelector(\'[data-s="s2"]\').getAttribute("data-status") === "plan";');
       d = await darstellung(page, KACHEL_HOST('T1'));
       assert.deepEqual(d.z, [['1 von 3 fertig', '0.3333', '0']], 'Zähler nach der Wahl neu berechnet');
-      await waehle('T1\ntext\nt3', 'online');
+      await waehle('1.1\nT1\ntext\nt3', 'online');
       assert.equal((await alle(page)).find((x) => x.dok === 'T1' && x.k === 't3'), undefined, 'k fehlt + online → entfällt');
-      await waehle('T2\ntext\nt2', 'meins');
+      await waehle('1.1\nT2\ntext\nt2', 'meins');
       assert.ok((await alle(page)).find((x) => x.dok === 'T2' && x.k === 't2'), 'dok fehlt + meins → bleibt');
       // Ein Konflikt übrig: Einzahl
       await page.waitForFunction(() => /^1 Konflikt\b/.test(document.getElementById('konflikteText').textContent));
-      await waehle('T2\nstand\nstand1', 'online');
+      await waehle('1.1\nT2\nstand\nstand1', 'online');
       await page.waitForFunction(() => document.getElementById('konflikte').hidden);
       assert.ok(await page.isHidden('#konfliktListe'), 'Liste weg');
       assert.deepEqual(await konflikte(page), []);
@@ -898,7 +911,7 @@ describe('Flyer Teil 2: Sicherung', () => {
 
 // ---------------------------------------------------------------------------
 describe('Flyer Teil 2: Speicher', () => {
-  test('IndexedDB-Migration 1 → 2: basis und online bleiben, Store aenderungen kommt dazu, Paket angezeigt; Token nie in IndexedDB, Export oder Sicherung', async () => {
+  test('IndexedDB-Migration 1 → 3: basis und online bleiben, Stores aenderungen, struktur und geraet kommen dazu, Paket angezeigt; Token nie in IndexedDB, Export oder Sicherung', async () => {
     await mitSeite({ withToken: true, init: [ohneTeilen] }, async ({ page, log }) => {
       // Datenbank in Version 1 (wie Teil 1) auf einer anderen Seite desselben Ursprungs anlegen und befüllen
       await page.goto(baseUrl + 'manifest.json');
@@ -921,7 +934,7 @@ describe('Flyer Teil 2: Speicher', () => {
         };
       }), [basisEintrag, onlineEintrag]);
       assert.deepEqual(angelegt, { v: 1, st: ['basis', 'online'] });
-      // flyer.html laden → Version 2
+      // flyer.html laden → Version 3 (F3a; Teil 2 prüfte hier Version 2)
       await oeffneFlyer(page);
       await onlineFertig(page);
       assert.equal(await heute(page), h, 'heute wie auf der Seite davor');
@@ -930,8 +943,8 @@ describe('Flyer Teil 2: Speicher', () => {
       assert.equal(await text(page, '#status'), 'offline bereit · Stand 01.02.2020');
       let st = await speicher(page);
       const db = st.idb.filter((e) => e.db === 'aether-flyer');
-      assert.deepEqual(db.map((e) => e.store).sort(), ['aenderungen', 'basis', 'online'], 'Stores nach der Migration');
-      assert.ok(db.every((e) => e.version === 2), 'Version 2');
+      assert.deepEqual(db.map((e) => e.store).sort(), ['aenderungen', 'basis', 'geraet', 'online', 'struktur'], 'Stores nach der Migration');
+      assert.ok(db.every((e) => e.version === 3), 'Version 3');
       const b = db.find((e) => e.store === 'basis'), on = db.find((e) => e.store === 'online');
       assert.deepEqual([b.schluessel, b.werte], [['aktuell'], [basisEintrag]], 'basis unverändert');
       assert.deepEqual([on.schluessel, on.werte], [['stand'], [onlineEintrag]], 'online unverändert');
@@ -1048,7 +1061,7 @@ describe('Flyer Teil 2: Befunde der Prüfung', () => {
       const h = await page.$eval('#kacheln .kachel[data-id="T1"] .flyer-host', (x) => x.shadowRoot.querySelector('h1').outerHTML);
       assert.equal(h, '<h1 data-t="t1">Neu <span data-t="t9">Platzhalter innen</span></h1>');
       const ex = await exportDownload(page);
-      assert.match(ex.paket.dokumente[0].html, /<h1 data-t="t1">Neu <span data-t="t9">Platzhalter innen<\/span><\/h1>/);
+      assert.match(ex.paket.dokumente[0].html, /<h1 data-t="t1">Neu <span data-t="t9">Platzhalter innen<\/span><\/h1>/);   // Seite der Version 1.1 (wieV1)
       assert.deepEqual(log.errors, []);
     });
   });

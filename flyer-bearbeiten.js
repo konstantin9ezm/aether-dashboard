@@ -16,6 +16,9 @@
   const DATEI_PAKET = 'aether-flyer-paket.json';
   const DATEI_SICHERUNG = 'aether-flyer-aenderungen.json';
   const COMMIT = (f) => 'Flyer-Paket ' + f + ' [skip ci]';
+  // F1: ab 20 MB ein deutlicher Hinweis (die GitHub-Weboberfläche nimmt nach Angabe des Chats ca. 25 MB je Datei an –
+  // nicht nachgeprüft). Exportiert wird trotzdem vollständig: nie still teilen oder kürzen.
+  const GROSS_BYTES = 20 * 1024 * 1024;
 
   const $ = (id) => document.getElementById(id);
   const G = () => window.AetherGemeinsam;
@@ -41,6 +44,9 @@
     const t = (e && e.title) || 'Unerwarteter Fehler.', x = (e && e.text) || (e && !e.title ? String(e.message || e) : '');
     try { h.fehler(t, x, false); } catch (z) { meldung(t); }
   }
+  function mb(bytes) { return (Math.round(bytes / 1024 / 1024 * 10) / 10).toLocaleString('de-DE'); }
+  // Mehr als eine Version im Paket? Dann steht die Version vor jeder Konfliktzeile.
+  function mehrereVersionen() { try { const pk = h && h.paketV2 ? h.paketV2() : null; return !!pk && pk.versionen.length > 1; } catch (e) { return false; } }
   function kurz(t) { t = String(t === null || t === undefined ? '' : t).replace(/\s+/g, ' ').trim(); return t.length > 60 ? t.slice(0, 59) + '…' : t; }
   // Neu darstellen: Kachel und (offenes) Vollbild der betroffenen Dokumente
   function neuDarstellen(doks) {
@@ -220,7 +226,12 @@
     if (!g.mitGeste(ev)) { meldung('Bitte den Knopf antippen'); return; }
     let r;
     try { r = AE().exportPaket(onlineVersion); } catch (e) { fehlerZeigen(e); return; }
-    try { h.fehlerWeg(); } catch (e) { /* egal */ }
+    try {
+      if (r.bytes >= GROSS_BYTES) {
+        h.fehler('Großes Paket: ' + mb(r.bytes) + ' MB', 'Die GitHub-Weboberfläche nimmt nach bisheriger Angabe nur ca. 25 MB je Datei an. ' +
+          'Das Paket wird trotzdem vollständig exportiert (nicht geteilt, nicht gekürzt). Bei Problemen weniger Versionen behalten.', false);
+      } else h.fehlerWeg();
+    } catch (e) { /* egal */ }
     const datei = new File([r.text], DATEI_PAKET, { type: 'application/json' });
     weitergeben(datei, 'Aether Flyer-Paket ' + r.fassung, (wie) => {
       AE().markiereExportiert(r.fassung).then(() => {
@@ -326,7 +337,7 @@
     for (const k of liste) {
       const karte = el('div', undefined, 'konflikt');
       karte.setAttribute('data-schluessel', k.schluessel);
-      karte.appendChild(el('b', k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
+      karte.appendChild(el('b', (mehrereVersionen() ? 'Version ' + k.ver + ' · ' : '') + k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
       const dl = el('dl');
       const zeile = (t, v) => { dl.appendChild(el('dt', t)); const dd = el('dd', v); dl.appendChild(dd); return dd; };
       zeile('Basis', wertText(k.art, k.basis)).className = 'k-basis';
