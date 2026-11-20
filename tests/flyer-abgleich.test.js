@@ -664,7 +664,7 @@ describe('Flyer Teil 2: Abgleich', () => {
     });
   });
 
-  test('Regel 4 und fehlende Stellen: anderer Wert, k fehlt, dok fehlt → Konflikte (Banner, Liste Basis/Meins/Online); bis zur Wahl gilt meins; „Meins behalten“ / „Online übernehmen“', async () => {
+  test('Regel 4 und fehlende Stellen: anderer Wert, k fehlt, dok fehlt → Konflikte (Banner, Liste Basis/Meins/Online); bis zur Wahl gilt meins; „Meins behalten“ / „Online übernehmen“; F3a: dok fehlt → Struktur-Konflikt', async () => {
     await mitSeite({}, async ({ page, log }) => {
       await oeffneFlyer(page);
       await importiere(page, paket());
@@ -678,35 +678,37 @@ describe('Flyer Teil 2: Abgleich', () => {
       await page.evaluate(() => window.AetherFlyerAenderungen.fertig());
       const k = await konflikte(page);
       const kurzK = k.map((x) => [x.dok, x.art, x.k, x.basis, x.meins, x.online, x.fehlt]).sort();
+      // F3a (Teil E): T2 fehlt online, ist lokal geändert → T2 bleibt (Struktur-Konflikt), seine Texte sind keine Konflikte
       assert.deepEqual(kurzK, [
         ['T1', 'status', 's2', 'run', 'next', 'plan', false],
         ['T1', 'text', 't1', 'Platzhalter eins', 'Mein Titel', 'Online-Titel', false],
-        ['T1', 'text', 't3', 'Platzhalter-Fußzeile', 'Meine Fußzeile', null, true],
-        ['T2', 'stand', 'stand1', 'Stand: 1. Februar 2020', (await alle(page)).find((e) => e.dok === 'T2' && e.art === 'stand').neu, null, true],
-        ['T2', 'text', 't2', 'Kurzer Platzhaltertext.', 'Mein Text zwei', null, true]
+        ['T1', 'text', 't3', 'Platzhalter-Fußzeile', 'Meine Fußzeile', null, true]
       ]);
+      const sk = await page.evaluate(() => window.AetherFlyer.strukturKonflikte());
+      assert.deepEqual(sk.map((x) => [x.objekt, x.was, x.zeilen.map((z) => [z.feld, z.lokal, z.andere])]),
+        [['P|1.1|T2', 'Seite T2 · Platzhalter zwei (Version 1.1)', [['vorhanden', 'vorhanden', 'nicht vorhanden'], ['Name', 'Platzhalter zwei', '–'], ['In Ordner', 'info', '–']]]]);
       assert.ok(await page.isVisible('#konflikte'), 'Konflikt-Banner');
-      assert.match(await text(page, '#konflikteText'), /^5 Konflikte\b/);
+      assert.match(await text(page, '#konflikteText'), /^4 Konflikte\b/);
       // Bis zur Entscheidung: eigener Wert in der Kachel
       let d = await darstellung(page, KACHEL_HOST('T1'));
       assert.equal(tWert(d, 't1'), 'Mein Titel', 'Kachel zeigt meins');
       assert.equal(sWert(d, 's2'), 'next');
-      assert.equal(await page.$(KACHEL_HOST('T2')), null, 'T2 nicht mehr im Paket');
+      assert.equal(tWert(await darstellung(page, KACHEL_HOST('T2')), 't2'), 'Mein Text zwei', 'T2 bleibt bis zur Wahl (lokal)');
       // Liste
       assert.ok(await page.isHidden('#konfliktListe'));
       await page.click('#konflikteZeigen');
       assert.ok(await page.isVisible('#konfliktListe'));
       assert.equal(await page.getAttribute('#konflikteZeigen', 'aria-expanded'), 'true');
-      const karten = await page.$$eval('#konfliktListe .konflikt', (ks) => ks.map((x) => ({
+      const karten = await page.$$eval('#konfliktListe .konflikt:not(.struktur)', (ks) => ks.map((x) => ({
         s: x.getAttribute('data-schluessel'), basis: x.querySelector('.k-basis').textContent, meins: x.querySelector('.k-meins').textContent,
         online: x.querySelector('.k-online').textContent, knoepfe: [...x.querySelectorAll('[data-wahl]')].map((b) => b.getAttribute('data-wahl'))
       })));
-      assert.equal(karten.length, 5);
+      assert.equal(karten.length, 3, 'drei Text-Konflikte');
+      assert.equal(await page.$$eval('#konfliktListe .konflikt.struktur', (ks) => ks.length), 1, 'ein Struktur-Konflikt');
       const karte = (s) => karten.find((x) => x.s === s);
       // F3a: Schlüssel beginnt mit der Version („1.1\n…“)
       assert.deepEqual(karte('1.1\nT1\ntext\nt1'), { s: '1.1\nT1\ntext\nt1', basis: 'Platzhalter eins', meins: 'Mein Titel', online: 'Online-Titel', knoepfe: ['meins', 'online'] });
       assert.equal(karte('1.1\nT1\ntext\nt3').online, 'nicht mehr im Paket');
-      assert.equal(karte('1.1\nT2\ntext\nt2').online, 'nicht mehr im Paket');
       assert.ok(karte('1.1\nT1\nstatus\ns2'), 'Status-Konflikt in der Liste');
       const waehle = async (s, wahl) => {
         const i = await page.$$eval('#konfliktListe .konflikt', (ks, s) => ks.findIndex((x) => x.getAttribute('data-schluessel') === s), s);
@@ -728,21 +730,21 @@ describe('Flyer Teil 2: Abgleich', () => {
       assert.deepEqual(d.z, [['1 von 3 fertig', '0.3333', '0']], 'Zähler nach der Wahl neu berechnet');
       await waehle('1.1\nT1\ntext\nt3', 'online');
       assert.equal((await alle(page)).find((x) => x.dok === 'T1' && x.k === 't3'), undefined, 'k fehlt + online → entfällt');
-      await waehle('1.1\nT2\ntext\nt2', 'meins');
-      assert.ok((await alle(page)).find((x) => x.dok === 'T2' && x.k === 't2'), 'dok fehlt + meins → bleibt');
-      // Ein Konflikt übrig: Einzahl
+      // Ein Konflikt übrig (Struktur T2): Einzahl; „Lokal behalten“ → T2 bleibt mit seinen Texten
       await page.waitForFunction(() => /^1 Konflikt\b/.test(document.getElementById('konflikteText').textContent));
-      await waehle('1.1\nT2\nstand\nstand1', 'online');
+      await page.click('#konfliktListe .konflikt.struktur [data-wahl="lokal"]');
       await page.waitForFunction(() => document.getElementById('konflikte').hidden);
       assert.ok(await page.isHidden('#konfliktListe'), 'Liste weg');
       assert.deepEqual(await konflikte(page), []);
-      assert.deepEqual((await alle(page)).map((x) => [x.dok, x.art, x.k]), [['T1', 'stand', 'stand1'], ['T1', 'text', 't1'], ['T2', 'text', 't2']]);
+      assert.ok((await alle(page)).find((x) => x.dok === 'T2' && x.k === 't2'), 'dok fehlt + lokal → bleibt');
+      assert.deepEqual((await alle(page)).map((x) => [x.dok, x.art, x.k]), [['T1', 'stand', 'stand1'], ['T1', 'text', 't1'], ['T2', 'stand', 'stand1'], ['T2', 'text', 't2']]);
       assert.equal(tWert(await darstellung(page, KACHEL_HOST('T1')), 't1'), 'Mein Titel');
       // Nach Neuladen: entschiedene Konflikte bleiben entschieden
       await page.reload();
       await oeffneFlyer(page, null);
       assert.ok(await page.isHidden('#konflikte'));
-      assert.deepEqual((await alle(page)).map((x) => [x.dok, x.art, x.k]), [['T1', 'stand', 'stand1'], ['T1', 'text', 't1'], ['T2', 'text', 't2']]);
+      assert.deepEqual((await alle(page)).map((x) => [x.dok, x.art, x.k]), [['T1', 'stand', 'stand1'], ['T1', 'text', 't1'], ['T2', 'stand', 'stand1'], ['T2', 'text', 't2']]);
+      assert.ok(await page.$(KACHEL_HOST('T2')), 'T2 bleibt (lokaler Stand)');
       assert.deepEqual(log.errors, []);
     });
   });
@@ -1044,12 +1046,13 @@ describe('Flyer Teil 2: Befunde der Prüfung', () => {
       });
       assert.equal(r, 'gesperrt');
       assert.equal(await page.evaluate(() => window.AetherFlyerAenderungen.geaendert('T1', 'status', 's2')), false);
-      // Übernahme ohne T2 → Konflikt „fehlt“ mit Titel aus der bisherigen Basis
+      // Übernahme ohne T2 → F3a (Teil E): Struktur-Konflikt mit dem Titel aus dem bisherigen Stand (Teil 2: Text-Konflikte „fehlt“)
       await uebernehme(page, paket({ version: '2020-02-02.1', stand: '2020-02-02', ohneT2: true }));
-      const k = await konflikte(page);
-      assert.deepEqual(k.map((x) => [x.dok, x.art, x.k, x.titel, x.fehlt]), [['T2', 'text', 't1', 'Platzhalter zwei', true], ['T2', 'stand', 'stand1', 'Platzhalter zwei', true]]);
+      assert.deepEqual(await konflikte(page), []);
+      const k = await page.evaluate(() => window.AetherFlyer.strukturKonflikte());
+      assert.deepEqual(k.map((x) => [x.objekt, x.was]), [['P|1.1|T2', 'Seite T2 · Platzhalter zwei (Version 1.1)']]);
       await page.click('#konflikteZeigen');
-      assert.match(await text(page, '#konfliktListe .konflikt b'), /^T2 · Platzhalter zwei/);
+      assert.match(await text(page, '#konfliktListe .konflikt b'), /^Seite T2 · Platzhalter zwei/);
       assert.deepEqual(log.errors, []);
     });
   });

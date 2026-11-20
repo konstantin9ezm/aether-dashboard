@@ -166,11 +166,37 @@
   async function uebernehmeJetzt(paket, opt) {
     const neuV2 = P.alsV2(paket);   // prüft (v1 oder v2) und wandelt v1 um
     if (opt.nurWennLeer === true && basis && basis.paket) return 'schonDa';
-    // Teil 2: Änderungsschicht genau einmal mit dem neuen Paket abgleichen (Konflikte zeigt flyer-bearbeiten.js)
-    if (AE) { AE.sperre(true); try { await AE.abgleichen(neuV2); } catch (e) { /* Schicht bleibt, wie sie war */ } }
-    try { return await basisWechseln(paket, neuV2, opt); } finally { if (AE) AE.sperre(false); }
+    // Teil E: Struktur abgleichen (Basis, lokal, neu – je Feld), bevor die Änderungsschicht abgleicht
+    const zusammen = basisV2 ? strukturAbgleich(neuV2) : null;
+    // Teil 2: Änderungsschicht genau einmal mit dem neuen Stand abgleichen (Konflikte zeigt flyer-bearbeiten.js)
+    if (AE) { AE.sperre(true); try { await AE.abgleichen(zusammen ? zusammen.paket : neuV2); } catch (e) { /* Schicht bleibt, wie sie war */ } }
+    try { return await basisWechseln(paket, neuV2, opt, zusammen); } finally { if (AE) AE.sperre(false); }
   }
-  async function basisWechseln(paket, neuV2, opt) {
+  // Teil E: Struktur der neuen Fassung R mit dem lokalen Stand L zusammenführen (Bezug: bisherige Basis B). Wirft, wenn
+  // das Ergebnis kein gültiges Paket ist (dann bleibt alles, wie es war). → { paket, konflikte, alte }
+  function strukturAbgleich(neuV2) {
+    const L = effektiv(), fb = ST.felder(basisV2), fl = ST.felder(L), fr = ST.felder(neuV2);
+    const r = ST.zusammenfuehren(fb, fl, fr, { modus: 'abgleich', eigene: eigeneEintraege() });
+    const pk = ST.ausFeldern(r.felder, neuV2, [neuV2, L]);
+    const bericht = ST.verweise(pk);
+    try { P.pruefe(pk); } catch (e) {
+      const x = alsFehler(e);
+      throw new G.AppError('struktur', 'Abgleich der Struktur fehlgeschlagen.', [x.title, x.text].filter(Boolean).join(' ') + ' Es wurde nichts übernommen.');
+    }
+    // Offene Konflikte von früher: bleiben, solange lokal noch genau so ist und die neue Fassung anders ist
+    const fm = ST.felder(pk), neu = new Set(r.konflikte.map((k) => k.objekt));
+    const alte = strukturRest.konflikte.filter((k) => {
+      if (neu.has(k.objekt)) return false;
+      const ks = Object.keys(k.lokal);
+      const lokalGleich = ks.every((x) => (fm.has(x) ? fm.get(x) : null) === k.lokal[x]);
+      const andersOnline = ks.some((x) => (fr.has(x) ? fr.get(x) : null) !== k.lokal[x]);
+      if (lokalGleich && andersOnline && k.quelle === 'online') { ks.forEach((x) => { k.andere[x] = fr.has(x) ? fr.get(x) : null; }); return true; }
+      return lokalGleich && k.quelle === 'sicherung';
+    });
+    return { paket: pk, konflikte: r.konflikte, alte: alte, bericht: bericht };
+  }
+  async function basisWechseln(paket, neuV2, opt, zusammen) {
+    const vorher = effektiv();
     const eintrag = {
       paket: paket,
       quelle: opt.quelle === 'online' ? 'online' : 'import',
@@ -181,13 +207,22 @@
     basis = eintrag;
     basisV2 = neuV2;
     gesichert = ok;
-    // Bis Teil E (Abgleich der Struktur) bleibt ein lokaler Stand, wie er ist; Bezug der Zählung ist die neue Basis
+    // Teil E: lokaler Stand = zusammengeführter Stand (null, wenn gleich der neuen Basis); Bezug der Zählung ist die
+    // neue Basis; Konflikte der Struktur in die Liste
+    if (zusammen) {
+      lokal = ST.gleich(zusammen.paket, neuV2) ? null : zusammen.paket;
+      strukturRest.konflikte = zusammen.alte;
+      konflikteDazu(zusammen.konflikte, 'online');
+    } else { lokal = null; strukturRest.konflikte = []; }
     strukturRest.exportiert = null;
     zahlCache = null;
     sichtCache = null;
-    if (lokal) await strukturSpeichern();
+    if (vorher) await schichtAufraeumen(vorher, effektiv());
+    await strukturSpeichern();
+    if (!ST.version(effektiv(), version)) await setzeVersion(ST.STANDARD_VERSION);
     await anzeigen();
     zeigeKopf();
+    melde('flyer:struktur', {});
     return ok;
   }
 
