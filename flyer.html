@@ -88,11 +88,32 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .hinweis{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; margin:0 0 12px; font-size:14px; overflow-wrap:anywhere; }
 .hinweis b{ display:block; }
 .hinweis a{ color:var(--accent); display:inline-flex; align-items:center; min-height:44px; min-width:44px; font-weight:600; }
-/* Kategorie-Chips (gewählt wie .seg im Logo-Werkzeug) */
-.chips{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; min-width:0; }
-.chips:empty{ margin:0; }
-.chips button{ border-radius:999px; font-size:14px; padding:6px 14px; max-width:100%; overflow-wrap:anywhere; }
-.chips button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* F3a: Pfad „Alle › …“ mit ‹ zurück (statt der Kategorie-Chips) */
+.pfad{ display:flex; align-items:center; gap:8px; margin:0 0 12px; min-width:0; }
+.pfad ol{ display:flex; flex-wrap:wrap; align-items:center; gap:0 2px; list-style:none; margin:0; padding:0; flex:1; min-width:0; }
+.pfad li{ display:flex; align-items:center; min-width:0; }
+.pfad-glied{ border:0; background:none; font-size:18px; padding:6px 8px; max-width:100%; overflow-wrap:anywhere; text-align:left; }
+.pfad-glied[aria-current]{ font-weight:600; }
+.pfad-trenner{ color:var(--muted); padding:0 2px; }
+.pfad-zahl{ font-size:14px; color:var(--muted); white-space:nowrap; }
+/* F3a: Ordner-Kacheln (2 je Reihe auf schmalen Geräten) */
+.ordner-kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:0 0 12px; }
+.ordner-kacheln:empty{ margin:0; }
+@media (max-width:600px){ .ordner-kacheln{ grid-template-columns:1fr 1fr; gap:10px; } }
+.ordner-kachel{ position:relative; min-width:0; }
+.ok-oeffnen{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; min-height:88px; padding:12px 52px 12px 12px; text-align:left;
+  border-radius:12px; background:var(--panel); }
+.ok-symbol{ display:block; width:34px; height:24px; border-radius:4px 8px 6px 6px; background:var(--accent); opacity:.9; margin-bottom:4px; }
+.ok-name{ font-weight:600; font-size:17px; overflow-wrap:anywhere; min-width:0; max-width:100%; }
+.ok-zahl{ font-size:13px; color:var(--muted); }
+.ok-mehr, .kachel-mehr{ position:absolute; top:6px; right:6px; font-weight:700; letter-spacing:.08em; padding:4px 8px; background:var(--panel); }
+.ordner-neu{ min-height:88px; border-radius:12px; border:2px dashed var(--accent); color:var(--accent); background:transparent; font-weight:600; font-size:16px; }
+.ausgeblendet-zeile{ margin:14px 0 0; }
+/* Seiten-Kachel mit Menü „···“; ausgeblendete Seiten abgeblendet mit Marke */
+.kachel-platz{ position:relative; min-width:0; display:flex; }
+.kachel-platz > .kachel{ flex:1; }
+.kachel-platz.ausgeblendet > .kachel{ opacity:.5; }
+.kachel .marke{ align-self:flex-start; }
 .leer{ color:var(--muted); font-size:15px; text-align:center; margin:24px 0; overflow-wrap:anywhere; }
 /* Kacheln: Vorschau (Host per transform auf Kachelbreite skaliert), Id, Titel, Warnung */
 .kacheln{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
@@ -253,9 +274,12 @@ button.gefahr{ color:var(--danger); }
     <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
   </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
-  <nav id="chips" class="chips" aria-label="Kategorien"></nav>
+  <nav id="pfad" class="pfad" aria-label="Ordner" hidden><button type="button" id="pfadZurueck" aria-label="Einen Ordner zurück">‹</button><ol id="pfadListe"></ol><span id="pfadZahl" class="pfad-zahl"></span></nav>
+  <div id="ordnerKacheln" class="ordner-kacheln"></div>
+  <div id="seitenTitel" class="t-abschnitt" hidden>Seiten</div>
   <p id="leer" class="leer">Noch kein Paket – „Online prüfen“ oder „Paket importieren“.</p>
   <div id="kacheln" class="kacheln"></div>
+  <div id="ausgeblendetZeile" class="ausgeblendet-zeile" hidden><button type="button" id="btnAusgeblendete" aria-pressed="false">Ausgeblendete zeigen (0)</button></div>
 </main>
 
 <div id="vollbild" class="vollbild" role="dialog" aria-modal="true" aria-labelledby="vbTitel" hidden>

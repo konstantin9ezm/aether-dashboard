@@ -111,6 +111,103 @@
   // Sichtbare (nicht ausgeblendete) Seiten einer Version
   function seitenZahl(v) { return v ? v.seiten.filter((s) => s.ausgeblendet !== true).length : 0; }
 
+  /* ---------- Ordner (Teil C) ---------- */
+  const MAX_ORDNERNAME = 60;        // Teil C
+  function ordnerVon(v, id) { return v.ordner.find((o) => o.id === id) || null; }
+  function ordnerOderFehler(v, id) {
+    const o = ordnerVon(v, id);
+    if (!o) throw fehler('struktur', 'Ordner nicht gefunden.', 'Den Ordner gibt es in Version ' + v.nummer + ' nicht (mehr).');
+    return o;
+  }
+  // Unterordner von elternId (null = oberste Ebene), in der Reihenfolge der Version
+  function kinderOrdner(v, elternId) { return v.ordner.filter((o) => o.eltern === (elternId === undefined ? null : elternId)); }
+  // Seiten im Ordner (null = „Alle“: jede Seite der Version genau einmal), ohne Ausgeblendete außer mitAusgeblendeten
+  function seitenIn(v, ordnerId, mitAusgeblendeten) {
+    return v.seiten.filter((s) => (ordnerId === null || ordnerId === undefined || s.ordner.indexOf(ordnerId) >= 0) &&
+      (mitAusgeblendeten === true || s.ausgeblendet !== true));
+  }
+  // Pfad von der obersten Ebene bis zum Ordner (ohne „Alle“)
+  function pfad(v, id) {
+    const r = [];
+    let o = id === null || id === undefined ? null : ordnerVon(v, id);
+    const gesehen = new Set();
+    while (o && !gesehen.has(o.id)) { gesehen.add(o.id); r.unshift(o); o = o.eltern === null ? null : ordnerVon(v, o.eltern); }
+    return r;
+  }
+  // Alle Unterordner (beliebig tief) eines Ordners
+  function nachfahren(v, id) {
+    const r = new Set(), offen = [id];
+    while (offen.length) {
+      const x = offen.pop();
+      for (const o of v.ordner) if (o.eltern === x && !r.has(o.id)) { r.add(o.id); offen.push(o.id); }
+    }
+    return r;
+  }
+  // Ordner als Baum (Tiefe zuerst, Reihenfolge der Version): [{ ordner, ebene }]
+  function ordnerBaum(v) {
+    const r = [];
+    const geh = (eltern, ebene) => { for (const o of kinderOrdner(v, eltern)) { r.push({ ordner: o, ebene: ebene }); geh(o.id, ebene + 1); } };
+    geh(null, 0);
+    return r;
+  }
+  // „n Seiten · m Ordner“: sichtbare Seiten direkt im Ordner, Unterordner direkt darin
+  function ordnerZahlen(v, id) { return { seiten: seitenIn(v, id, false).length, ordner: kinderOrdner(v, id).length }; }
+  function vergleichsName(t) { return String(t).trim().toLocaleLowerCase('de-DE'); }
+  // Name prüfen: nicht leer, höchstens 60 Zeichen, kein gleicher Name im selben Elternordner (ohne ausser) → Name | wirft
+  function ordnerName(v, eltern, name, ausser) {
+    const t = String(name === undefined || name === null ? '' : name).replace(/\s+/g, ' ').trim();
+    if (!t) throw fehler('struktur', 'Name fehlt.', 'Der Ordner braucht einen Namen.');
+    if (t.length > MAX_ORDNERNAME) throw fehler('struktur', 'Name zu lang.', 'Höchstens ' + MAX_ORDNERNAME + ' Zeichen (jetzt ' + t.length + ').');
+    const gleich = kinderOrdner(v, eltern).find((o) => o.id !== ausser && vergleichsName(o.name) === vergleichsName(t));
+    if (gleich) throw fehler('struktur', 'Name schon vergeben.', 'In diesem Ordner gibt es schon „' + gleich.name + '“.');
+    return t;
+  }
+  // Neue Kennung „<praefix><n>“: höher als der Zähler und als jede vorhandene Kennung dieser Art, nie eine vorhandene
+  function neueKennung(praefix, zaehler, vorhanden) {
+    const re = new RegExp('^' + praefix + '([1-9]\\d*)$');
+    let n = zaehler;
+    for (const id of vorhanden) { const m = re.exec(id); if (m) n = Math.max(n, Number(m[1])); }
+    n++;
+    while (vorhanden.has(praefix + n)) n++;
+    return { id: praefix + n, n: n };
+  }
+  // Neuer Ordner (Kennung O<n>) im Ordner eltern (null = oberste Ebene) → der Ordner
+  function ordnerAnlegen(pk, nummer, eltern, name) {
+    const v = versionOderFehler(pk, nummer);
+    if (eltern !== null) ordnerOderFehler(v, eltern);
+    const t = ordnerName(v, eltern, name, null);
+    const k = neueKennung('O', v.zaehler.ordner, new Set(v.ordner.map((o) => o.id)));
+    const o = { id: k.id, name: t, eltern: eltern };
+    v.ordner.push(o);
+    v.zaehler.ordner = k.n;
+    return o;
+  }
+  function ordnerUmbenennen(pk, nummer, id, name) {
+    const v = versionOderFehler(pk, nummer), o = ordnerOderFehler(v, id);
+    o.name = ordnerName(v, o.eltern, name, o.id);
+    return o;
+  }
+  // F4: Verschieben in einen anderen Elternordner – nie in sich selbst oder einen eigenen Unterordner
+  function ordnerVerschieben(pk, nummer, id, eltern) {
+    const v = versionOderFehler(pk, nummer), o = ordnerOderFehler(v, id);
+    const ziel = eltern === undefined ? null : eltern;
+    if (ziel !== null) {
+      ordnerOderFehler(v, ziel);
+      if (ziel === id || nachfahren(v, id).has(ziel)) throw fehler('struktur', 'Verschieben nicht möglich.', 'Ein Ordner kann nicht in sich selbst oder einen eigenen Unterordner.');
+    }
+    ordnerName(v, ziel, o.name, o.id);   // gleicher Name im Ziel → abgelehnt
+    o.eltern = ziel;
+    return o;
+  }
+  // F4: Löschen – die Seiten bleiben (verlieren nur diese Zuordnung), Unterordner wandern in den Elternordner
+  function ordnerLoeschen(pk, nummer, id) {
+    const v = versionOderFehler(pk, nummer), o = ordnerOderFehler(v, id);
+    for (const k of v.ordner) if (k.eltern === id) k.eltern = o.eltern;
+    for (const s of v.seiten) s.ordner = s.ordner.filter((x) => x !== id);
+    v.ordner = v.ordner.filter((x) => x.id !== id);
+    return o;
+  }
+
   /* ---------- Felder (Zählung der Änderungen, Abgleich) ---------- */
   // Bekannte Felder je Objekt; alles andere landet als „extra“ (JSON) im Feld des Objekts selbst (verlustfrei).
   const V_BEKANNT = new Set(['nummer', 'beschreibung', 'ausgeblendet', 'zaehler', 'ordner', 'seiten']);
@@ -209,6 +306,19 @@
     versionAusblenden: versionAusblenden,
     versionLoeschen: versionLoeschen,
     seitenZahl: seitenZahl,
+    // Ordner
+    MAX_ORDNERNAME: MAX_ORDNERNAME,
+    kinderOrdner: kinderOrdner,
+    seitenIn: seitenIn,
+    pfad: pfad,
+    nachfahren: nachfahren,
+    ordnerBaum: ordnerBaum,
+    ordnerZahlen: ordnerZahlen,
+    ordnerAnlegen: ordnerAnlegen,
+    ordnerUmbenennen: ordnerUmbenennen,
+    ordnerVerschieben: ordnerVerschieben,
+    ordnerLoeschen: ordnerLoeschen,
+    neueKennung: neueKennung,
     // Felder
     felder: felder,
     objektVon: objektVon,

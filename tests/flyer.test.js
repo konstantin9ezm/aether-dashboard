@@ -345,7 +345,14 @@ const kacheln = (page) => page.$$eval('#kacheln .kachel', (ks) => ks.map((k) => 
   id: k.dataset.id, art: k.dataset.art, kid: k.querySelector('.kachel-id').textContent, titel: k.querySelector('.kachel-titel').textContent,
   warnung: !k.querySelector('.kachel-warnung').hidden, warnText: k.querySelector('.kachel-warnung').textContent, tag: k.tagName
 })));
-const chips = (page) => page.$$eval('#chips button', (bs) => bs.map((b) => [b.dataset.kategorie, b.textContent.trim(), b.getAttribute('aria-pressed')]));
+// F3a: Ordner statt Kategorie-Chips. Ordner-Kacheln [id, Name, Zahl] und der Pfad (Glieder, das aktuelle mit „*“)
+const ordnerKacheln = (page) => page.$$eval('#ordnerKacheln .ordner-kachel', (ks) => ks.map((k) => [k.dataset.ordner, k.querySelector('.ok-name').textContent, k.querySelector('.ok-zahl').textContent]));
+const pfad = (page) => page.$$eval('#pfad .pfad-glied', (bs) => bs.map((b) => b.textContent + (b.hasAttribute('aria-current') ? '*' : '')));
+// „Alle“ über den Pfad, ein Ordner über seine Kachel (von „Alle“ aus) – ersetzt den Klick auf einen Chip
+async function waehle(page, id) {
+  if (await page.evaluate(() => window.AetherFlyerAnsicht.aktuellerOrdner()) !== null) await page.click('#pfad .pfad-glied[data-ordner=""]');
+  if (id !== 'alle') await page.click(`#ordnerKacheln .ordner-kachel[data-ordner="${id}"] .ok-oeffnen`);
+}
 const vollbildOffen = (page) => page.$eval('#vollbild', (v) => !v.hidden && getComputedStyle(v).display !== 'none');
 const zaehler = (page) => text(page, '#vbZaehler');
 // --s der Wurzel und die .fill-Flächen (Höhe ohne „off“ gemessen) eines Darstellungs-Hosts
@@ -471,7 +478,8 @@ describe('Flyer: Import und Ansicht', () => {
       assert.equal(await page.evaluate(() => window.AetherFlyer.stand()), 'leer');
       assert.equal(await page.evaluate(() => window.AetherFlyer.paket()), null);
       assert.equal(await page.$$eval('#kacheln > *', (es) => es.length), 0);
-      assert.equal(await page.$$eval('#chips > *', (es) => es.length), 0);
+      assert.equal(await page.$$eval('#ordnerKacheln > *', (es) => es.length), 0, 'ohne Paket keine Ordner (F3a statt Chips)');
+      assert.ok(await page.isHidden('#pfad'));
       assert.equal(await text(page, '#paketInfo'), '');
       // Kopfzeile wie im Logo-Werkzeug
       const back = await page.$eval('#zumDashboard', (a) => ({ href: a.getAttribute('href'), text: a.textContent.trim(), r: a.getBoundingClientRect().toJSON() }));
@@ -488,7 +496,7 @@ describe('Flyer: Import und Ansicht', () => {
       await onlineFertig(page);
       assert.equal(await text(page, '#onlineHinweis'), 'Ohne Token keine Online-Prüfung – gezeigt wird der gespeicherte Stand.');
 
-      // Import (mit einer Kategorie ohne Dokumente: dafür kein Chip)
+      // Import (mit einer Kategorie ohne Dokumente: F3a – sie wird ein leerer Ordner)
       await importiere(page, testPaket({ leereKategorie: true }));
       assert.ok(await page.isHidden('#fehler'), 'kein Fehler');
       assert.equal(await text(page, '#status'), 'offline bereit · Stand 17.11.2026');
@@ -502,8 +510,9 @@ describe('Flyer: Import und Ansicht', () => {
         { id: 'T2', art: 'flyer', kid: 'T2', titel: 'Platzhalter zwei', warnung: false, warnText: 'Text zu lang', tag: 'BUTTON' },
         { id: 'I1', art: 'infografik', kid: 'I1', titel: 'Platzhalter-Infografik', warnung: false, warnText: 'Text zu lang', tag: 'BUTTON' }
       ]);
-      assert.deepEqual(await chips(page), [['alle', 'Alle', 'true'], ['grafik', 'Platzhalter Grafik', 'false'], ['info', 'Platzhalter Info', 'false']],
-        'Chips: Alle + Kategorien mit Dokumenten in Paket-Reihenfolge');
+      assert.deepEqual(await ordnerKacheln(page), [['grafik', 'Platzhalter Grafik', '1 Seite'], ['leer', 'Platzhalter ohne Dokumente', '0 Seiten'], ['info', 'Platzhalter Info', '2 Seiten']],
+        'Ordner (aus den Kategorien) in Paket-Reihenfolge');
+      assert.deepEqual(await pfad(page), ['Alle*']);
       // Vorschau: Host in Shadow DOM, per transform auf Kachelbreite skaliert
       const vorschau = await page.$$eval('#kacheln .kachel', (ks) => ks.map((k) => {
         const bild = k.querySelector('.kachel-bild'), host = bild.querySelector('.flyer-host');
@@ -528,13 +537,13 @@ describe('Flyer: Import und Ansicht', () => {
       assert.deepEqual(g.paket.unbekanntesFeld, { bleibt: true }, 'unbekannte Felder bleiben');
 
       // Kategorien
-      await page.click('#chips [data-kategorie="info"]');
+      await waehle(page, 'info');
       assert.deepEqual((await kacheln(page)).map((k) => k.id), ['T1', 'T2']);
-      assert.deepEqual((await chips(page)).map((c) => c[2]), ['false', 'false', 'true']);
+      assert.deepEqual(await pfad(page), ['Alle', 'Platzhalter Info*']);
       assert.equal(await page.evaluate(() => window.AetherFlyerAnsicht.aktuelleKategorie()), 'info');
-      await page.click('#chips [data-kategorie="grafik"]');
+      await waehle(page, 'grafik');
       assert.deepEqual((await kacheln(page)).map((k) => k.id), ['I1']);
-      await page.click('#chips [data-kategorie="alle"]');
+      await waehle(page, 'alle');
       assert.deepEqual((await kacheln(page)).map((k) => k.id), ['T1', 'T2', 'I1']);
       await ruhe(page);
       const ev = await page.evaluate(() => window.__ereignisse.filter((e) => e[0] === 'kategorie'));
@@ -695,7 +704,7 @@ describe('Flyer: Import und Ansicht', () => {
       await page.click('#vbZu');
       assert.equal(await vollbildOffen(page), false);
       // Im Vollbild zählt die Liste der gewählten Kategorie
-      await page.click('#chips [data-kategorie="info"]');
+      await waehle(page, 'info');
       await page.click('#kacheln .kachel[data-id="T2"]');
       assert.equal(await zaehler(page), '2 / 2');
       await page.keyboard.press('ArrowRight');
@@ -752,10 +761,10 @@ describe('Flyer: Import und Ansicht', () => {
       await page.keyboard.press('Escape');
 
       // Kategorie bleibt bei neuem Paket erhalten; sehr langer Text
-      await page.click('#chips [data-kategorie="info"]');
+      await waehle(page, 'info');
       await importiere(page, testPaket({ texte: { T2: SEHR_LANG } }));
       assert.equal(await page.evaluate(() => window.AetherFlyerAnsicht.aktuelleKategorie()), 'info', 'Kategorie bleibt');
-      assert.deepEqual((await chips(page)).find((c) => c[0] === 'info'), ['info', 'Platzhalter Info', 'true']);
+      assert.deepEqual(await pfad(page), ['Alle', 'Platzhalter Info*'], 'Ordner bleibt geöffnet');
       const k = await kacheln(page);
       assert.deepEqual(k.map((x) => [x.id, x.warnung]), [['T1', false], ['T2', true]], '„Text zu lang“ an der Kachel');
       assert.ok(await page.isVisible('#kacheln .kachel[data-id="T2"] .kachel-warnung'));
@@ -1574,7 +1583,7 @@ describe('Flyer: PDF und Bild', () => {
       await page.screenshot({ path: path.join(OUT, 'flyer-druckansicht.png'), fullPage: true });
       await page.emulateMedia({ media: null });   // zurück (mit 'screen' würde page.pdf die Bildschirmansicht drucken)
       // Kategorie mit Infografik: alle Dokumente der Kategorie; Infografik per zoom auf Seitenbreite, über zwei Seiten
-      await page.click('#chips [data-kategorie="grafik"]');
+      await waehle(page, 'grafik');
       assert.equal(await text(page, '#btnAllePdf'), 'Alle als PDF (1)');
       await page.click('#btnAllePdf');
       assert.equal(await page.evaluate(() => window.__druck), 3);
@@ -1584,7 +1593,7 @@ describe('Flyer: PDF und Bild', () => {
       info = await pdf('flyer-I1.pdf');
       assert.equal(info.seiten, 2, `Infografik (${IG_HOEHE} px hoch) über zwei A4-Seiten`);
       assertA4(info.boxen, 'PDF I1');
-      await page.click('#chips [data-kategorie="info"]');
+      await waehle(page, 'info');
       assert.equal(await text(page, '#btnAllePdf'), 'Alle als PDF (2)');
       // Drucken ohne Vorbereitung (Teilen-Menü → Drucken, Strg+P): „beforeprint“ bereitet die aktuelle Liste vor …
       info = await pdf('flyer-ohne-vorbereitung-liste.pdf');

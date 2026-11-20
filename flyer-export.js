@@ -100,13 +100,14 @@
   }
 
   /* ---------- Knöpfe ---------- */
-  // „Alle als PDF“: Kategorie „alle“ → alle Flyer (Reihenfolge des Pakets), sonst alle Dokumente der Kategorie.
+  // „Alle als PDF“: „Alle“ → alle Flyer der Version (Reihenfolge des Pakets), sonst alle Dokumente des geöffneten Ordners;
+  // ausgeblendete Seiten nie (F3a).
   function druckListe() {
     const a = A();
     const pk = a ? a.paket() : null;
     if (!pk || !Array.isArray(pk.dokumente)) return [];
-    if (a.aktuelleKategorie() === 'alle') return pk.dokumente.filter((d) => d && d.art === 'flyer');
-    return a.aktuelleListe();
+    if (a.aktuelleKategorie() === 'alle') return pk.dokumente.filter((d) => d && d.art === 'flyer' && d.ausgeblendet !== true);
+    return a.aktuelleListe().filter((d) => d.ausgeblendet !== true);
   }
   function knopfAllePdf() {
     const b = $('btnAllePdf');

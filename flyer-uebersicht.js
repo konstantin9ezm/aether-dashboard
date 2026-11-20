@@ -1,5 +1,6 @@
 // Übersicht der Flyer-Seite (flyer.html, F3a): Knopf „Version <n> ▾“ mit der Tafel „Versionen“ (Versions-Ordner V1,
-// V2 …, „+ Neue Unterversion“, „+ Neue Hauptversion“, Menü „···“ je Version) und die Tafeln dazu. Eine Tafel ist ein
+// V2 …, „+ Neue Unterversion“, „+ Neue Hauptversion“, Menü „···“ je Version) und die Tafeln dazu; Menü „···“ je Ordner
+// (Öffnen, Umbenennen, Verschieben, Löschen) und „+ Neuer Ordner“ (Teil C). Eine Tafel ist ein
 // Dialog über der Seite (auch über dem Vollbild); Tafeln stapeln sich („‹“ zurück, „✕“ schließt alle).
 // Tasten: Esc schließt die Tafel, Backspace geht eine Ebene zurück (beide nicht in Texteingaben).
 // Die Änderungen selbst rechnet AetherFlyerStruktur auf einer Kopie, flyer.js speichert und zeigt sie (h.aendere).
@@ -11,6 +12,7 @@
   const G = () => window.AetherGemeinsam;
   const ST = () => window.AetherFlyerStruktur;
   const AE = () => window.AetherFlyerAenderungen || null;
+  const A = () => window.AetherFlyerAnsicht || null;
   // input-Typen, die KEIN Eingabefeld sind (wie in flyer-ansicht.js)
   const KNOPF_TYPEN = ['button', 'submit', 'reset', 'image', 'hidden', 'file', 'checkbox', 'radio'];
 
@@ -231,6 +233,73 @@
     zurueck();
   }
 
+  /* ---------- Ordner (Teil C) ---------- */
+  function versionJetzt() { return ST().version(paket(), offen()); }
+  function ordnerJetzt(id) { const v = versionJetzt(); return v ? v.ordner.find((o) => o.id === id) || null : null; }
+  function neuerOrdner(eltern) {
+    const nr = offen();
+    eingabeTafel('Neuer Ordner', 'Name (höchstens ' + ST().MAX_ORDNERNAME + ' Zeichen)', 'Neuer Ordner', ST().MAX_ORDNERNAME,
+      (w) => (!w.trim() ? 'Der Ordner braucht einen Namen.' : ''),
+      async (w) => {
+        const o = await h.aendere((p) => ST().ordnerAnlegen(p, nr, eltern === undefined ? null : eltern, w));
+        schliesseTafel();
+        meldung('Ordner „' + o.name + '“ angelegt');
+      });
+  }
+  function ordnerMenue(o) {
+    const id = o.id;
+    tafel('Ordner · ' + o.name, (inhalt) => {
+      const jetzt = ordnerJetzt(id);
+      if (!jetzt) { zurueck(); return; }
+      $('tafelTitel').textContent = 'Ordner · ' + jetzt.name;
+      const liste = el('div', undefined, 't-liste t-menue');
+      liste.appendChild(knopf('Öffnen', () => { schliesseTafel(); if (A()) A().oeffneOrdner(id); }));
+      liste.appendChild(knopf('Umbenennen', () => ordnerUmbenennen(id)));
+      liste.appendChild(knopf('Verschieben', () => ordnerVerschieben(id)));
+      liste.appendChild(knopf('Löschen', () => ordnerLoeschen(id), 'gefahr'));
+      inhalt.appendChild(liste);
+    });
+  }
+  function ordnerUmbenennen(id) {
+    const o = ordnerJetzt(id), nr = offen();
+    if (!o) return;
+    eingabeTafel('Ordner umbenennen', 'Name (höchstens ' + ST().MAX_ORDNERNAME + ' Zeichen)', o.name, ST().MAX_ORDNERNAME,
+      (w) => (!w.trim() ? 'Der Ordner braucht einen Namen.' : ''),
+      async (w) => { await h.aendere((p) => ST().ordnerUmbenennen(p, nr, id, w)); meldung('Ordner umbenannt'); zurueck(); });
+  }
+  // Elternordner wählen: „Oberste Ebene“ und alle Ordner der Version (eingerückt), ohne den Ordner selbst und seine
+  // Unterordner; der jetzige Elternordner ist markiert und nicht wählbar.
+  function ordnerVerschieben(id) {
+    const nr = offen();
+    tafel('Verschieben nach …', (inhalt) => {
+      const v = versionJetzt(), o = ordnerJetzt(id);
+      if (!v || !o) { zurueck(); return; }
+      const aus = ST().nachfahren(v, id);
+      aus.add(id);
+      inhalt.appendChild(el('p', '„' + o.name + '“ verschieben nach:', 't-klein'));
+      const liste = el('div', undefined, 't-liste');
+      const ziele = [{ id: null, name: 'Oberste Ebene (Alle)', ebene: 0 }]
+        .concat(ST().ordnerBaum(v).filter((x) => !aus.has(x.ordner.id)).map((x) => ({ id: x.ordner.id, name: x.ordner.name, ebene: x.ebene + 1 })));
+      for (const z of ziele) {
+        const b = knopf(z.name + (z.id === o.eltern ? ' (jetzt hier)' : ''), async () => {
+          try { await h.aendere((p) => ST().ordnerVerschieben(p, nr, id, z.id)); meldung('Ordner verschoben'); schliesseTafel(); } catch (e) { fehlerZeigen(e); }
+        });
+        b.setAttribute('data-ziel', z.id === null ? '' : z.id);
+        b.style.paddingLeft = (14 + z.ebene * 22) + 'px';
+        b.disabled = z.id === o.eltern;
+        liste.appendChild(b);
+      }
+      inhalt.appendChild(liste);
+    });
+  }
+  async function ordnerLoeschen(id) {
+    const o = ordnerJetzt(id), nr = offen();
+    if (!o) return;
+    if (!frage('Ordner „' + o.name + '“ löschen? Die Seiten bleiben erhalten und verlieren nur diese Zuordnung; Unterordner wandern in den Elternordner.')) return;
+    try { await h.aendere((p) => ST().ordnerLoeschen(p, nr, id)); meldung('Ordner gelöscht'); } catch (e) { return; }
+    schliesseTafel();
+  }
+
   /* ---------- Tasten ---------- */
   function taste(e) {
     if (!tafelOffen() || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -261,6 +330,9 @@
     window.addEventListener('keydown', taste, true);
     document.addEventListener('flyer:struktur', () => { versionsKnopf(); neuZeichnen(); });
     document.addEventListener('flyer:kategorie', versionsKnopf);
+    if (A() && typeof A().setzeUebersicht === 'function') {
+      A().setzeUebersicht({ ordnerMenue: (o) => ordnerMenue(o), neuerOrdner: (eltern) => neuerOrdner(eltern) });
+    }
     versionsKnopf();
   }
 
@@ -273,6 +345,8 @@
     tafelOffen: tafelOffen,
     versionenTafel: versionenTafel,
     versionMenue: versionMenue,
-    neueVersion: neueVersion
+    neueVersion: neueVersion,
+    neuerOrdner: neuerOrdner,
+    ordnerMenue: ordnerMenue
   });
 })();
