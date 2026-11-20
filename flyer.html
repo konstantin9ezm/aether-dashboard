@@ -20,7 +20,7 @@
   Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-struktur.js (Versionen, Ordner,
   Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
-  Export, Abgleich, Sicherung, Teil 2), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -153,6 +153,37 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .hilfe li{ margin:0 0 6px; }
 .hilfe a{ color:var(--accent); font-weight:600; display:inline-flex; align-items:center; min-height:44px; }
 .hilfe code{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:var(--chip); padding:1px 4px; border-radius:4px; }
+/* F3a: Version (Knopf unter den Werkzeugen) */
+.versionszeile{ margin:0 0 10px; min-width:0; }
+#btnVersion{ display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; max-width:100%; text-align:left; }
+#btnVersion .zusatz{ font-size:13px; color:var(--muted); }
+/* F3a: Tafeln (Dialoge über Seite und Vollbild; unter dem Sichern-Dialog) */
+.tafel-huelle{ position:fixed; inset:0; z-index:24; background:rgba(4,5,14,.55); display:flex; align-items:flex-start; justify-content:center;
+  padding:calc(12px + env(safe-area-inset-top,0px)) 12px 12px; overflow:auto; }
+.tafel-huelle[hidden]{ display:none; }
+.tafel{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; width:min(560px,100%); min-width:0; padding:0 14px 14px; }
+.tafel-kopf{ display:flex; align-items:center; gap:8px; padding:10px 0; position:sticky; top:0; background:var(--panel); }
+.tafel-kopf h2{ flex:1; margin:0; font-size:18px; font-weight:600; min-width:0; overflow-wrap:anywhere; }
+.tafel-inhalt{ min-width:0; }
+.t-abschnitt{ font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:12px 0 6px; }
+.t-liste{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+.t-liste > button{ text-align:left; width:100%; }
+.t-menue > button{ font-size:16px; }
+.t-zeile{ display:flex; gap:6px; align-items:stretch; min-width:0; }
+.t-zeile .t-haupt{ flex:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; text-align:left; min-width:0; }
+.t-zeile.aktuell .t-haupt{ border-color:var(--sel); box-shadow:inset 0 0 0 1px var(--sel); }
+.t-text{ overflow-wrap:anywhere; min-width:0; }
+.t-klein{ font-size:13px; color:var(--muted); }
+.t-mehr{ flex:none; font-weight:700; letter-spacing:.08em; }
+.marke{ display:inline-block; font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--chip); border:1px solid var(--line); }
+.marke.aktuell{ background:var(--sel); color:var(--sel-ink); border-color:transparent; }
+.abgeblendet{ opacity:.55; }
+button.neu{ border-style:dashed; color:var(--accent); font-weight:600; }
+button.gefahr{ color:var(--danger); }
+.t-label{ display:block; font-size:14px; color:var(--muted); margin:8px 0 4px; }
+.tafel input[type="text"], .tafel select{ font:inherit; font-size:16px; width:100%; min-height:44px; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--field); color:var(--text); }
+.t-zaehler{ display:block; font-size:12px; color:var(--muted); text-align:right; margin-top:2px; }
+.t-hinweis{ color:var(--warn-text); font-size:14px; margin:4px 0 8px; min-height:1em; overflow-wrap:anywhere; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
@@ -204,6 +235,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
     <input type="file" id="dateiEinspielen" hidden>
     <button type="button" id="btnVerwerfen" hidden>Alle Änderungen verwerfen</button>
   </div>
+  <div id="versionsZeile" class="versionszeile" hidden><button type="button" id="btnVersion" aria-haspopup="dialog"><b id="versionName">Version 1.1 ▾</b> <span id="versionZusatz" class="zusatz"></span></button></div>
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
@@ -255,6 +287,11 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
   </div>
 </div>
 
+<div id="tafel" class="tafel-huelle" hidden><div class="tafel" role="dialog" aria-modal="true" aria-labelledby="tafelTitel">
+  <div class="tafel-kopf"><button type="button" id="tafelZurueck" aria-label="Zurück" hidden>‹</button><h2 id="tafelTitel"></h2><button type="button" id="tafelZu" aria-label="Schließen">✕</button></div>
+  <div id="tafelInhalt" class="tafel-inhalt"></div>
+</div></div>
+
 <div id="druck" aria-hidden="true"></div>
 
 <div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitel">
@@ -273,6 +310,7 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 <script src="flyer-export.js"></script>
 <script src="flyer-aenderungen.js"></script>
 <script src="flyer-bearbeiten.js"></script>
+<script src="flyer-uebersicht.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

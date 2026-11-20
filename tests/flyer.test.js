@@ -30,7 +30,7 @@ const SHA_B = 'bbbbbbb000000000000000000000000000000002';
 const SHA_C = 'ccccccc000000000000000000000000000000003';
 const SHA_D = 'ddddddd000000000000000000000000000000004';
 const EVIL = 'https://evil.example';
-const MODULE = ['flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer.js'];
+const MODULE = ['flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer.js'];
 const FLYER_DATEIEN = ['flyer.html', ...MODULE];
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -937,7 +937,7 @@ describe('Flyer: Import und Ansicht', () => {
       });
       assert.deepEqual(ig, { t: [['h1', 't1'], ['text', 't2']], aet: 1, s: 'ok', z: '2', stand: 'lang', fill: 'url(#ig-verlauf)' }, 'Infografik: Markierungen und lokaler Verlauf url(#…)');
       assert.doesNotMatch(await page.$eval('#flyerDokRegeln', (s) => s.textContent), /evil\.example|@import/);
-      assert.equal(await page.evaluate(() => document.scripts.length), 10, 'nur die zehn eigenen Skripte');
+      assert.equal(await page.evaluate(() => document.scripts.length), 11, 'nur die elf eigenen Skripte');
       assert.ok(!log.urls.some((u) => u.includes('evil.example')), 'nichts von evil.example angefragt');
       assert.deepEqual(log.fremd, []);
       // Je eingeschleustem Handler (onerror, onload) höchstens eine Meldung vom Parsen; ein überlebender Handler käme dazu
@@ -2151,7 +2151,7 @@ describe('Flyer: Dateien', () => {
       assert.deepEqual(urls.filter((u) => !erlaubt.includes(u)), [], `${d}: nur die GitHub-API`);
     }
     // Module: IIFE mit 'use strict', genau ein window.AetherFlyerX = Object.freeze(…)
-    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-struktur.js': 'AetherFlyerStruktur', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer-aenderungen.js': 'AetherFlyerAenderungen', 'flyer-bearbeiten.js': 'AetherFlyerBearbeiten', 'flyer.js': 'AetherFlyer' };
+    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-struktur.js': 'AetherFlyerStruktur', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer-aenderungen.js': 'AetherFlyerAenderungen', 'flyer-bearbeiten.js': 'AetherFlyerBearbeiten', 'flyer-uebersicht.js': 'AetherFlyerUebersicht', 'flyer.js': 'AetherFlyer' };
     for (const [d, n] of Object.entries(namen)) {
       const t = lies(d);
       const code = t.replace(/^(\s*\/\/[^\n]*\n)*/, '');

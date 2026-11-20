@@ -477,6 +477,16 @@
     melde({ doks: doks });
     return p;
   }
+  // F3a: Einträge einer Version (bzw. einer Seite darin) entfernen – wenn die Version oder Seite gelöscht wird
+  function entferne(v, dokId) {
+    if (gesperrt) return gesperrtFehler();
+    const doks = [];
+    for (const e of liste()) if (e.ver === v && (!dokId || e.dok === dokId)) { eintraege.delete(sk(e)); doks.push(e.dok); }
+    if (!doks.length) return Promise.resolve(true);
+    const p = speichern();
+    melde({ doks: Array.from(new Set(doks)), entfernt: v });
+    return p;
+  }
   // Aktueller (eigener) Wert einer Stelle für das Bearbeitungsfeld bzw. die Auswahl
   function aktuellerWert(dokId, art, k) {
     const e = eintraege.get(schluessel(ver(), dokId, art, k));
@@ -759,6 +769,7 @@
     original: original,
     dokumentZuruecksetzen: dokumentZuruecksetzen,
     verwerfen: verwerfen,
+    entferne: entferne,
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
     abgleichen: abgleichen,

@@ -36,6 +36,7 @@
   const E = window.AetherFlyerExport || null;
   const AE = window.AetherFlyerAenderungen || null;
   const B = window.AetherFlyerBearbeiten || null;
+  const U = window.AetherFlyerUebersicht || null;
   const ST = window.AetherFlyerStruktur;
 
   /* ---------- Zustand ---------- */
@@ -88,9 +89,18 @@
   function fehlerWeg() { const h = $('fehler'); h.hidden = true; h.textContent = ''; }
 
   /* ---------- Anzeige ---------- */
+  // Struktur-Änderungen (Versionen, Ordner, Seiten), die noch nicht exportiert sind: geänderte Objekte gegenüber dem
+  // Stand beim letzten Export, sonst gegenüber der Basis (zwischengespeichert, solange sich nichts ändert)
+  let zahlCache = null;
+  function strukturZahl() {
+    if (!lokal || !basisV2) return 0;
+    const bezug = strukturRest.exportiert || basisV2;
+    if (!zahlCache || zahlCache.lokal !== lokal || zahlCache.bezug !== bezug) zahlCache = { lokal: lokal, bezug: bezug, n: ST.aenderungenZahl(bezug, lokal) };
+    return zahlCache.n;
+  }
   function zeigeKopf() {
     const p = effektiv();
-    const n = AE && p ? AE.nichtExportiert() : 0;
+    const n = (AE && p ? AE.nichtExportiert() : 0) + strukturZahl();
     $('status').textContent = (!p ? 'noch kein Paket'
       : gesichert ? 'offline bereit · Stand ' + datum(p.stand)
       : 'Stand ' + datum(p.stand) + ' · nicht offline gespeichert') +
@@ -171,6 +181,11 @@
     basis = eintrag;
     basisV2 = neuV2;
     gesichert = ok;
+    // Bis Teil E (Abgleich der Struktur) bleibt ein lokaler Stand, wie er ist; Bezug der Zählung ist die neue Basis
+    strukturRest.exportiert = null;
+    zahlCache = null;
+    sichtCache = null;
+    if (lokal) await strukturSpeichern();
     await anzeigen();
     zeigeKopf();
     return ok;
@@ -239,6 +254,15 @@
     kopf: () => zeigeKopf()
   });
 
+  /* ---------- Hilfen für flyer-uebersicht.js (F3a) ---------- */
+  const uebersichtHilfen = Object.freeze({
+    paketV2: () => effektiv(),
+    version: () => (effektiv() ? sicht().nummer : version),
+    sicht: () => sicht(),
+    oeffneVersion: oeffneVersion,
+    aendere: aendereStruktur
+  });
+
   /* ---------- Änderungsschicht (Teil 2) ---------- */
   // Jede Darstellung (Kachel, Vollbild, Druck, Bild): Basis + Änderungsschicht; markiert nur im Vollbild in Text/Status.
   function anpasserSetzen() {
@@ -249,10 +273,68 @@
       try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() !== 'ansehen'; } catch (e) { markieren = false; }
       AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren });
     });
-    document.addEventListener('flyer:aenderungen', () => { zeigeKopf(); });
+    document.addEventListener('flyer:aenderungen', (e) => {
+      // Export gelungen: auch die Struktur gilt ab jetzt als exportiert (Prüfwerte des lokalen Stands)
+      if (e && e.detail && e.detail.exportiert) {
+        strukturRest.exportiert = lokal ? ST.pruefwerte(lokal) : null;
+        zahlCache = null;
+        strukturSpeichern();
+      }
+      zeigeKopf();
+    });
   }
 
   /* ---------- Lokaler Stand und geöffnete Version (F3a) ---------- */
+  function melde(name, detail) { try { document.dispatchEvent(new CustomEvent(name, { detail: detail || {} })); } catch (e) { /* egal */ } }
+  async function strukturSpeichern() {
+    if (!S || typeof S.speichereStruktur !== 'function') return false;
+    try { return (await S.speichereStruktur({ paket: lokal, konflikte: strukturRest.konflikte, exportiert: strukturRest.exportiert })) === true; } catch (e) { return false; }
+  }
+  // Struktur ändern: fn(kopie) ändert eine Kopie des ganzen Stands (wirft bei ungültiger Eingabe – dann bleibt alles).
+  // Das Ergebnis muss AetherFlyerPaket.pruefe bestehen; danach gespeichert (lokal = null, wenn gleich der Basis) und neu
+  // gezeigt. Nacheinander mit den Übernahmen (reihe). → Promise<Ergebnis von fn>
+  function aendereStruktur(fn) {
+    const auftrag = reihe.then(async () => {
+      const alt = effektiv();
+      if (!alt) throw new G.AppError('struktur', 'Kein Paket geladen.', 'Erst ein Paket laden oder importieren.');
+      const neu = JSON.parse(JSON.stringify(alt));
+      const ergebnis = fn(neu);
+      try { P.pruefe(neu); } catch (e) {
+        const f = alsFehler(e);
+        throw new G.AppError('struktur', 'Änderung nicht möglich.', [f.title, f.text].filter(Boolean).join(' '));
+      }
+      lokal = ST.gleich(neu, basisV2) ? null : neu;
+      sichtCache = null;
+      const ok = await strukturSpeichern();
+      if (!ok) { try { G.meldung('Änderung nicht offline gespeichert'); } catch (e) { /* ohne #toast */ } }
+      if (!ST.version(effektiv(), version)) await setzeVersion(ST.STANDARD_VERSION);
+      await anzeigen();
+      zeigeKopf();
+      melde('flyer:struktur', {});
+      return ergebnis;
+    });
+    reihe = auftrag.catch(() => {});
+    return auftrag;
+  }
+  async function setzeVersion(nr) {
+    version = nr;
+    sichtCache = null;
+    if (S && typeof S.speichereGeraet === 'function') { try { await S.speichereGeraet('version', nr); } catch (e) { /* nur dieses Mal */ } }
+  }
+  // Version öffnen (F2: das Gerät merkt sie sich). → Promise<Boolean>
+  function oeffneVersion(nr) {
+    const auftrag = reihe.then(async () => {
+      if (!effektiv() || !ST.version(effektiv(), nr)) throw new G.AppError('struktur', 'Version nicht gefunden.', 'Version ' + nr + ' gibt es nicht.');
+      if (A && typeof A.schliesse === 'function') { try { A.schliesse(); } catch (e) { /* egal */ } }
+      await setzeVersion(nr);
+      await anzeigen();
+      zeigeKopf();
+      melde('flyer:struktur', { version: nr });
+      return true;
+    });
+    reihe = auftrag.catch(() => {});
+    return auftrag;
+  }
   async function ladeLokal() {
     let st = null, v = null;
     try { st = S && typeof S.ladeStruktur === 'function' ? await S.ladeStruktur() : null; } catch (e) { st = null; }
@@ -279,6 +361,9 @@
     }
     if (AE && B && typeof B.einrichten === 'function') {
       try { Promise.resolve(B.einrichten(bearbeitenHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Bearbeiten */ }
+    }
+    if (U && typeof U.einrichten === 'function') {
+      try { U.einrichten(uebersichtHilfen); } catch (e) { /* Seite läuft ohne Versionen und Ordner */ }
     }
   }
   async function start() {
@@ -320,6 +405,9 @@
     paketV2: () => effektiv(),                              // F3a: Stand aller Versionen (lokal, sonst Basis) im Format v2
     sicht: () => sicht(),                                   // F3a: Sicht der geöffneten Version
     version: () => (effektiv() ? sicht().nummer : version), // F3a: Nummer der geöffneten Version
+    aendereStruktur: aendereStruktur,                       // F3a: (fn(kopie)) → Promise
+    oeffneVersion: oeffneVersion,                           // F3a: (nummer) → Promise
+    strukturZahl: () => strukturZahl(),
     uebernehme: uebernehme,                                 // (paket, { quelle:'online'|'import', sha, nurWennLeer }) → Promise<Boolean|'schonDa'>
     fehler: fehler,                                         // (titel, text, mitTokenLink)
     fehlerWeg: fehlerWeg,

@@ -558,6 +558,8 @@
     if (istTexteingabe(tiefesAktivesElement())) return;
     const modal = $('modal');
     if (modal && !modal.hidden) return;                // Sichern-Dialog liegt darüber: der hat Vorrang
+    const tafel = $('tafel');
+    if (tafel && !tafel.hidden) return;                // F3a: Tafel liegt darüber (flyer-uebersicht.js)
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       blaettere(e.key === 'ArrowRight' ? 1 : -1);
