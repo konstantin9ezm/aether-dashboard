@@ -1,7 +1,7 @@
 // Service Worker des Aether-Dashboards: hält nur die App-Hülle (diese Seite, Manifest, Icons,
 // engine-map.json, Screen-Editor, Logo-Seite, gemeinsam.js, Schriften des Logo-Editors) für den Offline-Start vor. Build-Dateien verwaltet die Seite selbst im Cache "aether-builds-v1".
 // Dazu die Flyer-Seite: flyer.html mit flyer.js, flyer-paket.js, flyer-struktur.js, flyer-speicher.js, flyer-ansicht.js, flyer-online.js,
-// flyer-export.js, flyer-aenderungen.js, flyer-bearbeiten.js und flyer-uebersicht.js (nur der Programmcode; die Änderungsschicht liegt wie
+// flyer-export.js, flyer-zip.js, flyer-aenderungen.js, flyer-bearbeiten.js, flyer-uebersicht.js und flyer-grafik.js (nur der Programmcode; die Änderungsschicht liegt wie
 // das Paket in IndexedDB). Das Flyer-Paket selbst liegt nie hier, sondern in IndexedDB
 // „aether-flyer“ (verwaltet die Seite); seine Schriften kommen aus fonts/ (schon unten in SCHRIFT_DATEIEN).
 // Anfragen an api.github.com (mit Token im Authorization-Header) werden hier nie angefasst,
@@ -38,7 +38,7 @@ var SHELL = ['./', 'index.html', 'manifest.json', 'engine-map.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
   'screen-editor.html', 'vendor/three-r128.min.js', 'logo.html', 'gemeinsam.js',
   'flyer.html', 'flyer.js', 'flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js',
-  'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js'].concat(SCHRIFT_DATEIEN);
+  'flyer-zip.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js'].concat(SCHRIFT_DATEIEN);
 
 function shellKey(url) {
   // Ohne Query und Hash, damit "…/?x#projekt" denselben Eintrag trifft wie "…/".

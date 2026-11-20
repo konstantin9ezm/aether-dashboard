@@ -267,6 +267,25 @@
     const w = el.getAttribute('data-block');
     return w ? alle.filter((e) => e.getAttribute('data-block') === w) : [el];
   }
+  // F3a (Export „Grafiken & Daten“): Zähler aller data-zaehler-Elemente lesen, ohne etwas zu ändern – dieselbe Regel
+  // wie zaehlerBerechnen (Block, Listenpunkte, ok/run), auch dort, wo das Paket (noch) keinen Zähler-Text zeigt.
+  // → [{ el, fertig, laeuft, gesamt }] in Dokumentreihenfolge
+  function zaehlerWerte(wurzel) {
+    const aus = [];
+    for (const z of mitAttr(wurzel, 'data-zaehler')) {
+      const els = blockVon(z, wurzel);
+      if (!els) continue;
+      const punkte = new Set();
+      for (const b of els) {
+        if (b.hasAttribute('data-s')) punkte.add(b);
+        for (const p of b.querySelectorAll('[data-s]')) punkte.add(p);
+      }
+      let ok = 0, run = 0;
+      for (const p of punkte) { const st = p.getAttribute('data-status'); if (st === 'ok') ok++; else if (st === 'run') run++; }
+      aus.push({ el: z, fertig: ok, laeuft: run, gesamt: punkte.size });
+    }
+    return aus;
+  }
   // Für jeden Block mit Zähler (data-zaehler): y = Listenpunkte (data-s) im Block, x = davon data-status="ok";
   // --anteil = x/y und --anteil-laeuft = run/y (Regel des Pakets: Das Paket-CSS zeichnet „läuft“ von --anteil bis
   // --anteil + --anteil-laeuft), y = 0 → 0. Der Text „x von y fertig“ kommt in den vorhandenen Zähler (siehe zaehlerText).
@@ -790,6 +809,7 @@
     // Darstellung
     anwenden: anwenden,
     zaehlerBerechnen: zaehlerBerechnen,
+    zaehlerWerte: zaehlerWerte,
     formatiereStand: formatiereStand,
     standText: standText,
     werteAus: werteAus,

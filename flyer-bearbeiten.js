@@ -473,6 +473,7 @@
     einspielen: einspielen,
     verwerfen: verwerfen,
     konflikteZeigen: konflikteZeigen,
-    onlineVersion: () => onlineVersion
+    onlineVersion: () => onlineVersion,
+    weitergeben: weitergeben   // F3a: auch für den Export „Grafiken & Daten“ (flyer-grafik.js)
   });
 })();

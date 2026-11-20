@@ -37,6 +37,7 @@
   const AE = window.AetherFlyerAenderungen || null;
   const B = window.AetherFlyerBearbeiten || null;
   const U = window.AetherFlyerUebersicht || null;
+  const GR = window.AetherFlyerGrafik || null;
   const ST = window.AetherFlyerStruktur;
 
   /* ---------- Zustand ---------- */
@@ -504,6 +505,9 @@
     }
     if (U && typeof U.einrichten === 'function') {
       try { U.einrichten(uebersichtHilfen); } catch (e) { /* Seite läuft ohne Versionen und Ordner */ }
+    }
+    if (GR && typeof GR.einrichten === 'function') {
+      try { GR.einrichten(); } catch (e) { /* Seite läuft ohne „Grafiken & Daten“ */ }
     }
   }
   async function start() {
