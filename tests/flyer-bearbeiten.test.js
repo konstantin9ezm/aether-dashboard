@@ -1038,7 +1038,10 @@ function paketArtHtml() {
     '<div class="fill"></div></div></section>';
 }
 describe('Flyer bearbeiten: Zähler wie im echten Paket', () => {
-  test('Blöcke ohne Wert: unverändert bitgenau ohne Zähler; eigener Status → <span class="zaehler"> nur in diesem Block, --anteil = ok/y, --anteil-laeuft = run/y; „Original“ nimmt ihn zurück; Export enthält ihn', async () => {
+  // Regel ab „Flyer-Zähler in allen Blöcken mit Status“ (Variante b): In der Darstellung bekommt jeder Block, in dem ein
+  // Listenpunkt einen Status hat (Paket oder Änderungsschicht), sofort den Zähler; Blöcke ohne jeden Status bleiben
+  // bitgenau. Der Export bleibt unverändert (Zähler nur nach eigener Status-Änderung).
+  test('Blöcke ohne Wert: ohne Status bitgenau ohne Zähler; Block mit Status aus dem Paket → Zähler beim ersten Darstellen; eigener Status → Zähler, --anteil = ok/y, --anteil-laeuft = run/y; „Original“ nimmt ihn zurück; Export wie bisher nur nach eigener Änderung', async () => {
     await mitSeite({ withToken: false }, async ({ page, log }) => {
       await oeffneFlyer(page);
       const css = FLYER_CSS + '\n[data-zaehler]:has(> .zaehler){background:linear-gradient(90deg,#00ff00 0 calc(var(--anteil,0)*100%),#ffaa00 0 calc((var(--anteil,0) + var(--anteil-laeuft,0))*100%),#333333 0)}';
@@ -1050,10 +1053,11 @@ describe('Flyer bearbeiten: Zähler wie im echten Paket', () => {
         html: z.outerHTML, kind: z.querySelector(':scope > .zaehler') ? z.querySelector(':scope > .zaehler').textContent : null,
         a: z.style.getPropertyValue('--anteil'), l: z.style.getPropertyValue('--anteil-laeuft'), bg: getComputedStyle(z).backgroundImage !== 'none' })));
       const vorher = await zaehler();
-      // Unverändert: genau wie im Paket (kein Zähler, keine Variablen, kein Balken) – auch Block zwei mit einem „ok“
+      // Block eins ohne jeden Status: genau wie im Paket (kein Zähler, keine Variablen, kein Balken). Block zwei hat im
+      // Paket ein „ok“: Zähler sofort beim ersten Darstellen (1 von 2, --anteil 0.5, --anteil-laeuft 0, Balken).
       assert.deepEqual(vorher.map((z) => [z.html, z.kind, z.a, z.l, z.bg]), [
         ['<h3 data-zaehler=""><ae-t data-t="t1">Platzhalter-Block eins</ae-t></h3>', null, '', '', false],
-        ['<h3 data-zaehler=""><ae-t data-t="t2">Platzhalter-Block zwei</ae-t></h3>', null, '', '', false]]);
+        ['<h3 data-zaehler="" style="--anteil: 0.5; --anteil-laeuft: 0;"><ae-t data-t="t2">Platzhalter-Block zwei</ae-t><span class="zaehler">1 von 2 fertig</span></h3>', '1 von 2 fertig', '0.5', '0', true]]);
       // Status über die Oberfläche: s1 → ok, s2 → läuft
       await page.click('#kacheln .kachel[data-id="P1"]');
       await page.click('#vbModus button[data-modus="status"]');
@@ -1064,10 +1068,10 @@ describe('Flyer bearbeiten: Zähler wie im echten Paket', () => {
       }
       await ruhe(page);
       const nach = await zaehler();
-      assert.deepEqual(nach.map((z) => [z.kind, z.a, z.l, z.bg]), [['1 von 4 fertig', '0.25', '0.25', true], [null, '', '', false]], 'nur Block eins bekommt Zähler und Balken');
+      assert.deepEqual(nach.map((z) => [z.kind, z.a, z.l, z.bg]), [['1 von 4 fertig', '0.25', '0.25', true], ['1 von 2 fertig', '0.5', '0', true]], 'Block eins bekommt Zähler und Balken, Block zwei bleibt');
       const vb = await page.$eval('#vbBuehne .flyer-host', (h) => h.shadowRoot.querySelector('[data-zaehler] > .zaehler').textContent);
       assert.equal(vb, '1 von 4 fertig');
-      // Export: Zähler-Span und Variablen im Block eins, Markierungen gleich, Block zwei unverändert
+      // Export (unverändert): Zähler-Span und Variablen nur im Block eins (eigene Änderung), Block zwei wie im Paket
       const ex = await page.evaluate(() => {
         const e = window.AetherFlyerAenderungen.exportPaket(null);
         // F3a: Export im Format v2 – die Seite steht in Version 1.1
@@ -1082,7 +1086,8 @@ describe('Flyer bearbeiten: Zähler wie im echten Paket', () => {
         await page.evaluate((k) => window.AetherFlyerAenderungen.original('P1', 'status', k).then(() => window.AetherFlyerAnsicht.aktualisiere('P1')), k);
       }
       await ruhe(page);
-      assert.deepEqual((await zaehler()).map((z) => z.html), vorher.map((z) => z.html), 'nach „Original“ wie im Paket');
+      assert.deepEqual((await zaehler()).map((z) => z.html), vorher.map((z) => z.html), 'nach „Original“ wie beim ersten Darstellen');
+      assert.equal((await zaehler())[0].html, '<h3 data-zaehler=""><ae-t data-t="t1">Platzhalter-Block eins</ae-t></h3>', 'Block eins wieder ohne Zähler');
       assert.deepEqual(log.errors, []);
     });
   });
