@@ -2,7 +2,8 @@
 // Stand-Datum (data-stand) je Dokument liegen als Einträge über dem zuletzt übernommenen Paket (Basis, bleibt
 // unverändert). Dargestellt wird immer Basis + Änderungsschicht (anwenden, über optionen.anpassen der Ansicht), danach
 // werden die Zähler und Balken jedes Blocks neu berechnet (zaehlerBerechnen, Regel wie im echten Paket: Zähler
-// <span class="zaehler"> im data-zaehler-Element, --anteil = ok/y, --anteil-laeuft = run/y).
+// <span class="zaehler"> im data-zaehler-Element, --anteil = ok/y, --anteil-laeuft = run/y) – in der Darstellung in
+// jedem Block, in dem ein Listenpunkt einen Status hat, im Export wie bisher nur nach eigener Status-Änderung.
 // Eintrag: { dok, k, art:'text'|'status'|'stand', alt, neu, exportiert, zeit } – alt = Wert der Basis beim Anlegen
 // (bzw. nach dem Abgleich), neu = eigener Wert, exportiert = Wert beim letzten Export (sonst null), zeit = ISO-Zeit.
 // Im Speicher kommt konflikt hinzu (null oder { online } bzw. { fehlt:true }): offener Konflikt aus dem Abgleich.
@@ -290,10 +291,15 @@
   // Für jeden Block mit Zähler (data-zaehler): y = Listenpunkte (data-s) im Block, x = davon data-status="ok";
   // --anteil = x/y und --anteil-laeuft = run/y (Regel des Pakets: Das Paket-CSS zeichnet „läuft“ von --anteil bis
   // --anteil + --anteil-laeuft), y = 0 → 0. Der Text „x von y fertig“ kommt in den vorhandenen Zähler (siehe zaehlerText).
-  // Hat das Zähler-Element noch keinen Zähler (Überschrift wie im echten Paket), legt anwenden ihn nur an, wenn ein
-  // Listenpunkt des Blocks einen eigenen Status hat (opt.aktiv): <span class="zaehler"> als letztes Kind – so bleibt ein
-  // unverändertes Paket bitgenau, wie es ist. Die Variablen stehen am Zähler-Element; bei Blöcken mit Wert (Zähler
-  // außerhalb) zusätzlich an den Block-Elementen. Vorhandene Deklarationen im style-Attribut im Block werden ersetzt.
+  // Hat das Zähler-Element noch keinen Zähler (Überschrift wie im echten Paket), legt anwenden ihn als
+  // <span class="zaehler"> (letztes Kind) an:
+  //  - Darstellung (Kachel, Vollbild, Druck/PDF, „Alle als PDF“, Bild): sobald mindestens ein Listenpunkt des Blocks
+  //    einen Status hat (data-status ok/run/next/plan – aus dem Paket oder aus der Änderungsschicht). Blöcke ganz ohne
+  //    Status bekommen keinen Zähler (nirgends „0 von y fertig“).
+  //  - Export (nurVorhandene): unverändert nur, wenn ein Listenpunkt des Blocks einen eigenen Status hat (opt.aktiv) –
+  //    so bleibt ein unverändertes Paket im Export bitgenau, wie es ist.
+  // Die Variablen stehen am Zähler-Element; bei Blöcken mit Wert (Zähler außerhalb) zusätzlich an den Block-Elementen.
+  // Vorhandene Deklarationen im style-Attribut im Block werden ersetzt.
   // nurVorhandene (Export): an Block-Elementen nur vorhandene Werte ersetzen, nichts hinzufügen.
   function zaehlerBerechnen(wurzel, opt) {
     const nurVorhandene = !!(opt && opt.nurVorhandene);
@@ -307,16 +313,17 @@
         if (b.hasAttribute('data-s')) punkte.add(b);
         for (const p of b.querySelectorAll('[data-s]')) punkte.add(p);
       }
-      let ok = 0, run = 0, eigen = false;
+      let ok = 0, run = 0, eigen = false, mitStatus = false;
       for (const p of punkte) {
         const st = p.getAttribute('data-status');
         if (st === 'ok') ok++; else if (st === 'run') run++;
+        if (STATUS.indexOf(st) >= 0) mitStatus = true;
         if (aktiv && aktiv.has(p)) eigen = true;
       }
       const y = punkte.size;
       const a = zahl(y ? ok / y : 0), l = zahl(y ? run / y : 0);
       let art = zaehlerText(z, ok, y);
-      if (!art && eigen) {
+      if (!art && (nurVorhandene ? eigen : mitStatus)) {
         const sp = z.ownerDocument.createElement('span');
         sp.className = 'zaehler';
         sp.textContent = ok + ' von ' + y + ' fertig';
@@ -554,17 +561,54 @@
     }
     return aus;
   }
-  function abgleichen(paketR) {
-    if (!eintraege.size) return Promise.resolve({ entfallen: 0, behalten: 0, konflikte: 0, doks: [] });
+  // Abgleich rechnen, ohne den Stand zu ändern (Abgleich in einem Schritt: flyer.js speichert die angeglichene Schicht
+  // zusammen mit der neuen Basis in EINER Transaktion und übernimmt sie erst danach).
+  // → { ergebnis, stand, uebernehmen(gespeichert) } – stand = zu speichernde Schicht { eintraege, exporte } oder null
+  // (nichts geändert); uebernehmen setzt den neuen Stand im Speicher und meldet ihn (gespeichert: Ergebnis des Speicherns).
+  function abgleichPlanen(paketR) {
+    const leer = { entfallen: 0, behalten: 0, konflikte: 0, doks: [] };
+    if (!eintraege.size) return { ergebnis: leer, stand: null, uebernehmen: () => {} };
     const aus = abgleichRechnen(paketR, liste());
+    const alt = new Map(eintraege);
     const vorher = JSON.stringify(liste().map(kopie));
-    eintraege.clear();
-    for (const n of aus.neu) eintraege.set(sk(n), n);
-    // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
-    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
-    const ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
-    if (JSON.stringify(liste().map(kopie)) === vorher) return Promise.resolve(ergebnis);
-    return speichern().then(() => { melde({ doks: ergebnis.doks, abgleich: true }); return ergebnis; });
+    let neu, ergebnis, geaendert;
+    try {
+      eintraege.clear();
+      for (const n of aus.neu) eintraege.set(sk(n), n);
+      // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
+      for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+      ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
+      neu = new Map(eintraege);
+      geaendert = JSON.stringify(liste().map(kopie)) !== vorher;
+    } finally {
+      // bis zum Speichern gilt der alte Stand
+      eintraege.clear();
+      for (const [k, v] of alt) eintraege.set(k, v);
+    }
+    return {
+      ergebnis: ergebnis,
+      stand: geaendert ? { eintraege: Array.from(neu.values()).map(kopie), exporte: exporte.slice() } : null,
+      uebernehmen: (gespeichert) => {
+        if (!geaendert) return;
+        eintraege.clear();
+        for (const [k, v] of neu) eintraege.set(k, v);
+        gespeichertOk = gespeichert === true;
+        melde({ doks: ergebnis.doks, abgleich: true });
+      }
+    };
+  }
+  // Abgleich mit eigenem Speichern (nur die Schicht) – für Aufrufer ohne gemeinsame Transaktion
+  function abgleichen(paketR) {
+    const plan = abgleichPlanen(paketR);
+    if (!plan.stand) return Promise.resolve(plan.ergebnis);
+    plan.uebernehmen(true);
+    return speichern().then(() => plan.ergebnis);
+  }
+  // Arbeit in der Reihe der Speichervorgänge (nach allen vorigen, vor allen späteren) → Promise der Arbeit
+  function inReihe(arbeit) {
+    const auftrag = reihe.then(arbeit);
+    reihe = auftrag.catch(() => {});
+    return auftrag;
   }
   // Offene Konflikte für die Liste
   function konflikte() {
@@ -826,6 +870,8 @@
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
     abgleichen: abgleichen,
+    abgleichPlanen: abgleichPlanen,
+    inReihe: inReihe,
     konflikte: konflikte,
     entscheide: entscheide,
     exportPaket: exportPaket,

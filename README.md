@@ -166,11 +166,13 @@ ein Dashboard mit diesem Feld versteht `aether:dialog-input`. Ein Spiel schickt 
 
 | Richtung | Nachricht | Wirkung |
 |---|---|---|
-| Spiel → Dashboard | `{ type: "aether:setting", key, value }` | Speichert `value` (String) unter `key`; `value: null` löscht den Schlüssel. Keine Antwort. |
+| Spiel → Dashboard | `{ type: "aether:setting", key, value }` | Speichert `value` (String) unter `key`; `value: null` löscht den Schlüssel. Ohne `id` keine Antwort; mit `id` siehe „Speichern bestätigen“. |
+| Spiel → Dashboard | `{ type: "aether:settings", id?, items: [{ key, value }, …] }` | *Ergänzung, selbst gewählt:* mehrere Schlüssel in einer Nachricht, alle oder keiner (siehe „Speichern bestätigen“). |
 | Spiel → Dashboard | `{ type: "aether:feedback", subject, body }` | Öffnet den Feedback-Dialog. |
 | Spiel → Dashboard | `{ type: "aether:feedback-close" }` | Schließt den Dialog (z. B. Controller-Taste B). |
 | Spiel → Dashboard | `{ type: "aether:dialog-input", action }` | Controller-Bedienung des offenen Dialogs, `action` genau `"show"`, `"prev"`, `"next"` oder `"press"` (nur bei `dialogInput: true`, siehe unten). |
 | Dashboard → Spiel | `{ type: "aether:feedback-state", open: true \| false }` | Nach dem Öffnen und nach jedem Schließen des Dialogs. |
+| Dashboard → Spiel | `{ type: "aether:settings-ack", id, ok, grund, keys }` | *Ergänzung, selbst gewählt:* Antwort auf jede Speicher-Nachricht **mit** `id`. |
 
 Spiel → Dashboard per `window.parent.postMessage(nachricht, "*")`, Dashboard → Spiel per
 `iframe.contentWindow.postMessage(nachricht, "*")` (der Ursprung des iframes ist `"null"`).
@@ -197,6 +199,79 @@ Regeln:
   So beendet ein Wert wie `"</script>"` das Skript nicht vorzeitig.
 - „Token löschen“ lässt die Spiel-Einstellungen stehen. Sie enthalten keine Zugangsdaten, sondern nur Vorlieben wie
   „Boost-Knopf (Touch) anzeigen“. Wer das Token erneuert, soll sie nicht verlieren.
+
+### Speichern bestätigen (Ergänzung zu Version 1, selbst gewählt)
+
+Rückwärtskompatible Ergänzung innerhalb von Version 1 (`AETHER_HOST.version` bleibt `1`, kein neues Feld in
+`AETHER_HOST`). Namen und Felder sind **selbst gewählt**. Das heutige Spiel (aether main `cf5a485`) schickt nur
+`aether:setting` ohne `id` und merkt nichts davon: Sein einziger `message`-Listener (`web/shell.html`) nimmt nur
+`aether:feedback-state` an und verwirft alle anderen Typen, also auch `aether:settings-ack`.
+
+- **Sammel-Nachricht** `{ type: "aether:settings", id?, items: [{ key, value }, …] }`: 1 bis 64 Einträge. Gleiche
+  Regeln wie bei `aether:setting` (Schlüssel-Muster, Wert String ≤ 1024 Zeichen oder `null` = löschen). Ein späterer
+  Eintrag mit demselben Schlüssel gewinnt. Das Dashboard prüft vorher alles (Form, Grenzen, höchstens 64 Schlüssel nach
+  dem Schreiben) und schreibt dann in **einem** `localStorage.setItem`: alle oder keiner. Bei einem Fehler bleibt der
+  alte Stand.
+- **Antwort** auf jede Nachricht mit gültiger `id` (Text mit 1–64 Zeichen oder ganze Zahl), einzeln oder als Sammel-Nachricht:
+  `{ type: "aether:settings-ack", id, ok: true|false, grund, keys }`. `grund` ist bei `ok: true` `null`, sonst
+  `"voll"` (QuotaExceededError, Speicher des Browsers voll), `"grenze"` (Wert über 1024 Zeichen oder mehr als 64
+  Schlüssel), `"ungueltig"` (Schlüssel/Wert falsch geformt, `items` kein Feld mit 1–64 Einträgen), `"anderes-fenster"`
+  (dieses Fenster speichert nicht, siehe „Nur ein Fenster speichert“) oder `"fehler"` (anderer Fehler beim Schreiben).
+  `keys` = die Schlüssel der Nachricht (ohne Doppelte). Die Antwort geht an genau das Spiel-iframe, das gefragt hat.
+- **Ohne `id`** (bzw. mit ungültiger `id`) verhält sich jede Nachricht wie bisher: Es gibt keine Antwort, Falsches wird
+  stillschweigend ignoriert.
+- **Hinweis „Speichern nicht möglich“** (unabhängig davon, ob das Spiel die Antwort auswertet; auch für Nachrichten ohne
+  `id`): erscheint, wenn ein Schreiben scheitert (`voll`, `grenze`, `fehler`; nicht bei `ungueltig`). Lage unten
+  mittig über dem Spiel, bis 600 px breit, 34 px über dem unteren Rand (plus sicherer Bereich). Dunkler Grund `#1a1426`,
+  links 6 px rot `#e0393e`, rundes rotes „!“, Titel „Speichern nicht möglich“, Zeile mit dem Grund (z. B. „Speicher des
+  Browsers voll. Änderungen gelten nur bis zum Schließen.“), Knöpfe „Details“ und „×“ (je ≥ 44 px). Der Hinweis bleibt
+  stehen, bis „×“ oder „Details“ getippt wird. „Details“ zeigt den Grund, die betroffenen Schlüssel ohne `aether.`
+  (z. B. „ownWorld.2 – Speicher voll“) und „Erneut versuchen“, solange es zurückgehaltene Werte gibt (bei „Grenze“
+  hilft Wiederholen nicht). Gescheiterte Werte hält das Dashboard zurück. „Erneut versuchen“ und jedes spätere
+  Schreiben schreiben sie mit (alle oder keiner). Mehrere Fehler kurz hintereinander ergeben **einen** Hinweis, die
+  Liste wächst.
+- **„Wieder gespeichert“**: Gelingt ein Schreiben nach einem Fehler, erscheint kurz „Wieder gespeichert – Alle
+  Änderungen gesichert.“ (links grün `#3cc47a`, ✓, bis 380 px). Er verschwindet nach 3 s. Normales erfolgreiches
+  Speichern zeigt nichts.
+- Bedienung: Touch, Maus und Tastatur. Esc = ×, Enter = Details, solange der Fokus im Hinweis oder auf keinem Element
+  liegt. Im Spiel-iframe gehören die Tasten dem Spiel, Tab bzw. Antippen erreicht den Hinweis. Der Hinweis holt nie den
+  Fokus, pausiert das Spiel nicht und nimmt außerhalb seiner Fläche keine Eingaben an. Nach „×“ per Tastatur geht der
+  Fokus zurück ins Spiel.
+- Beendet man das Spiel, verfallen zurückgehaltene Werte („gelten nur bis zum Schließen“), und der Hinweis verschwindet.
+
+### Nur ein Fenster speichert
+
+Ist die Seite mit dem Spiel (`index.html`) in mehreren Fenstern oder Tabs **desselben Browsers** offen, speichert
+immer nur eines:
+
+- **Web Locks API** (`navigator.locks`, Sperre `aether-dashboard-spiel`, selbst gewählt): Beim Öffnen fragt die Seite
+  mit `ifAvailable`. Bekommt sie die Sperre, hält sie sie bis zum Schließen und lädt den Spielrahmen wie bisher.
+  Gemessen in Headless Chromium: Sperre nach ca. 9 ms, kein merkbarer Unterschied beim Start. Bekommt sie die Sperre
+  nicht, lädt sie **keinen** Spielrahmen und schreibt nichts. Eine Speicher-Nachricht bekäme dort die Antwort `ok: false`,
+  `grund: "anderes-fenster"`.
+- **Ersatzweg** ohne Web Locks: `BroadcastChannel` mit demselben Namen. Ein neues Fenster fragt „wer spielt?“ und wartet
+  150 ms auf Antwort. Gibt es weder Web Locks noch BroadcastChannel, speichert jedes Fenster wie bisher.
+- **Tafel** im Fenster ohne Speicherrecht: mittig über abgedunkeltem Hintergrund (`rgba(5,6,14,0.72)`), bis 600 px
+  breit, Grund `#121731`, Rand `#3a4170`, Ecken 20 px. Titel „Aether läuft schon in einem anderen Fenster“, Text „Damit
+  nichts verloren geht, speichert immer nur ein Fenster. Hier ist das Spiel angehalten.“, Knöpfe „Hier weiterspielen“
+  (violett `#8b7cf6`, hat den Fokus) und „Fenster schließen“, dazu der Hinweis „„Hier weiterspielen“ hält das andere
+  Fenster an; dort erscheint dieselbe Tafel mit „Hier weiterspielen“.“. Die übrige Seite ist solange `inert`.
+- **„Hier weiterspielen“** (auch Enter) übernimmt die Sperre mit `steal: true` (Ersatzweg: Nachricht „übernehme“).
+  Dieses Fenster lädt den Spielrahmen neu (Knopf „Spielen“ in der Build-Liste). Das andere Fenster bekommt einen
+  `AbortError`, bricht ein laufendes Laden ab, entlädt sein Spiel (iframe entfernt, Vollbild beendet) und zeigt
+  dieselbe Tafel.
+- **„Fenster schließen“** ruft `window.close()`. Browser schließen so nur Fenster, die ein Skript geöffnet hat. Sonst
+  (normaler Tab, Home-Bildschirm-App) erscheint in der Tafel: „Der Browser lässt dieses Fenster nicht per Knopf
+  schließen. Bitte den Tab bzw. die App selbst schließen – oder „Hier weiterspielen“ tippen.“
+- Nur lesend für Diagnose und Tests: `window.__aetherFenster` mit `zustand` (`pruefe` | `halter` | `wartet` |
+  `uebernimmt`), `weg` (`locks` | `kanal` | `keiner`), `startMs`, `bereitMs`, `rahmenMs` und `speicherSchutz`.
+
+### Speicher-Schutz
+
+Beim Öffnen von `index.html` fragt die Seite einmal `navigator.storage.persisted()` und, falls noch nicht dauerhaft,
+`navigator.storage.persist()` (nur wenn vorhanden; fehlt die API, passiert nichts). Es gibt keine Anzeige, weil das
+Dashboard keine Diagnose-Stelle hat. Das Ergebnis steht nur intern (`ja` | `nein` | `unbekannt`, lesbar über
+`window.__aetherFenster.speicherSchutz`).
 
 ### Feedback-Dialog
 
@@ -962,9 +1037,14 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   mit `data-block` um die Überschrift `data-zaehler` (im Paket Attribute ohne Wert; mit Wert gehören alle Elemente mit
   diesem `data-block`-Wert zum Block). y = Listenpunkte (`data-s`) im Block, x = davon `ok`. Der Zähler ist ein
   `<span class="zaehler">x von y fertig</span>` als letztes Kind des `data-zaehler`-Elements – das Paket-CSS zeigt den
-  Balken nur mit `[data-zaehler]:has(> .zaehler)`. Er wird angelegt, sobald ein Listenpunkt des Blocks einen eigenen
-  Status hat (und entfällt mit „Original“); steht er schon im Paket (z. B. nach Export und Import), wird er immer neu
-  berechnet. Ein unverändertes Paket bleibt so bitgenau, wie es ist (am echten Paket geprüft: 38 Dokumente, 51 Blöcke).
+  Balken nur mit `[data-zaehler]:has(> .zaehler)`. **Darstellung** (Kachel, Vollbild, Druck/PDF, „Alle als PDF“, Bild):
+  Der Zähler wird sofort angelegt, sobald mindestens ein Listenpunkt des Blocks einen Status hat (`ok`, `run`, `next`
+  oder `plan`, aus dem Paket oder aus der Änderungsschicht). Blöcke ganz ohne Status bekommen keinen Zähler, nirgends
+  steht dort „0 von y fertig“. **Export**: unverändert, der Zähler wird nur angelegt, wenn ein Listenpunkt des Blocks
+  einen eigenen Status hat (Änderungsschicht). Ein unverändertes Paket wird also bitgenau exportiert. Steht der Zähler
+  schon im Paket (z. B. nach Export und Import), wird er immer neu berechnet. Am echten Paket (38 Dokumente, 51 Blöcke)
+  zeigen so 2 Blöcke einen Zähler (beide in IG-Technik-2), vorher 0. 48 der 50 Status-Punkte liegen außerhalb von
+  Blöcken.
   `--anteil` = x/y und `--anteil-laeuft` = run/y (auf vier Nachkommastellen, y = 0 → 0) stehen am Zähler-Element; das
   Paket-CSS zeichnet „läuft“ von `--anteil` bis `--anteil` + `--anteil-laeuft`. Eine vorhandene Stelle „x von y“ im Text
   eines Zählers wird ebenso ersetzt, ein leeres Zähler-Element bekommt „x von y fertig“; eine Überschrift mit eigenem
@@ -995,6 +1075,12 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   Online-Wert, je Konflikt „Meins behalten“ (Eintrag bleibt, alt := r) oder „Online übernehmen“ (Eintrag entfällt). Bis
   zur Entscheidung gilt der eigene Wert. Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg. Texte,
   Status und Stand werden je Version abgeglichen.
+  **In einem Schritt:** Ändert der Abgleich die Schicht, speichert die Seite die angeglichene Schicht und die neue Basis
+  in **einer** IndexedDB-Transaktion über `basis` und `aenderungen` (`AetherFlyerSpeicher.speichereBasisUndAenderungen`,
+  in der Reihe der Schicht-Speichervorgänge). Scheitert sie, bleiben beide gespeichert und auf der Seite auf dem alten
+  Stand, und die Übernahme meldet „Speichern fehlgeschlagen. … Es wurde nichts übernommen; das bisherige Paket bleibt.“
+  (derselbe Fehlerweg wie bei einem fehlerhaften Paket). Ohne IndexedDB läuft die Seite wie bisher nur ohne
+  Offline-Speicher. Ändert der Abgleich die Schicht nicht, wird wie bisher nur die Basis gespeichert.
 - **Abgleich der Struktur (F3a):** Versionen, Ordner und Seiten (Dasein, Name/Titel, Beschreibung, Eltern, Ordner,
   Ausblenden, HTML) werden je Feld mit drei Ständen verglichen – Basis, lokal, online: lokal = online →
   fertig; lokal = Basis → online wird übernommen; online = Basis → lokal bleibt; sonst Konflikt (bis zur Wahl gilt lokal).
@@ -1462,6 +1548,27 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   ein Druck löscht genau ein Zeichen, eine gehaltene Taste mehrere; keine Navigation, kein neuer Verlaufseintrag,
   kein Ansichtswechsel, Dialog unberührt, das Dashboard fängt die Taste nicht ab (`defaultPrevented` bleibt aus,
   auch ohne Fokus im Feld). Gegenprobe (muss rot werden): Backspace-Zweig greift auch ohne offenen Dialog.
+- `tests/speichern.test.js` – Speichern bestätigen, Nur ein Fenster speichert, Speicher-Schutz (Headless Chromium,
+  Test-Spiel): a) Sammel-Nachricht alle bzw. keiner (Wert > 1024, mehr als 64 Schlüssel, genau 64, `null` löscht),
+  `ungueltig` ohne Hinweis, Einzel-Nachricht mit `id`; b) ohne `id` keine Antwort, ungültige `id` = ohne `id`;
+  c) QuotaExceededError → Antwort `voll`, ein Hinweis bei zwei Fehlern, Spiel behält den Fokus, Details mit
+  Schlüsseln, „Erneut versuchen“ noch voll (bleibt rot) bzw. nach Freigabe → grün, weg nach ca. 3 s; nächstes
+  Schreiben aus dem Spiel schreibt Zurückgehaltenes mit; Tastatur (Enter/Esc, im Spiel nicht), `fehler`;
+  d) Erfolg ohne Hinweis; Layout des Hinweises in 1024 × 768, 1366 × 1024, 844 × 390 (mit Details, Knöpfe ≥ 44 px,
+  34 px unten); e) zwei Seiten im selben Kontext: zweite mit Tafel ohne Spielrahmen, Farben/Texte, nur eine schreibt
+  (Zählung von `setItem`), `anderes-fenster`, „Hier weiterspielen“ (Klick und Enter) wechselt hin und zurück,
+  „Fenster schließen“ (Skript-Fenster schließt, Tab mit Verlauf zeigt den Hinweis), Ersatzweg BroadcastChannel;
+  f) ein Fenster: Sperre < 50 ms, Rahmen wie bisher; Layout der Tafel in den drei Größen; g) `persist()` (frei,
+  abgelehnt, schon dauerhaft, Fehler, API fehlt). Test-Schalter `AETHER_TEST_SPEICHER` (nur Tests) gibt
+  `window.__aetherSpeicherTest(msg)` frei. Gegenproben (müssen rot werden): `writeGameSettings` verschluckt den
+  Fehler → c) rot; `darfSpeichern()` immer `true` → e) rot.
+- `tests/flyer-zaehler.test.js` – h) Zähler mit Platzhalter-Paket: Block mit Status (Paket) → Zähler schon beim ersten
+  Darstellen in Kachel, Vollbild, Druck, „Alle als PDF“ und Bild (Markup des SVG-Bildes), ohne Status kein Zähler,
+  x/y, `--anteil`, `--anteil-laeuft` (vier Nachkommastellen), „0 von 2“ nur im Block mit Status; Status aus der
+  Änderungsschicht, wieder entfernt → kein Zähler; Export unverändert; i) Abgleich mit erzwungenem Fehler (`put` auf
+  `basis` wirft): Basis und Schicht unverändert (IndexedDB, Seite, nach Neuladen), Fehlerweg; ohne Fehler beides
+  neu. Gegenproben: alte Regel (`eigen` statt Status) → h) rot; alter Ablauf in `flyer.js` (Schicht zuerst, Basis
+  getrennt) → i) rot bei „Schicht unverändert“.
 - `tests/start-frame.test.js` – Spielstart im Rahmen (Headless Chromium): Tipp im Rahmen startet, Dokument
   (Kennung `doc`) und iframe-Element vor und nach dem Start dieselben, kein erneutes Laden, Attribute unverändert;
   Nachrichten aus falscher Quelle (Seite, Klon-iframe, alter Start-Rahmen) starten nichts; Build-Wechsel und Beenden

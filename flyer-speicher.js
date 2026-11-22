@@ -161,6 +161,29 @@
   function vorgang(store, modus, arbeit) {
     return mitZeitlimit(ausfuehren(store, modus, arbeit, true), ZEIT_VORGANG_MS, { ok: false });
   }
+  // Schreib-Transaktion über mehrere Stores: arbeit(tx) legt alle Anfragen an; alles oder nichts (Fehler einer
+  // Anfrage oder Ausnahme in arbeit bricht die ganze Transaktion ab). → { ok:Boolean } | null (keine Datenbank/Stores)
+  async function ausfuehrenMehrere(stores, arbeit, nochmal) {
+    var p = datenbank();
+    var db = await p;
+    if (!db || stores.some(function (n) { return !db.objectStoreNames.contains(n); })) return null;
+    var tx;
+    try {
+      tx = db.transaction(stores, 'readwrite', { durability: 'strict' });
+    } catch (e) {
+      vergiss(p);
+      try { db.close(); } catch (e2) { /* egal */ }
+      return nochmal ? ausfuehrenMehrere(stores, arbeit, false) : { ok: false };
+    }
+    return new Promise(function (resolve) {
+      tx.oncomplete = function () { resolve({ ok: true }); };
+      tx.onabort = function () { resolve({ ok: false }); };
+      try { arbeit(tx); } catch (e) {
+        try { tx.abort(); } catch (e2) { /* schon beendet */ }
+        resolve({ ok: false });
+      }
+    });
+  }
 
   function istObjekt(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
   function textOderNull(v) { return typeof v === 'string' && v ? v : null; }
@@ -178,16 +201,21 @@
     } catch (e) { return null; }
   }
 
+  // Basis-Eintrag mit nur den bekannten Feldern (null bei falschem Typ)
+  function basisEintrag(e) {
+    if (!istObjekt(e) || !istObjekt(e.paket)) return null;
+    return {
+      paket: e.paket,
+      quelle: typeof e.quelle === 'string' ? e.quelle : '',
+      sha: textOderNull(e.sha),
+      uebernommen: textOderNull(e.uebernommen) || jetztIso()
+    };
+  }
   // e = { paket, quelle:'online'|'import', sha, uebernommen } → true|false. Ersetzt die vorige Basis.
   async function speichereBasis(e) {
     try {
-      if (!istObjekt(e) || !istObjekt(e.paket)) return false;
-      var eintrag = {
-        paket: e.paket,
-        quelle: typeof e.quelle === 'string' ? e.quelle : '',
-        sha: textOderNull(e.sha),
-        uebernommen: textOderNull(e.uebernommen) || jetztIso()
-      };
+      var eintrag = basisEintrag(e);
+      if (!eintrag) return false;
       var r = await vorgang('basis', 'readwrite', function (s) { return s.put(eintrag, SCHLUESSEL_BASIS); });
       return r.ok === true;
     } catch (err) { return false; }
@@ -263,21 +291,46 @@
     } catch (e) { return null; }
   }
 
+  // Änderungsschicht bereinigen → { eintraege, exporte } | null
+  function schichtSauber(stand) {
+    if (!istObjekt(stand) || !Array.isArray(stand.eintraege)) return null;
+    return {
+      eintraege: stand.eintraege.map(eintragSauber).filter(Boolean),
+      exporte: (Array.isArray(stand.exporte) ? stand.exporte : []).filter(function (f) { return typeof f === 'string' && f; })
+    };
+  }
+  // Ganze Schicht in den Store schreiben (in einer laufenden Transaktion) → letzte Anfrage
+  function schichtSchreiben(s, sauber) {
+    s.clear();
+    sauber.eintraege.forEach(function (e) { s.put(e, eintragSchluessel(e)); });
+    return s.put({ exporte: sauber.exporte }, SCHLUESSEL_META);
+  }
   // Ersetzt die ganze Änderungsschicht in einer Transaktion (alles oder nichts) → true|false.
   // stand = { eintraege: [...], exporte: [...] }
   async function speichereAenderungen(stand) {
     try {
-      if (!istObjekt(stand) || !Array.isArray(stand.eintraege)) return false;
-      var eintraege = stand.eintraege.map(eintragSauber).filter(Boolean);
-      var exporte = (Array.isArray(stand.exporte) ? stand.exporte : []).filter(function (f) { return typeof f === 'string' && f; });
+      var sauber = schichtSauber(stand);
+      if (!sauber) return false;
       var db = await datenbank();
       if (!db || !db.objectStoreNames.contains(STORE_AENDERUNGEN)) return false;
-      var r = await vorgang(STORE_AENDERUNGEN, 'readwrite', function (s) {
-        s.clear();
-        eintraege.forEach(function (e) { s.put(e, eintragSchluessel(e)); });
-        return s.put({ exporte: exporte }, SCHLUESSEL_META);
-      });
+      var r = await vorgang(STORE_AENDERUNGEN, 'readwrite', function (s) { return schichtSchreiben(s, sauber); });
       return r.ok === true;
+    } catch (err) { return false; }
+  }
+
+  // Abgleich in einem Schritt: neue Basis und angeglichene Änderungsschicht in EINER Transaktion über die Stores
+  // „basis“ und „aenderungen“ – scheitert sie, bleiben beide auf dem alten Stand.
+  // → true (beides gespeichert) | false (Transaktion gescheitert, nichts geändert) | null (kein IndexedDB bzw. Stores
+  // fehlen: die Seite läuft dann wie bisher ohne Offline-Speicher)
+  async function speichereBasisUndAenderungen(basis, stand) {
+    try {
+      var eintrag = basisEintrag(basis), sauber = schichtSauber(stand);
+      if (!eintrag || !sauber) return false;
+      var r = await mitZeitlimit(ausfuehrenMehrere(['basis', STORE_AENDERUNGEN], function (tx) {
+        tx.objectStore('basis').put(eintrag, SCHLUESSEL_BASIS);
+        schichtSchreiben(tx.objectStore(STORE_AENDERUNGEN), sauber);
+      }, true), ZEIT_VORGANG_MS, { ok: false });
+      return r === null ? null : r.ok === true;
     } catch (err) { return false; }
   }
 
@@ -465,6 +518,7 @@
     speichereOnline: speichereOnline,
     ladeAenderungen: ladeAenderungen,
     speichereAenderungen: speichereAenderungen,
+    speichereBasisUndAenderungen: speichereBasisUndAenderungen,
     ladeStruktur: ladeStruktur,
     speichereStruktur: speichereStruktur,
     ladeGeraet: ladeGeraet,

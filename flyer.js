@@ -177,9 +177,12 @@
     if (opt.nurWennLeer === true && basis && basis.paket) return 'schonDa';
     // Teil E: Struktur abgleichen (Basis, lokal, neu – je Feld), bevor die Änderungsschicht abgleicht
     const zusammen = basisV2 ? strukturAbgleich(neuV2) : null;
-    // Teil 2: Änderungsschicht genau einmal mit dem neuen Stand abgleichen (Konflikte zeigt flyer-bearbeiten.js)
-    if (AE) { AE.sperre(true); try { await AE.abgleichen(zusammen ? zusammen.paket : neuV2); } catch (e) { /* Schicht bleibt, wie sie war */ } }
-    try { return await basisWechseln(paket, neuV2, opt, zusammen); } finally { if (AE) AE.sperre(false); }
+    // Teil 2: Änderungsschicht genau einmal mit dem neuen Stand abgleichen (Konflikte zeigt flyer-bearbeiten.js).
+    // Abgleich in einem Schritt: hier nur rechnen; gespeichert wird die angeglichene Schicht zusammen mit der neuen
+    // Basis in basisWechseln (eine Transaktion).
+    let plan = null;
+    if (AE) { AE.sperre(true); try { plan = AE.abgleichPlanen(zusammen ? zusammen.paket : neuV2); } catch (e) { plan = null; /* Schicht bleibt, wie sie war */ } }
+    try { return await basisWechseln(paket, neuV2, opt, zusammen, plan); } finally { if (AE) AE.sperre(false); }
   }
   // Teil E: Struktur der neuen Fassung R mit dem lokalen Stand L zusammenführen (Bezug: bisherige Basis B). Wirft, wenn
   // das Ergebnis kein gültiges Paket ist (dann bleibt alles, wie es war). → { paket, konflikte, alte }
@@ -204,7 +207,14 @@
     });
     return { paket: pk, konflikte: r.konflikte, alte: alte, bericht: bericht };
   }
-  async function basisWechseln(paket, neuV2, opt, zusammen) {
+  // Neue Basis und angeglichene Änderungsschicht (plan.stand) gemeinsam speichern: eine IndexedDB-Transaktion über beide
+  // Stores, in der Reihe der Schicht-Speichervorgänge. → true | false (gescheitert, nichts geändert) | null (kein Speicher)
+  async function speichereBasisUndSchicht(eintrag, plan) {
+    if (!S || typeof S.speichereBasisUndAenderungen !== 'function') return null;
+    const arbeit = () => S.speichereBasisUndAenderungen(eintrag, plan.stand);
+    try { return await (AE && typeof AE.inReihe === 'function' ? AE.inReihe(arbeit) : arbeit()); } catch (e) { return false; }
+  }
+  async function basisWechseln(paket, neuV2, opt, zusammen, plan) {
     const vorher = effektiv();
     const eintrag = {
       paket: paket,
@@ -212,7 +222,18 @@
       sha: typeof opt.sha === 'string' && opt.sha ? opt.sha : null,
       uebernommen: new Date().toISOString()
     };
-    const ok = await speichereBasis(eintrag);
+    let ok;
+    if (plan && plan.stand) {
+      const r = await speichereBasisUndSchicht(eintrag, plan);
+      // Gescheitert: Basis und Schicht bleiben (gespeichert und auf der Seite) auf dem alten Stand → Fehlerweg der Übernahme
+      if (r === false) {
+        throw new G.AppError('speichern', 'Speichern fehlgeschlagen.', 'Die neue Fassung und die angeglichenen Änderungen ließen sich nicht gemeinsam speichern. Es wurde nichts übernommen; das bisherige Paket bleibt.');
+      }
+      ok = r === true;
+      plan.uebernehmen(ok);
+    } else {
+      ok = await speichereBasis(eintrag);
+    }
     basis = eintrag;
     basisV2 = neuV2;
     gesichert = ok;
