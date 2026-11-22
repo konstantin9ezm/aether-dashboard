@@ -561,17 +561,54 @@
     }
     return aus;
   }
-  function abgleichen(paketR) {
-    if (!eintraege.size) return Promise.resolve({ entfallen: 0, behalten: 0, konflikte: 0, doks: [] });
+  // Abgleich rechnen, ohne den Stand zu ändern (Abgleich in einem Schritt: flyer.js speichert die angeglichene Schicht
+  // zusammen mit der neuen Basis in EINER Transaktion und übernimmt sie erst danach).
+  // → { ergebnis, stand, uebernehmen(gespeichert) } – stand = zu speichernde Schicht { eintraege, exporte } oder null
+  // (nichts geändert); uebernehmen setzt den neuen Stand im Speicher und meldet ihn (gespeichert: Ergebnis des Speicherns).
+  function abgleichPlanen(paketR) {
+    const leer = { entfallen: 0, behalten: 0, konflikte: 0, doks: [] };
+    if (!eintraege.size) return { ergebnis: leer, stand: null, uebernehmen: () => {} };
     const aus = abgleichRechnen(paketR, liste());
+    const alt = new Map(eintraege);
     const vorher = JSON.stringify(liste().map(kopie));
-    eintraege.clear();
-    for (const n of aus.neu) eintraege.set(sk(n), n);
-    // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
-    for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
-    const ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
-    if (JSON.stringify(liste().map(kopie)) === vorher) return Promise.resolve(ergebnis);
-    return speichern().then(() => { melde({ doks: ergebnis.doks, abgleich: true }); return ergebnis; });
+    let neu, ergebnis, geaendert;
+    try {
+      eintraege.clear();
+      for (const n of aus.neu) eintraege.set(sk(n), n);
+      // Stand-Einträge ohne verbleibende Änderung im Dokument fallen weg
+      for (const e of liste()) if (e.art === 'stand' && !hatAenderungen(e.dok, e.ver)) { eintraege.delete(sk(e)); aus.doks.add(e.dok); }
+      ergebnis = { entfallen: aus.entfallen, behalten: aus.behalten, konflikte: konflikte().length, doks: Array.from(aus.doks) };
+      neu = new Map(eintraege);
+      geaendert = JSON.stringify(liste().map(kopie)) !== vorher;
+    } finally {
+      // bis zum Speichern gilt der alte Stand
+      eintraege.clear();
+      for (const [k, v] of alt) eintraege.set(k, v);
+    }
+    return {
+      ergebnis: ergebnis,
+      stand: geaendert ? { eintraege: Array.from(neu.values()).map(kopie), exporte: exporte.slice() } : null,
+      uebernehmen: (gespeichert) => {
+        if (!geaendert) return;
+        eintraege.clear();
+        for (const [k, v] of neu) eintraege.set(k, v);
+        gespeichertOk = gespeichert === true;
+        melde({ doks: ergebnis.doks, abgleich: true });
+      }
+    };
+  }
+  // Abgleich mit eigenem Speichern (nur die Schicht) – für Aufrufer ohne gemeinsame Transaktion
+  function abgleichen(paketR) {
+    const plan = abgleichPlanen(paketR);
+    if (!plan.stand) return Promise.resolve(plan.ergebnis);
+    plan.uebernehmen(true);
+    return speichern().then(() => plan.ergebnis);
+  }
+  // Arbeit in der Reihe der Speichervorgänge (nach allen vorigen, vor allen späteren) → Promise der Arbeit
+  function inReihe(arbeit) {
+    const auftrag = reihe.then(arbeit);
+    reihe = auftrag.catch(() => {});
+    return auftrag;
   }
   // Offene Konflikte für die Liste
   function konflikte() {
@@ -833,6 +870,8 @@
     aktuellerWert: aktuellerWert,
     // Abgleich, Export, Sicherung
     abgleichen: abgleichen,
+    abgleichPlanen: abgleichPlanen,
+    inReihe: inReihe,
     konflikte: konflikte,
     entscheide: entscheide,
     exportPaket: exportPaket,
