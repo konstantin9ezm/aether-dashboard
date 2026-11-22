@@ -302,6 +302,45 @@
   }
   #gameToast.error { border-color: #5b2630; color: #fecaca; }
 
+  /* Hinweis „Speichern nicht möglich“ (Teil Speichern bestätigen): unten mittig über dem Spiel. Nur die Fläche
+     selbst nimmt Eingaben an; das Spiel läuft weiter und behält den Fokus (der Hinweis holt ihn nie). */
+  #saveHint {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(34px + var(--safe-b));
+    width: min(600px, calc(100% - 24px));
+    max-height: calc(100% - 68px - var(--safe-b) - var(--safe-t));
+    overflow: auto;
+    padding: 10px 10px 10px 14px; border-radius: 14px;
+    background: #1a1426; border: 1px solid #3a2d4f; border-left: 6px solid #e0393e;
+    box-shadow: 0 10px 32px rgba(0,0,0,.5);
+    color: #f3eefc; z-index: 5;
+    touch-action: manipulation;
+  }
+  #saveHint.ok { width: min(380px, calc(100% - 24px)); border-left-color: #3cc47a; }
+  #saveHint .sh-row { display: flex; align-items: center; gap: 12px; }
+  #saveHint .sh-icon {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #e0393e; color: #fff; font-weight: 800; font-size: 18px; line-height: 1;
+  }
+  #saveHint.ok .sh-icon { background: #3cc47a; }
+  #saveHint .sh-text { flex: 1 1 auto; min-width: 0; }
+  #saveHint .sh-title { font-weight: 700; font-size: 15px; line-height: 1.3; }
+  #saveHint .sh-grund { font-size: 14px; line-height: 1.35; color: #d9d0ea; overflow-wrap: anywhere; }
+  #saveHint .sh-btn {
+    flex: none; min-width: 44px; min-height: 44px; padding: 0 14px; border-radius: 10px;
+    border: 1px solid #4a3d63; background: #261d36; color: #f3eefc; font-weight: 600; cursor: pointer;
+    touch-action: manipulation;
+  }
+  #saveHint .sh-x { padding: 0; width: 44px; font-size: 22px; line-height: 1; }
+  #saveHint .sh-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #saveHint.ok .sh-btn, #saveHint.ok .sh-more { display: none; }
+  #saveHint .sh-more { margin: 8px 0 0 42px; font-size: 14px; }
+  #saveHint .sh-more ul { margin: 0 0 8px; padding-left: 18px; max-height: 120px; overflow: auto; }
+  #saveHint .sh-more li { overflow-wrap: anywhere; }
+  #saveHint .sh-more p { margin: 0 0 8px; color: #d9d0ea; }
+
+
   /* Feedback-Dialog (über dem laufenden Spiel; das X bleibt darüber erreichbar) */
   #feedback {
     position: absolute; inset: 0; z-index: 2;
@@ -758,6 +797,23 @@
   <div id="gameHint" role="status" aria-live="polite"></div>
   <div id="gameFps" aria-hidden="true"></div>
   <div id="gameToast" hidden></div>
+  <!-- Hinweis „Speichern nicht möglich“ bzw. „Wieder gespeichert“ (siehe README „Speichern bestätigen“) -->
+  <div id="saveHint" role="alert" hidden>
+    <div class="sh-row">
+      <span class="sh-icon" id="shIcon" aria-hidden="true">!</span>
+      <div class="sh-text">
+        <div class="sh-title" id="shTitle">Speichern nicht möglich</div>
+        <div class="sh-grund" id="shGrund"></div>
+      </div>
+      <button class="sh-btn" id="shDetails" type="button" aria-expanded="false" aria-controls="shMore">Details</button>
+      <button class="sh-btn sh-x" id="shClose" type="button" aria-label="Hinweis schließen" title="Schließen">×</button>
+    </div>
+    <div class="sh-more" id="shMore" hidden>
+      <p id="shMoreGrund"></p>
+      <ul id="shKeys"></ul>
+      <button class="sh-btn" id="shRetry" type="button">Erneut versuchen</button>
+    </div>
+  </div>
   <div id="feedback" hidden>
     <div class="fb-box" role="dialog" aria-modal="true" aria-labelledby="fbTitle">
       <h2 id="fbTitle">Feedback senden</h2>
@@ -1489,22 +1545,152 @@
     });
     return out;
   }
+  // Schreibt das ganze Objekt. → '' bei Erfolg, sonst der Grund: 'voll' (QuotaExceededError, Speicher des Browsers
+  // voll) oder 'fehler' (alles andere, z. B. gesperrte Website-Daten).
   function writeGameSettings(obj) {
-    try { localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(obj)); } catch (e) { /* Speicher voll o. ä. */ }
+    try { localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(obj)); return ''; } catch (e) { return istSpeicherVoll(e) ? 'voll' : 'fehler'; }
   }
-  function storeGameSetting(msg) {
-    var key = msg.key, value = msg.value;
-    if (!validSettingKey(key)) return;
-    if (value !== null && !validSettingValue(value)) return;
-    var cur = readGameSettings();
-    if (value === null) {
-      if (!hasOwn(cur, key)) return;
-      delete cur[key];
-    } else {
-      if (!hasOwn(cur, key) && Object.keys(cur).length >= MAX_SETTINGS) return;
-      cur[key] = value;
+  function istSpeicherVoll(e) {
+    return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+  }
+
+  // --- Speichern bestätigen (Ergänzung zu Version 1, Namen selbst gewählt; README „Speichern bestätigen“) ---------
+  // Sammel-Nachricht {type:'aether:settings', id?, items:[{key, value}]} wird ganz oder gar nicht geschrieben; jede
+  // Nachricht MIT id (auch 'aether:setting') bekommt {type:'aether:settings-ack', id, ok, grund, keys}. Ohne id
+  // bleibt alles wie in Version 1 (keine Antwort). Schlägt das Schreiben fehl, zeigt das Dashboard über dem Spiel den
+  // Hinweis „Speichern nicht möglich“ und hält die Werte zurück (zurueck); „Erneut versuchen“ bzw. das nächste
+  // Schreiben versucht sie noch einmal. Bei Erfolg nach einem Fehler: kurz „Wieder gespeichert“.
+  var MAX_SETTINGS_ITEMS = 64;   // selbst gewählt: höchstens so viele Einträge je Sammel-Nachricht (= Schlüssel-Grenze)
+  var ACK_ID_MAX = 64;           // selbst gewählt: id = Text mit 1–64 Zeichen oder ganze Zahl
+  var SAVE_OK_MS = 3000;         // „Wieder gespeichert“ verschwindet nach 3 s
+  var GRUND_TEXT = {
+    voll: 'Speicher des Browsers voll. Änderungen gelten nur bis zum Schließen.',
+    grenze: 'Grenze überschritten (höchstens 64 Einstellungen, je 1024 Zeichen). Änderungen gelten nur bis zum Schließen.',
+    fehler: 'Der Browser hat das Speichern abgelehnt. Änderungen gelten nur bis zum Schließen.'
+  };
+  var GRUND_KURZ = { voll: 'Speicher voll', grenze: 'Grenze überschritten', fehler: 'Fehler beim Speichern' };
+  var zurueck = {};              // zurückgehaltene Werte (Schlüssel → Wert oder null) nach einem Schreibfehler
+  var saveFehler = null;         // { grund, keys: { schlüssel: grund } } seit dem letzten Fehler, bis wieder gespeichert ist
+  var saveOkTimer = 0;
+
+  function gueltigeAckId(id) {
+    return (typeof id === 'string' && id.length >= 1 && id.length <= ACK_ID_MAX) || (typeof id === 'number' && Number.isSafeInteger(id));
+  }
+  // Einträge [{ key, value }] gemeinsam schreiben: alle oder keiner. → { ok, grund, keys }
+  //   grund: 'ungueltig' (Schlüssel/Wert falsch geformt), 'grenze' (Wert > 1024 Zeichen oder > 64 Schlüssel),
+  //   'voll' / 'fehler' (Schreiben im Browser gescheitert), 'anderes-fenster' (dieses Fenster speichert nicht).
+  function schreibeEinstellungen(items) {
+    var keys = [];
+    items.forEach(function (it) { if (it && typeof it.key === 'string' && keys.indexOf(it.key) < 0) keys.push(it.key); });
+    var fail = function (grund) { return { ok: false, grund: grund, keys: keys }; };
+    if (!darfSpeichern()) return fail('anderes-fenster');
+    var i, it;
+    for (i = 0; i < items.length; i++) {
+      it = items[i];
+      if (!it || typeof it !== 'object' || !validSettingKey(it.key) || (it.value !== null && typeof it.value !== 'string')) return fail('ungueltig');
     }
-    writeGameSettings(cur);
+    for (i = 0; i < items.length; i++) if (items[i].value !== null && !validSettingValue(items[i].value)) return grenzeMelden(fail('grenze'));
+    var cur = readGameSettings(), next = {}, k;
+    for (k in cur) if (hasOwn(cur, k)) next[k] = cur[k];
+    var setze = function (key, value) { if (value === null) delete next[key]; else next[key] = value; };
+    for (k in zurueck) if (hasOwn(zurueck, k)) setze(k, zurueck[k]);
+    items.forEach(function (x) { setze(x.key, x.value); });
+    if (Object.keys(next).length > MAX_SETTINGS) return grenzeMelden(fail('grenze'));
+    // Nichts zu tun (z. B. Löschen eines fehlenden Schlüssels) und nichts zurückgehalten: wie bisher kein Schreiben.
+    if (!Object.keys(zurueck).length && JSON.stringify(next) === JSON.stringify(cur)) return { ok: true, grund: null, keys: keys };
+    var grund = writeGameSettings(next);
+    if (grund) {
+      items.forEach(function (x) { zurueck[x.key] = x.value; });
+      speicherFehlerZeigen(grund, Object.keys(zurueck));
+      return fail(grund);
+    }
+    zurueck = {};
+    if (saveFehler) wiederGespeichert();
+    return { ok: true, grund: null, keys: keys };
+  }
+  function grenzeMelden(r) { speicherFehlerZeigen('grenze', r.keys); return r; }
+  // Darf dieses Fenster speichern? (Teil „Nur ein Fenster speichert“ ersetzt das.)
+  function darfSpeichern() { return true; }
+
+  // Nachricht 'aether:setting' (einzeln) bzw. 'aether:settings' (Sammel) aus dem Spiel. Antwort nur mit gültiger id.
+  function storeGameSetting(msg, quelle) {
+    var mitId = gueltigeAckId(msg.id);
+    var items;
+    if (msg.type === 'aether:settings') {
+      items = Array.isArray(msg.items) && msg.items.length >= 1 && msg.items.length <= MAX_SETTINGS_ITEMS ? msg.items : null;
+    } else {
+      items = [{ key: msg.key, value: msg.value }];
+    }
+    // Falsch geformte Nachrichten (ohne Wert, falscher Schlüssel …) schreiben wie bisher nichts und zeigen nichts.
+    var r = items ? schreibeEinstellungen(items) : { ok: false, grund: darfSpeichern() ? 'ungueltig' : 'anderes-fenster', keys: [] };
+    if (!mitId || !quelle) return;
+    try { quelle.postMessage({ type: 'aether:settings-ack', id: msg.id, ok: r.ok, grund: r.ok ? null : r.grund, keys: r.keys }, '*'); } catch (e) { /* egal */ }
+  }
+
+  // --- Hinweis über dem Spiel ---
+  function kurzKey(k) { return String(k).indexOf('aether.') === 0 ? String(k).slice(7) : String(k); }
+  function speicherFehlerZeigen(grund, keys) {
+    if (!saveFehler) saveFehler = { grund: grund, keys: {} };
+    saveFehler.grund = grund;
+    keys.forEach(function (k) { saveFehler.keys[k] = grund; });
+    clearTimeout(saveOkTimer);
+    var h = $('saveHint'), offen = !h.hidden && !h.classList.contains('ok');
+    h.classList.remove('ok');
+    $('shIcon').textContent = '!';
+    $('shTitle').textContent = 'Speichern nicht möglich';
+    $('shGrund').textContent = GRUND_TEXT[grund] || GRUND_TEXT.fehler;
+    if (!offen) { $('shMore').hidden = true; $('shDetails').setAttribute('aria-expanded', 'false'); }
+    detailsFuellen();
+    h.hidden = false;   // ein Hinweis: mehrere Fehler kurz hintereinander ersetzen nur den Inhalt
+  }
+  function detailsFuellen() {
+    if (!saveFehler) return;
+    $('shMoreGrund').textContent = 'Grund: ' + (GRUND_KURZ[saveFehler.grund] || GRUND_KURZ.fehler) + '. Betroffen:';
+    var ul = $('shKeys');
+    ul.textContent = '';
+    Object.keys(saveFehler.keys).forEach(function (k) {
+      var li = document.createElement('li');
+      li.textContent = kurzKey(k) + ' – ' + (GRUND_KURZ[saveFehler.keys[k]] || GRUND_KURZ.fehler);
+      ul.appendChild(li);
+    });
+    // „Erneut versuchen“ nur, wenn es zurückgehaltene Werte gibt (bei „Grenze“ hilft Wiederholen nicht)
+    $('shRetry').hidden = !Object.keys(zurueck).length;
+  }
+  function wiederGespeichert() {
+    saveFehler = null;
+    clearTimeout(saveOkTimer);
+    var h = $('saveHint');
+    h.classList.add('ok');
+    $('shIcon').textContent = '✓';
+    $('shTitle').textContent = 'Wieder gespeichert';
+    $('shGrund').textContent = 'Alle Änderungen gesichert.';
+    $('shMore').hidden = true;
+    h.hidden = false;
+    saveOkTimer = setTimeout(function () { h.hidden = true; h.classList.remove('ok'); }, SAVE_OK_MS);
+  }
+  function speicherHinweisZu() {
+    clearTimeout(saveOkTimer);
+    var h = $('saveHint'), fokusDrin = h.contains(document.activeElement);
+    h.hidden = true;
+    h.classList.remove('ok');
+    // Fokus lag im Hinweis (Knopf, Tastatur): zurück ins Spiel, damit die Tasten wieder dort ankommen.
+    if (fokusDrin && game && game.iframe) { try { game.iframe.focus(); game.iframe.contentWindow.focus(); } catch (e) { /* egal */ } }
+  }
+  function speicherDetails() {
+    var more = $('shMore'), auf = more.hidden;
+    more.hidden = !auf;
+    $('shDetails').setAttribute('aria-expanded', String(auf));
+    if (auf) detailsFuellen();
+  }
+  function speicherErneut() {
+    if (!Object.keys(zurueck).length) return;
+    schreibeEinstellungen([]);   // schreibt die zurückgehaltenen Werte (alle oder keiner)
+  }
+  // Spiel beendet: Was nicht gespeichert werden konnte, galt nur bis zum Schließen.
+  function speicherZustandVergessen() {
+    zurueck = {};
+    saveFehler = null;
+    speicherHinweisZu();
   }
   // JSON als JavaScript-Literal im Skript: jedes "<" maskieren, damit ein Wert
   // mit schließendem Skript-Tag oder HTML-Kommentar das Skript nicht beenden kann.
@@ -1776,7 +1962,7 @@
       // "Beenden" im Spiel: derselbe Weg wie das Schließen-X (ohne Rückfrage).
       if (d.type === 'aether:quit') { stopGame(); showView('builds'); return; }
       // Schnittstelle Spiel ↔ Dashboard, Version 1 (siehe README).
-      if (d.type === 'aether:setting') { storeGameSetting(d); return; }
+      if (d.type === 'aether:setting' || d.type === 'aether:settings') { storeGameSetting(d, e.source); return; }
       if (d.type === 'aether:feedback') { openFeedback(d); return; }
       if (d.type === 'aether:feedback-close') { closeFeedback(true); return; }
       if (d.type === 'aether:dialog-input') { feedbackDialogInput(d.action); return; }
@@ -1835,6 +2021,7 @@
     hideHint();
     var f = game;
     game = null;
+    speicherZustandVergessen();
     discardFrame(f);
     $('gameFps').textContent = '';
     $('gameToast').hidden = true;
@@ -4072,6 +4259,21 @@
     btns[(i + step + btns.length) % btns.length].focus();
   }, true);
   $('gameBar').addEventListener('pointerdown', dimBarSoon);
+
+  // Hinweis „Speichern nicht möglich“: Touch/Maus über die Knöpfe; Tastatur Esc = ×, Enter = Details – solange der
+  // Fokus im Hinweis oder auf keinem Element liegt (im Spiel-iframe gehören die Tasten dem Spiel).
+  $('shDetails').addEventListener('click', speicherDetails);
+  $('shClose').addEventListener('click', function () { speicherHinweisZu(); });
+  $('shRetry').addEventListener('click', speicherErneut);
+  document.addEventListener('keydown', function (e) {
+    var h = $('saveHint');
+    if (h.hidden || h.classList.contains('ok') || feedback || e.repeat) return;
+    var a = document.activeElement;
+    var imHinweis = !!a && h.contains(a), frei = !a || a === document.body || a === document.documentElement;
+    if (!imHinweis && !frei) return;
+    if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); speicherHinweisZu(); return; }
+    if (e.key === 'Enter' && !(imHinweis && a.tagName === 'BUTTON')) { e.preventDefault(); speicherDetails(); }
+  });
 
   // Kein Zoomen/Scrollen während des Spiels.
   var playing = function () { return document.documentElement.classList.contains('playing'); };
