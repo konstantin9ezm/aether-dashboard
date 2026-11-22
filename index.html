@@ -1869,8 +1869,12 @@
   function scriptJson(v) {
     return JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   }
+  // Einzige Stelle, an der AETHER_HOST entsteht: jeder Spielstart (auch Neustart, Build-Wechsel und gespeicherte Builds
+  // offline) geht über startGame → buildGameDocument → hostScript. settingsAck: true kündigt an, dass dieses Dashboard
+  // aether:setting/aether:settings mit id durch aether:settings-ack beantwortet und aether:settings versteht
+  // (rückwärtskompatibel, version bleibt 1; siehe README „Speichern bestätigen“).
   function hostScript() {
-    return 'window.AETHER_HOST = ' + scriptJson({ version: 1, settings: true, feedback: true, dialogInput: true }) + ';\n' +
+    return 'window.AETHER_HOST = ' + scriptJson({ version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true }) + ';\n' +
       'window.AETHER_HOST_SETTINGS = ' + scriptJson(readGameSettings()) + ';';
   }
 

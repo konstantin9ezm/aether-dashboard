@@ -320,8 +320,11 @@ describe('Spiel-Einstellungen', () => {
     assert.ok(!attrs.sandbox.includes('allow-same-origin'));
     assert.equal(attrs.allow, 'gamepad *; fullscreen *; autoplay *');
     const t = await frame.evaluate(() => window.__t);
-    assert.deepEqual(t.host, { version: 1, settings: true, feedback: true, dialogInput: true });
+    // a) settingsAck kündigt die Speicher-Bestätigung an; version und die übrigen Felder unverändert
+    assert.deepEqual(t.host, { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true });
+    assert.equal(t.host.version, 1);
     assert.equal(t.host.dialogInput, true);
+    assert.equal(t.host.settingsAck, true);
     assert.deepEqual(t.settings, {});
     assert.equal(await dialogOpen(page), false, 'ohne Nachricht kein Dialog');
     assert.deepEqual(log.errors, []);
@@ -344,11 +347,13 @@ describe('Spiel-Einstellungen', () => {
     await stopGameByX(page);
     frame = await startGame(page);
     assert.deepEqual(await frame.evaluate(() => window.__t.settings), { 'aether.touch.boost': 'true', 'aether.vol': '0.5', 'aether.waechter': '2' });
+    assert.deepEqual(await frame.evaluate(() => window.__t.host), { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true }, 'AETHER_HOST mit settingsAck auch beim Neustart');
 
     // Auch nach Neuladen der Seite.
     await page.reload();
     frame = await startGame(page);
     assert.equal(await frame.evaluate(() => window.__t.settings['aether.touch.boost']), 'true');
+    assert.equal(await frame.evaluate(() => window.__t.host.settingsAck), true, 'settingsAck auch nach Neuladen der Seite');
     await stopGameByX(page);
 
     // "Token löschen" lässt die Spiel-Einstellungen unverändert.
