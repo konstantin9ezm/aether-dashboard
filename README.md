@@ -1015,6 +1015,49 @@ Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
 - **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“), sonst Download, sonst ein Dialog
   mit Link – immer im Antippen, darum bereitet die Tafel alles vorher vor („Grafiken werden erkannt und vorbereitet …“).
 
+**PowerPoint-Export** – jede Seite als Bild auf einer Folie (Variante a). „Alle als PowerPoint (`<n>`)“ steht in der
+Übersicht direkt neben „Alle als PDF (`<n>`)“, „PowerPoint“ im Vollbild zwischen „Bild“ und „Export“ (gleicher Stil).
+Ein Tipp öffnet direkt unter dem Knopf die Auswahl „A4 hochkant | 16:9 quer“; die zuletzt gewählte Variante ist
+hervorgehoben (beim ersten Mal „A4 hochkant“) und wird nur auf diesem Gerät gemerkt (IndexedDB `aether-flyer`, Ablage
+`geraet`, Schlüssel `pptxFormat`). Antippen einer Variante startet den Export; Esc, Backspace oder Tippen daneben schließt
+die Auswahl ohne Export (Pfeile wechseln die Variante, Enter startet, Tab schließt; Tippflächen ≥ 44 px).
+
+- **Seitenwahl:** „Alle als PowerPoint“ nimmt genau dieselben Seiten wie „Alle als PDF“ (`AetherFlyerExport.druckListe`):
+  in „Alle“ die Flyer der geöffneten Version, in einem Ordner alle seine Seiten (auch Infografiken), ausgeblendete nie;
+  `<n>` zählt wie dort. „PowerPoint“ im Vollbild exportiert nur die angezeigte Seite (eine Folie). Reihenfolge der
+  Folien = Reihenfolge der Ansicht.
+- **Formate** (eine Datei hat ein Format für alle Folien): „A4 hochkant“ 21,0 × 29,7 cm; „16:9 quer“ 33,867 × 19,05 cm
+  (PowerPoint-Breitbild). Das Seitenbild wird vollständig eingepasst und mittig gesetzt, der Rest der Folie ist
+  Hintergrund in Seitenfarbe `#0c0f1d` (Richtwert). Flyer füllen die A4-Folie (bis auf Rundung), auf 16:9 stehen sie auf
+  voller Höhe (ca. 40 % der Fläche); Infografiken mit eigener Höhe stehen in beiden Formaten auf voller Folienhöhe.
+- **Bild:** dieselbe Darstellung wie „Bild“ (Änderungsschicht, doppelte Auflösung, über 16,7 Mio. Pixel verkleinert),
+  als JPEG Qualität 0,92 auf Grund in Seitenfarbe; Seiten mit Video oder Animation zeigen das Standbild wie PDF/Bild.
+- **Notizen** jeder Folie: `Seite: <Id>`, `Titel: <Titel>`, `Stand: <Stand der Seite>` (Text des ersten
+  `data-stand`-Elements der Darstellung, sonst der Stand des Pakets). Das Bild hat „<Id> · <Titel>“ als Alternativtext.
+- **Dateiname:** `Aether-Flyer_Version-<Version>_<Alle|Ordnername>_<A4|16x9>_<JJJJ-MM-TT>.pptx`, im Vollbild
+  `Aether-Flyer_Version-<Version>_<Seiten-Id>_<A4|16x9>_<JJJJ-MM-TT>.pptx` (Datum des Geräts). Ordnernamen werden
+  dateisicher (Ä/Ö/Ü/ä/ö/ü/ß → Ae/Oe/Ue/ae/oe/ue/ss, Akzente weg, Leerraum → „-“, sonstige Zeichen entfallen), z. B.
+  „Spiel & Über“ → `Spiel-Ueber`.
+- **Ablauf:** Folien werden nacheinander gezeichnet (Fortschritt „Folie 7 / 30“ im Knopf, beide PowerPoint-Knöpfe so
+  lange gesperrt); jedes JPEG wird sofort ein Blob-Teil der Datei und das Canvas freigegeben – nie alle Bilder
+  gleichzeitig als Pixel im Speicher (iPad). Fehler kommen als Meldung („Die PowerPoint-Datei ließ sich nicht erstellen
+  – Seite S1: …“). Weitergabe wie bei PDF/ZIP: Teilen-Menü mit der Datei (MIME
+  `application/vnd.openxmlformats-officedocument.presentationml.presentation`), sonst Download. Ist die Nutzergeste
+  nach dem Zeichnen verbraucht (iPhone/iPad verlangen sie fürs Teilen; bei vielen Folien der Fall), erscheint ein kurzer
+  Hinweis „Fertig: … Folien · … MB“ mit „Teilen“ – ein Tipp öffnet dann das Teilen-Menü. Offline, kein Upload, kein
+  fremder Dienst.
+- **Datei:** eigener kleiner Schreiber ohne Bibliothek (`flyer-pptx.js`, Office Open XML auf Basis von `flyer-zip.js`,
+  Methode „stored“): `[Content_Types].xml`, `_rels/.rels`, `docProps/core.xml` und `app.xml`, `ppt/presentation.xml`,
+  Folienmaster mit einem leeren Layout, zwei Themes (Folien, Notizen), Notizenmaster, je Folie `slide<n>.xml`,
+  `notesSlide<n>.xml` und `media/image<n>.jpeg` samt Beziehungen. Geprüft im Container mit python-pptx 1.0.2
+  (Folienzahl, Foliengröße, Bildlage, Notizen) und LibreOffice headless (Umwandlung in PDF); dass PowerPoint (Windows,
+  Mac, iPad) und Keynote sie öffnen, ist noch am Gerät zu prüfen.
+- **Am echten Paket** („Alle“, 30 Folien): je Format 10,6 MB, ca. 16 s in Chromium (Desktop), größte Folie 0,41 MB,
+  keine Seite verkleinert.
+- **Grenzen:** Der Text auf den Folien ist **nicht bearbeitbar** (ein Bild je Folie); bearbeitbarer Text wäre
+  Variante b (später, nach F3c). Auf dem Beamer steht A4 hochkant mit Rand links und rechts, auf 16:9 ist die Seite
+  deutlich kleiner. PowerPoint-Knöpfe gibt es nur, wenn „Bild“ in diesem Browser möglich ist (Selbstprobe).
+
 **Bearbeiten (Teil 2)** – nur im Vollbild, Umschalter „Ansehen | Text | Status“ (Standard „Ansehen“, Tippflächen ≥ 44 px;
 beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verhält sich alles wie oben (Wischen, Tasten).
 
@@ -1295,6 +1338,7 @@ jedes in seinem eigenen Shadow Root.
 | `flyer-bearbeiten.js` | `AetherFlyerBearbeiten`: Umschalter und Leisten im Vollbild, Konfliktliste (auch Strukturkonflikte), „Paket exportieren“ (Hinweis ab 20 MB), Hilfe „Online stellen“, Sichern/Einspielen/Verwerfen |
 | `flyer-uebersicht.js` | `AetherFlyerUebersicht` (F3a): Tafeln, Versionsknopf und Tafel „Versionen“, Menüs „···“ für Version, Ordner und Seite, „+ Neuer Ordner“, „+ Seite“ |
 | `flyer-grafik.js` | `AetherFlyerGrafik` (F3a): Export „Grafiken & Daten“ (Erkennung, PNG, SVG, CSV, JSON, Einzelauswahl, ZIP der Version) |
+| `flyer-pptx.js` | `AetherFlyerPptx`: PowerPoint-Export (PPTX-Schreiber ohne Bibliothek, Formate A4 hochkant und 16:9 quer, Folien aus dem Seitenbild, Knöpfe und Auswahl) |
 | `flyer-medien.js` | `AetherFlyerMedien` (F3b): Datenmodell der Bibliothek, Formate, Größen, Git-Blob-SHA, Status, Einlesen (Maße, Startbild, Mini, SVG bereinigen), Bild-Zwischenspeicher |
 | `flyer-bibliothek.js` | `AetherFlyerBibliothek` (F3b): Reiter „Seiten \| Bibliothek“, Pfad, Filter, Ordner, „Aus Flyern“, Datei-Kacheln |
 | `flyer-medien-tafeln.js` | `AetherFlyerMedienTafeln` (F3b): „+ Hinzufügen“, Menü einer Datei, Löschen, „Medien online stellen“ |
@@ -1302,7 +1346,7 @@ jedes in seinem eigenen Shadow Root.
 | `flyer-medien-online.js` | `AetherFlyerMedienOnline` (F3b): Abgleich mit dem privaten Repo aether-medien (nur lesend) |
 | `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile, Struktur (lokaler Stand v2, offene Version, Abgleich); Schnittstelle für Tests und Teil 2 |
 
-Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht, Grafik, Bibliothek, Tafeln, Player oder Medien
+Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht, Grafik, PowerPoint, Bibliothek, Tafeln, Player oder Medien
 online, bleiben seine Knöpfe verborgen und der Rest läuft weiter. Die CSP erlaubt seit F3b `media-src 'self' blob:`
 (Videos aus dem eigenen Speicher).
 
@@ -1707,6 +1751,21 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   kommt nie ins Repo oder in die CI, sonst übersprungen): stellt jede Seite mit dem Code vor F3a (`git archive` von
   `FLYER_ALT_COMMIT`, Standard `3e35c4f`, oder `FLYER_ALT=<Verzeichnis>`) und dem neuen Code dar und vergleicht Pixel für
   Pixel, zählt die Grafiken je Seite und misst die Paketgröße; Ausgaben (nur Zahlen und Kennungen) nach `FLYER_AUSGABE`.
+  Gewollte Abweichungen stehen ausdrücklich in `ERWARTET`: IG-Technik-2 bekommt seit PR #37 zwei Zähler-Zeilen
+  (3069 → 3095 px). Je Seite muss die Zahl der neu angelegten Zähler genau `ERWARTET` entsprechen (sonst 0) und die
+  Mehrhöhe stimmen; nach Entfernen genau dieser Zähler muss die Seite pixelgleich sein (38 von 38 wie erwartet).
+- `tests/flyer-pptx.test.js` (PowerPoint-Export, Chromium, Platzhalter) – a) „Alle als PowerPoint“ = Seiten von „Alle
+  als PDF“ (ohne ausgeblendete, Ordner nur der Ordner, Fortschritt und Sperre); b) Vollbild genau eine Folie; c)
+  Foliengrößen A4/16:9, Bild vollständig eingepasst und mittig (auch hohe Infografik); d) Notizen (Id, Titel, Stand,
+  Sonderzeichen); e) Dateinamen (Alle, Ordner mit Umlaut, Einzelseite); f) Auswahl merkt sich die Variante, Esc und
+  Tippen daneben ohne Export, Tastatur, Vollbild bleibt offen; g) Datei gültig (Pflichtteile, Content-Types,
+  Beziehungen, wohlgeformtes XML, JPEG lesbar); Weitergabe (Teilen, Hinweis „Teilen“, Fehlermeldung); h) Layout auf
+  1024 × 768, 1366 × 1024 und 844 × 390. Die Datei wird unabhängig vom Schreiber gelesen (ZIP-Leser, JPEG-SOF).
+- `tests/flyer-pptx-messung.test.js` (nur lokal mit `FLYER_ECHT`, sonst übersprungen) – „Alle als PowerPoint“ mit dem
+  echten Paket in beiden Formaten: Folienzahl, Größe, Dauer, größte Folie; Ziel unter ca. 25 MB.
+- Gegenproben PowerPoint (von Hand, müssen rot werden): in `flyer-pptx.js` das Bild nicht mittig setzen (`x: 0, y: 0`)
+  → c) rot; „Stand“ aus den Notizen nehmen → d) rot; die Seiten aus `aktuelleListe()` statt `druckListe()` nehmen → a)
+  rot; Esc nicht behandeln → f) rot; in `tests/flyer-echt.test.js` `ERWARTET` leeren bzw. `mehrPx` ändern → h) rot.
 - Gegenproben F3a (von Hand, müssen rot werden): in `flyer-paket.js` das HTML bei der Umwandlung verändern (`trim()`) →
   a) rot; in `flyer-struktur.js` die Version flach kopieren (`Object.assign({}, q)`) → b) rot, die Herkunftsprüfung in
   `seiteLoeschen` abschalten → d) rot, beim Verschieben nur `ziel === id` prüfen → c) und Ordner-Test rot; in
@@ -1722,7 +1781,7 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 `.github/workflows/pages.yml` testet jeden Pull Request und veröffentlicht `main` (`index.html`, `sw.js`,
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
 `gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-struktur.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
-`flyer-online.js`, `flyer-export.js`, `flyer-zip.js`, `flyer-aenderungen.js`, `flyer-bearbeiten.js`, `flyer-uebersicht.js`
-und `flyer-grafik.js`, `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
+`flyer-online.js`, `flyer-export.js`, `flyer-zip.js`, `flyer-aenderungen.js`, `flyer-bearbeiten.js`, `flyer-uebersicht.js`,
+`flyer-grafik.js` und `flyer-pptx.js` (F3b-Module ebenso), `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

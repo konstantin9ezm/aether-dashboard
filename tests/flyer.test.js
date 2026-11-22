@@ -30,7 +30,7 @@ const SHA_B = 'bbbbbbb000000000000000000000000000000002';
 const SHA_C = 'ccccccc000000000000000000000000000000003';
 const SHA_D = 'ddddddd000000000000000000000000000000004';
 const EVIL = 'https://evil.example';
-const MODULE = ['flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer-zip.js', 'flyer-medien.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js', 'flyer-bibliothek.js', 'flyer-medien-tafeln.js', 'flyer-player.js', 'flyer-medien-online.js', 'flyer.js'];   // F3b: + Bibliothek (flyer-medien.js … flyer-medien-online.js)
+const MODULE = ['flyer-paket.js', 'flyer-struktur.js', 'flyer-speicher.js', 'flyer-ansicht.js', 'flyer-online.js', 'flyer-export.js', 'flyer-zip.js', 'flyer-medien.js', 'flyer-aenderungen.js', 'flyer-bearbeiten.js', 'flyer-uebersicht.js', 'flyer-grafik.js', 'flyer-pptx.js', 'flyer-bibliothek.js', 'flyer-medien-tafeln.js', 'flyer-player.js', 'flyer-medien-online.js', 'flyer.js'];   // F3b: + Bibliothek (flyer-medien.js … flyer-medien-online.js); + PowerPoint-Export (flyer-pptx.js)
 const FLYER_DATEIEN = ['flyer.html', ...MODULE];
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -2119,6 +2119,12 @@ describe('Flyer: Isolation (Gegenbeispiele)', () => {
 
 describe('Flyer: Dateien', () => {
   test('App-Hülle (sw.js), Workflow, Tools-Knopf; Skripte, CSP; kein innerHTML & Co., kein localStorage.setItem', () => {
+    const OOXML = 'http://schemas.openxmlformats.org/';
+    const PPTX_NAMENSRAEUME = [OOXML + 'drawingml/2006/main', OOXML + 'officeDocument/2006/relationships', OOXML + 'presentationml/2006/main',
+      OOXML + 'package/2006/relationships', OOXML + 'officeDocument/2006/relationships/', OOXML + 'package/2006/content-types',
+      OOXML + 'package/2006/metadata/core-properties', OOXML + 'package/2006/relationships/metadata/core-properties',
+      OOXML + 'officeDocument/2006/extended-properties', OOXML + 'officeDocument/2006/docPropsVTypes',
+      'http://purl.org/dc/elements/1.1/', 'http://purl.org/dc/terms/', 'http://purl.org/dc/dcmitype/'];
     const lies = (d) => fs.readFileSync(path.join(ROOT, d), 'utf8');
     const sw = lies('sw.js');
     const shell = /var SHELL = \[([^\]]*)\]/.exec(sw)[1];
@@ -2158,11 +2164,13 @@ describe('Flyer: Dateien', () => {
       // Teil 2: in flyer.html zusätzlich genau der Upload-Link der Hilfe „Online stellen“ (Navigation, kein Abruf)
       const erlaubt = d === 'flyer.html' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether/upload/main/docs/flyer']
         // F3b: in flyer-medien.js genau der Upload-Link von „Medien online stellen“ (Navigation, kein Abruf)
-        : d === 'flyer-medien.js' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether-medien/upload/main/medien'] : ['https://api.github.com'];
+        : d === 'flyer-medien.js' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether-medien/upload/main/medien']
+        // PowerPoint-Export: genau die XML-Namensräume von Office Open XML und Dublin Core (Kennungen in der Datei, nie abgerufen)
+        : d === 'flyer-pptx.js' ? ['https://api.github.com', ...PPTX_NAMENSRAEUME] : ['https://api.github.com'];
       assert.deepEqual(urls.filter((u) => !erlaubt.includes(u)), [], `${d}: nur die GitHub-API`);
     }
     // Module: IIFE mit 'use strict', genau ein window.AetherFlyerX = Object.freeze(…)
-    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-struktur.js': 'AetherFlyerStruktur', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer-aenderungen.js': 'AetherFlyerAenderungen', 'flyer-bearbeiten.js': 'AetherFlyerBearbeiten', 'flyer-uebersicht.js': 'AetherFlyerUebersicht', 'flyer-zip.js': 'AetherFlyerZip', 'flyer-grafik.js': 'AetherFlyerGrafik', 'flyer-medien.js': 'AetherFlyerMedien', 'flyer-bibliothek.js': 'AetherFlyerBibliothek', 'flyer-medien-tafeln.js': 'AetherFlyerMedienTafeln', 'flyer-player.js': 'AetherFlyerPlayer', 'flyer-medien-online.js': 'AetherFlyerMedienOnline', 'flyer.js': 'AetherFlyer' };
+    const namen = { 'flyer-paket.js': 'AetherFlyerPaket', 'flyer-struktur.js': 'AetherFlyerStruktur', 'flyer-speicher.js': 'AetherFlyerSpeicher', 'flyer-ansicht.js': 'AetherFlyerAnsicht', 'flyer-online.js': 'AetherFlyerOnline', 'flyer-export.js': 'AetherFlyerExport', 'flyer-aenderungen.js': 'AetherFlyerAenderungen', 'flyer-bearbeiten.js': 'AetherFlyerBearbeiten', 'flyer-uebersicht.js': 'AetherFlyerUebersicht', 'flyer-zip.js': 'AetherFlyerZip', 'flyer-grafik.js': 'AetherFlyerGrafik', 'flyer-pptx.js': 'AetherFlyerPptx', 'flyer-medien.js': 'AetherFlyerMedien', 'flyer-bibliothek.js': 'AetherFlyerBibliothek', 'flyer-medien-tafeln.js': 'AetherFlyerMedienTafeln', 'flyer-player.js': 'AetherFlyerPlayer', 'flyer-medien-online.js': 'AetherFlyerMedienOnline', 'flyer.js': 'AetherFlyer' };
     for (const [d, n] of Object.entries(namen)) {
       const t = lies(d);
       const code = t.replace(/^(\s*\/\/[^\n]*\n)*/, '');

@@ -490,7 +490,8 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
       await page.evaluate(() => window.AetherFlyerAnsicht.oeffneDok('S1'));
       await page.waitForSelector('#vbExport:not([hidden])');
       assert.equal(await text(page, '#vbExport'), 'Export');
-      assert.equal(await page.$eval('#vbExport', (b) => b.previousElementSibling.id), 'vbBild', '„Export“ steht neben „Bild“');
+      // Seit dem PowerPoint-Export steht „PowerPoint“ zwischen „Bild“ und „Export“
+      assert.deepEqual(await page.$eval('#vbExport', (b) => [b.previousElementSibling.previousElementSibling.id, b.previousElementSibling.id]), ['vbBild', 'vbPptx'], '„Export“ steht nach „Bild“ und „PowerPoint“');
       await page.click('#vbExport');
       assert.equal((await tafel(page)).titel, 'Grafiken & Daten');
       await warteGrafik(page);
