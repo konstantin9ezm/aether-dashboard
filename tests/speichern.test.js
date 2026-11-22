@@ -30,11 +30,27 @@ const GAME_HTML = `<!doctype html><html lang=de><head><meta charset=utf-8><title
 <style>html,body{margin:0;height:100%;background:#123}</style></head>
 <body><canvas id=canvas tabindex=0 style="width:100%;height:100%;display:block"></canvas>
 <script>
-  window.__t = { acks: [], fremd: 0, keys: [], settings: JSON.parse(JSON.stringify(window.AETHER_HOST_SETTINGS || null)) };
+  window.__t = { acks: [], fremd: 0, keys: [], alle: [], settings: JSON.parse(JSON.stringify(window.AETHER_HOST_SETTINGS || null)),
+    host: window.AETHER_HOST === undefined ? 'fehlt' : JSON.parse(JSON.stringify(window.AETHER_HOST)) };
   window.addEventListener('message', function (e) {
+    if (e.source === window.parent && e.data && typeof e.data.type === 'string' && e.data.type.indexOf('aether:') === 0) window.__t.alle.push(e.data.type);
     if (!e.data || e.data.type !== 'aether:settings-ack') return;
     if (e.source === window.parent) window.__t.acks.push(e.data); else window.__t.fremd++;
   });
+  // Speicher-Logik eines Spiels, das settingsAck kennt: Sammel-Nachricht mit id nur bei angekündigter Fähigkeit,
+  // sonst einzeln ohne id (wie bei einem älteren Dashboard).
+  window.__speichereNeu = function (id, werte) {
+    if (window.AETHER_HOST && window.AETHER_HOST.settingsAck === true) {
+      window.parent.postMessage({ type: 'aether:settings', id: id, items: Object.keys(werte).map(function (k) { return { key: k, value: werte[k] }; }) }, '*');
+      return 'sammel';
+    }
+    Object.keys(werte).forEach(function (k) { window.parent.postMessage({ type: 'aether:setting', key: k, value: werte[k] }, '*'); });
+    return 'einzeln';
+  };
+  // Speicher-Logik des heutigen Spiels (kennt das Feld nicht): nur Einzel-Nachrichten ohne id.
+  window.__speichereAlt = function (werte) {
+    Object.keys(werte).forEach(function (k) { window.parent.postMessage({ type: 'aether:setting', key: k, value: werte[k] }, '*'); });
+  };
   document.addEventListener('keydown', function (e) { window.__t.keys.push(e.key); });
 </script><script src="spiel.js"></script></body></html>`;
 // Ein Build braucht eine JavaScript-Datei (sonst „unvollständig“).
@@ -404,6 +420,61 @@ const tafel = (page) => page.evaluate(() => ({
   titel: document.getElementById('ftTitel').textContent
 }));
 const schreibt = (page) => page.evaluate(() => window.__schreibt);
+
+// ---------------------------------------------------------------------------
+// Ankündigung AETHER_HOST.settingsAck
+// ---------------------------------------------------------------------------
+const HOST = { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true };
+describe('Ankündigung settingsAck', () => {
+  test('a) im Spiel-iframe: AETHER_HOST.settingsAck === true, version 1, settings/feedback/dialogInput unverändert', async () => {
+    const context = await newContext();
+    const { page, log } = await newPage(context);
+    const frame = await startGame(page);
+    const host = await frame.evaluate(() => window.__t.host);
+    assert.deepEqual(host, HOST);
+    assert.equal(host.settingsAck, true);
+    assert.equal(host.version, 1);
+    assert.deepEqual([host.settings, host.feedback, host.dialogInput], [true, true, true]);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('b) Spiel, das settingsAck sieht: Sammel-Nachricht mit id → aether:settings-ack ok:true, Werte in aether.gameSettings', async () => {
+    const context = await newContext();
+    const { page, log } = await newPage(context);
+    const frame = await startGame(page);
+    const weg = await frame.evaluate(() => window.__speichereNeu('neu-1', { 'aether.ownWorld.1': 'eins', 'aether.showFps': '1' }));
+    assert.equal(weg, 'sammel', 'das Spiel erkennt die Fähigkeit am Feld (nicht erst an der ersten Antwort)');
+    assert.deepEqual(await waitAck(frame, 'neu-1'), { type: 'aether:settings-ack', id: 'neu-1', ok: true, grund: null, keys: ['aether.ownWorld.1', 'aether.showFps'] });
+    assert.deepEqual(await storedObj(page), { 'aether.ownWorld.1': 'eins', 'aether.showFps': '1' });
+    assert.equal((await hint(page)).sichtbar, false, 'erfolgreiches Speichern zeigt nichts');
+    assert.equal(await frame.evaluate(() => window.__t.fremd), 0);
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+
+  test('c) Spiel ohne Kenntnis des Felds (nur Einzel-Nachrichten ohne id): Verhalten wie vorher – gespeichert, keine Antwort, kein Hinweis', async () => {
+    const context = await newContext();
+    const { page, log } = await newPage(context);
+    let frame = await startGame(page);
+    await frame.evaluate(() => window.__speichereAlt({ 'aether.touch.boost': 'true', 'aether.vol': '0.5', 'aether.alt': 'weg' }));
+    await frame.evaluate(() => window.__speichereAlt({ 'aether.alt': null }));
+    // Ende abwarten ohne Wanduhr: eine Nachricht mit id läuft durch dieselbe Verarbeitung und kommt erst danach zurück
+    await post(frame, { type: 'aether:setting', id: 'ende', key: 'aether.waechter', value: '1' });
+    await waitAck(frame, 'ende');
+    assert.deepEqual(await storedObj(page), { 'aether.touch.boost': 'true', 'aether.vol': '0.5', 'aether.waechter': '1' });
+    assert.deepEqual(await frame.evaluate(() => window.__t.alle), ['aether:settings-ack'], 'nur die Wächter-Nachricht mit id bekam eine Antwort, sonst keine Nachricht ans Spiel');
+    assert.equal((await hint(page)).sichtbar, false, 'kein Hinweis');
+    // Nach Neustart liest das Spiel die Werte wie bisher aus AETHER_HOST_SETTINGS
+    await page.click('#exitBtn');
+    await page.waitForSelector('#buildsView:not([hidden])');
+    frame = await startGame(page);
+    assert.deepEqual(await frame.evaluate(() => window.__t.settings), { 'aether.touch.boost': 'true', 'aether.vol': '0.5', 'aether.waechter': '1' });
+    assert.deepEqual(await frame.evaluate(() => window.__t.alle), [], 'ohne eigene Nachricht bekommt das Spiel nichts');
+    assert.deepEqual(log.errors, []);
+    await context.close();
+  });
+});
 
 describe('Nur ein Fenster speichert', () => {
   test('e) zwei Seiten im selben Browser-Kontext: zweite zeigt die Tafel, lädt kein Spiel; „Hier weiterspielen“ wechselt; nur eine schreibt', async () => {

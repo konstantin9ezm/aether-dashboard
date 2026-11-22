@@ -152,7 +152,7 @@ Stattdessen bittet das Spiel das Dashboard per `postMessage`, Dinge stellvertret
 Vom Dashboard ins Spiel, beim Start als erstes Skript im `srcdoc` (vor dem Boot-Skript und allen Spielskripten):
 
 ```js
-window.AETHER_HOST = { version: 1, settings: true, feedback: true, dialogInput: true };
+window.AETHER_HOST = { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true };
 window.AETHER_HOST_SETTINGS = { "<schlüssel>": "<wert>", ... }; // gespeicherte Spiel-Einstellungen, sonst {}
 ```
 
@@ -163,6 +163,10 @@ Nachrichten nie, dann passiert im Dashboard nichts.
 ein Dashboard mit diesem Feld versteht `aether:dialog-input`. Ein Spiel schickt die Nachricht nur, wenn
 `window.AETHER_HOST.dialogInput === true` ist; ältere Dashboards kündigen sie nicht an (und würden sie ignorieren),
 ältere Spiele schicken sie nie, dann bleibt der Dialog wie bisher per Touch/Tastatur bedienbar.
+
+`settingsAck: true` ist ebenso eine rückwärtskompatible Erweiterung innerhalb von Version 1 (siehe „Speichern
+bestätigen“): Das Dashboard beantwortet Speicher-Nachrichten mit `id` durch `aether:settings-ack` und versteht die
+Sammel-Nachricht `aether:settings`.
 
 | Richtung | Nachricht | Wirkung |
 |---|---|---|
@@ -202,10 +206,20 @@ Regeln:
 
 ### Speichern bestätigen (Ergänzung zu Version 1, selbst gewählt)
 
-Rückwärtskompatible Ergänzung innerhalb von Version 1 (`AETHER_HOST.version` bleibt `1`, kein neues Feld in
-`AETHER_HOST`). Namen und Felder sind **selbst gewählt**. Das heutige Spiel (aether main `cf5a485`) schickt nur
-`aether:setting` ohne `id` und merkt nichts davon: Sein einziger `message`-Listener (`web/shell.html`) nimmt nur
-`aether:feedback-state` an und verwirft alle anderen Typen, also auch `aether:settings-ack`.
+Rückwärtskompatible Ergänzung innerhalb von Version 1 (`AETHER_HOST.version` bleibt `1`). Namen und Felder sind
+**selbst gewählt**. Das heutige Spiel (aether main `cf5a485`) schickt nur `aether:setting` ohne `id` und merkt nichts
+davon: Sein einziger `message`-Listener (`web/shell.html`) nimmt nur `aether:feedback-state` an und verwirft alle anderen
+Typen, also auch `aether:settings-ack`.
+
+- **Ankündigung `AETHER_HOST.settingsAck: true`** (selbst gewählt): bedeutet „Dieses Dashboard beantwortet
+  `aether:setting`/`aether:settings` mit `id` durch `aether:settings-ack` und versteht `aether:settings`.“ Vorhanden ab
+  dem Dashboard-PR nach #38 (Ausgangsstand `ad0f473`). Antworten gibt es schon seit PR #37; ein Dashboard zwischen
+  PR #37 und diesem Stand antwortet also, kündigt es aber nicht an (ein Spiel behandelt es wie ein altes). Das Feld steht an jeder
+  Stelle, an der `AETHER_HOST` ins Spiel-iframe kommt (jeder Start, Neustart, Build-Wechsel, gespeicherter Build offline;
+  alle gehen über `hostScript()` in `index.html`). `version` bleibt `1`, `settings`, `feedback` und `dialogInput` sind
+  unverändert. Ein Spiel soll Sammel-Nachrichten und Antworten nur nutzen, wenn `window.AETHER_HOST.settingsAck === true`
+  ist; sonst (älteres Dashboard ohne das Feld) wie bisher einzelne `aether:setting` ohne `id`. Spiele, die das Feld nicht
+  kennen, sind nicht betroffen: Für sie ändert sich nichts.
 
 - **Sammel-Nachricht** `{ type: "aether:settings", id?, items: [{ key, value }, …] }`: 1 bis 64 Einträge. Gleiche
   Regeln wie bei `aether:setting` (Schlüssel-Muster, Wert String ≤ 1024 Zeichen oder `null` = löschen). Ein späterer
@@ -1770,6 +1784,32 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   a) rot; in `flyer-struktur.js` die Version flach kopieren (`Object.assign({}, q)`) → b) rot, die Herkunftsprüfung in
   `seiteLoeschen` abschalten → d) rot, beim Verschieben nur `ziel === id` prüfen → c) und Ordner-Test rot; in
   `flyer-zip.js` die CRC verfälschen → ZIP-Tests rot; in `flyer-grafik.js` das BOM weglassen → CSV-Tests rot.
+
+- Ankündigung `settingsAck` (`tests/speichern.test.js`, „Ankündigung settingsAck“; dazu `tests/host.test.js` und
+  `tests/e2e.test.js` bei Neustart, Build-Wechsel, Neuladen aus dem Speicher und gespeichertem Build offline): a) Feld im
+  Spiel-iframe, `version` 1, übrige Felder unverändert; b) Test-Spiel liest `settingsAck` und schickt eine
+  Sammel-Nachricht mit `id` → Antwort `ok: true`, Werte gespeichert; c) Test-Spiel ohne Kenntnis des Felds (einzeln,
+  ohne `id`) wie vorher. Gegenprobe (muss rot werden): Feld in `hostScript()` entfernt → a) und b) rot.
+
+### Zeitabhängige Tests: Seitenuhr statt Wanduhr
+
+Prüft ein Test Zeitlimits, Intervalle oder Hinweise, die nach einer Zeit verschwinden, dann steuert er die Uhr der
+Seite (Playwright `page.clock`) statt auf eine Wanduhr-Spanne zu warten (`waitForTimeout`, `Date.now() - t0`). Unter
+Last (langsamer CI-Rechner) laufen Wanduhr und Seite auseinander; so wurde F3b e) „Zeitlimit (Liste hängt) …“ rot
+(Merge-Lauf #82, Versuch 1): Das Test-Intervall von 150 ms gilt auch für die Paket-Prüfung, die „Online prüfen“
+sperrt, solange sie läuft. Unter CPU-Drosselung ×12 kam der Klick gesperrt an und ging verloren.
+
+Muster (Vorbild: `tests/flyer-f3b.test.js`, Hilfen `uhrAnhalten`, `knopfFrei`, `pruefungFertig`):
+
+1. `await page.clock.install()` vor dem Laden der Seite; die Uhr läuft dann zunächst normal mit.
+2. Nach dem Aufbau die Uhr anhalten (`page.clock.pauseAt(…)`). Ab dann feuern Timer der Seite nur, wenn der Test
+   sie weiterstellt (`page.clock.runFor(ms)`).
+3. Auf Ereignisse warten, nicht auf Zeit: Knopf frei, Ende der laufenden Prüfung (deren Promise), Zähler der App, der
+   beim Absenden zählt (`AetherFlyerMedienOnline.anfragen()`), sichtbarer Text.
+4. Zeitlimits genau prüfen: `runFor(grenze - 1)` → noch offen, `runFor(1)` → abgelaufen. „Keine Wiederholungsschleife“:
+   `runFor(…)` über mehrere Intervall-Takte, danach dieselbe Zahl Anfragen.
+5. Nachweis unter Last: CPU-Drosselung per CDP (`Emulation.setCPUThrottlingRate`, ×4 und ×12, dazu CPU-Konkurrenz),
+   je Profil 5 Durchgänge grün. Gegenproben: ohne Zeitlimit bzw. mit Wiederholungsschleife müssen rot werden.
 
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.

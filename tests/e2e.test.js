@@ -42,6 +42,7 @@ function gameJs(wasmName, dataName) {
   var result = window.__game = { step: 'start' };
   try { localStorage.getItem('x'); result.storage = 'open'; } catch (e) { result.storage = 'blocked'; }
   try { result.parentToken = String(window.parent.localStorage.getItem('aether.githubToken')); } catch (e) { result.parentToken = 'blocked'; }
+  result.host = window.AETHER_HOST === undefined ? 'fehlt' : JSON.parse(JSON.stringify(window.AETHER_HOST));
   WebAssembly.instantiateStreaming(fetch(${JSON.stringify(wasmName)}), {}).then(function (r) {
     result.sum = r.instance.exports.add(2, 3);
     ${dataName ? `return fetch(${JSON.stringify(dataName)}).then(function (x) { return x.arrayBuffer(); }).then(function (b) {
@@ -492,6 +493,7 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       const resultB = await waitGame(page);
       assert.equal(resultB.step, 'done', resultB.error);
       assert.equal(resultB.sum, 5);
+      assert.deepEqual(resultB.host, { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true }, 'AETHER_HOST mit settingsAck nach Build-Wechsel');
       await page.click('#exitBtn');
 
       // Erneuter Start desselben Builds kommt aus dem Cache.
@@ -501,6 +503,7 @@ for (const deviceName of [null, 'iPhone 13', 'iPad Pro 11 landscape']) {
       const again = await waitGame(page);
       assert.equal(again.step, 'done');
       assert.equal(mock.blobRequests, before, 'zweiter Start ohne erneuten Download');
+      assert.deepEqual(again.host, { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true }, 'AETHER_HOST mit settingsAck beim Neuladen des Builds aus dem Speicher');
       await page.click('#exitBtn');
 
       // Fehlender Build.
@@ -741,6 +744,7 @@ describe('Offline', () => {
     assert.equal(r.sum, 5);
     assert.equal(r.dataHead, 'AETHER-DATA-OK!!');
     assert.equal(r.parentToken, 'blocked');
+    assert.deepEqual(r.host, { version: 1, settings: true, feedback: true, dialogInput: true, settingsAck: true }, 'AETHER_HOST mit settingsAck auch beim gespeicherten Build offline');
     assert.equal(mock.requests.length, reqBefore, 'kein API-Aufruf');
     await page.click('#exitBtn');
     await page.waitForSelector('#buildsView:not([hidden])');

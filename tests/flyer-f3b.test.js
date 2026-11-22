@@ -56,6 +56,25 @@ const bibliothek = async (page) => { await page.click('#reiter button[data-reite
 const kachelStatus = (page) => page.$$eval('#bAbschnitte .m-kachel', (ks) => ks.map((k) => [k.dataset.id, k.querySelector('.m-status').dataset.status]));
 const medien = (page) => page.evaluate(() => (window.AetherFlyer.paketV2().medien || { dateien: [] }).dateien.map((d) => d.id));
 const vbWurzel = null;   // Platzhalter-Argument (der Shadow Root wird in der Seite direkt gelesen; kein eval wegen der CSP)
+// Seitenuhr anhalten (page.clock muss vor dem Laden installiert sein). Danach feuern Timer der Seite nur noch mit runFor.
+// Eine schon laufende Paket-Prüfung (flyer-online.js) endet noch (Antworten kommen über das Netz); sie sperrt solange
+// „Online prüfen“ – ohne laufende Uhr startet danach keine neue, der Knopf bleibt frei, bis der Test etwas auslöst.
+// Der Haltepunkt muss in der Zukunft der (bis dahin laufenden) Seitenuhr liegen: 1 s nach „jetzt“; ist sie unter Last
+// bis zum Aufruf doch schon weiter, wird der Haltepunkt neu bestimmt.
+async function uhrAnhalten(page) {
+  for (let versuch = 1; ; versuch++) {
+    const jetzt = await page.evaluate(() => Date.now());
+    try { await page.clock.pauseAt(jetzt + 1000); break; } catch (e) { if (versuch >= 5 || !/to the past/.test(String(e))) throw e; }
+  }
+  await knopfFrei(page);
+}
+// „Online prüfen“ frei (keine Paket-Prüfung läuft) – ein Klick kommt dann sicher an
+const knopfFrei = (page) => page.waitForFunction(() => !document.getElementById('btnOnline').disabled);
+// Anzahl der Anfragen der App an aether-medien (wird beim Absenden gezählt, also ohne Verzögerung durch den Nachbau)
+const appAnfragen = (page) => page.evaluate(() => window.AetherFlyerMedienOnline.anfragen().length);
+// Ende der laufenden Medien-Prüfung abwarten: pruefe() gibt die laufende zurück, sonst startet sie eine automatische
+// (bei „kein Zugriff“ sofort ohne Anfrage zu Ende).
+const pruefungFertig = (page) => page.evaluate(() => window.AetherFlyerMedienOnline.pruefe());
 // Nachgebaute API von aether-medien: modus 'ok' | 'kein401' | 'kein403' | 'kein404' | 'leer' | 'haengt'
 function medienApi(repo) {
   return async (route) => {
@@ -382,63 +401,100 @@ describe('F3b e) Online-Abgleich mit aether-medien (nachgebaute API)', () => {
     });
   });
 
+  // Zeitabhängiges läuft hier auf der Seitenuhr (page.clock), nicht auf der Wanduhr: Nach uhrAnhalten feuern Intervall
+  // (150 ms) und Zeitlimit (3 s, AETHER_TEST_PROJECT_TIMEOUT_MS) nur, wenn der Test die Uhr mit runFor weiterstellt.
+  // Gewartet wird nur auf Ereignisse (Knopf frei, Ende der laufenden Prüfung), nie auf eine Zeitspanne.
   test('Zeitlimit (Liste hängt), fehlender Zugriff bei 401, 403 und 404 (einmalige Meldung, keine Wiederholungsschleife, „Online prüfen“ fragt erneut), Repo ohne Ordner medien/, offline: keine Anfrage, „offline nicht verfügbar“', async () => {
     for (const modus of ['kein401', 'kein403', 'kein404']) {
       const repo = { modus: 'ok', dateien: [], anfragen: [] };
       await mitSeite({ withToken: true, init: [() => { window.AETHER_TEST_FLYER_INTERVALL_MS = 150; }] }, async ({ page, log }) => {
+        await page.clock.install();   // Seitenuhr: läuft bis uhrAnhalten mit
         await page.route('https://api.github.com/**', medienApi(repo));
         await oeffneFlyer(page);
         await importiere(page, paketV1());
         await hinzu(page, [{ name: 'Kardos.png', type: 'image/png', bytes: PNG }]);
+        await uhrAnhalten(page);
+        await pruefungFertig(page);   // eine vom Intervall gestartete Prüfung (noch mit Zugriff) endet
         repo.modus = modus;
+        const a0 = await appAnfragen(page), m0 = repo.anfragen.length;
         await page.click('#btnOnline');
-        await page.waitForFunction(() => window.AetherFlyerMedienOnline.keinZugriff());
+        assert.equal(await pruefungFertig(page), 'kein-zugriff');
+        assert.equal(await page.evaluate(() => window.AetherFlyerMedienOnline.keinZugriff()), true);
         await page.waitForFunction(() => /Kein Zugriff auf aether-medien/.test(document.getElementById('toast').textContent));
         assert.equal(await text(page, '#toast'), 'Kein Zugriff auf aether-medien – Repo anlegen bzw. den Token um das Repo erweitern');
-        // Bis „kein Zugriff“ feststeht, können eine Prüfung des Intervalls (150 ms) und die des Klicks zugleich laufen – je
-        // Durchgang Liste (bei 404 dazu die Probe des Repos); danach (unten) keine einzige weitere Anfrage
-        const je = modus === 'kein404' ? 2 : 1, vorher = repo.anfragen.filter((a) => a.modus === modus);
-        assert.ok(vorher.length >= je && vorher.length <= 2 * je, modus + ': ' + vorher.length + ' Anfragen bis „kein Zugriff“');
-        assert.ok(vorher.every((a) => /\/contents\/medien$|aether-medien$/.test(a.pfad)), 'nur Liste und Repo-Probe');
-        await page.waitForTimeout(300);   // eine zweite, schon gestartete Prüfung endet
-        const n = repo.anfragen.length;
-        // Intervall (150 ms) und online-Ereignisse: keine weiteren Anfragen
+        // Genau ein Durchgang des Klicks: Liste (bei 404 dazu die Probe des Repos) – die Seitenuhr steht, kein Intervall dazwischen
+        const je = modus === 'kein404' ? 2 : 1, vorher = repo.anfragen.slice(m0);
+        assert.equal(await appAnfragen(page) - a0, je, modus + ': Anfragen der App bis „kein Zugriff“');
+        assert.equal(vorher.length, je, modus + ': ' + vorher.length + ' Anfragen bis „kein Zugriff“');
+        assert.ok(vorher.every((a) => a.modus === modus && /\/contents\/medien$|aether-medien$/.test(a.pfad)), 'nur Liste und Repo-Probe');
+        const n = repo.anfragen.length, nApp = await appAnfragen(page);
+        // Intervall (8 Takte zu 150 ms auf der Seitenuhr) und online-Ereignisse: keine weiteren Anfragen
         await page.evaluate(() => { for (let i = 0; i < 5; i++) window.dispatchEvent(new Event('online')); });
-        await page.waitForTimeout(1200);
+        await page.clock.runFor(1200);
+        assert.equal(await pruefungFertig(page), 'kein-zugriff', 'automatischer Durchgang endet ohne Anfrage');
+        await knopfFrei(page);
+        assert.equal(await appAnfragen(page), nApp, modus + ': keine Wiederholungsschleife (Zähler der App)');
         assert.equal(repo.anfragen.length, n, modus + ': keine Wiederholungsschleife');
         await bibliothek(page);
         assert.equal(await text(page, '#bZugriff'), 'Kein Zugriff auf aether-medien – Repo anlegen bzw. den Token um das Repo erweitern. Alles andere funktioniert weiter; erneut prüfen mit „Online prüfen“.');
         assert.deepEqual(await kachelStatus(page), [['m1', 'geraet']], 'alles andere funktioniert weiter');
         // ausdrücklich: genau ein neuer Durchgang, die Meldung kommt nicht noch einmal als Toast
         await page.evaluate(() => { document.getElementById('toast').textContent = ''; });
+        await knopfFrei(page);
         await page.click('#btnOnline');
-        await page.waitForFunction((n) => window.AetherFlyerMedienOnline.anfragen().length >= n + 1, n);
-        await page.waitForTimeout(300);
+        assert.equal(await pruefungFertig(page), 'kein-zugriff');
+        assert.equal(await appAnfragen(page) - nApp, je, 'genau ein neuer Durchgang (Zähler der App)');
         assert.equal(repo.anfragen.length - n, je, 'genau ein neuer Durchgang');
         assert.equal(await text(page, '#toast'), '', 'Meldung nur einmal');
+        // auch danach keine Schleife
+        await page.clock.runFor(1200);
+        assert.equal(await pruefungFertig(page), 'kein-zugriff');
+        assert.equal(await appAnfragen(page) - nApp, je, 'nach „Online prüfen“ keine Wiederholungsschleife');
         assert.deepEqual(log.errors.filter((e) => !/40[134]/.test(e)), []);
       });
     }
     // Repo vorhanden, Ordner medien/ fehlt: kein Fehler, Status orange; Zeitlimit; offline
     const repo = { modus: 'leer', dateien: [], anfragen: [] };
     await mitSeite({ withToken: true }, async ({ context, page, log }) => {
+      await page.clock.install();
       await page.route('https://api.github.com/**', medienApi(repo));
       await oeffneFlyer(page);
       await importiere(page, paketV1());
       await hinzu(page, [{ name: 'Kardos.png', type: 'image/png', bytes: PNG }]);
+      await uhrAnhalten(page);
       assert.equal(await page.evaluate(() => window.AetherFlyerMedienOnline.pruefe({ ausdruecklich: true })), 'aktuell');
       assert.deepEqual(repo.anfragen.map((a) => a.pfad), [MED + '/contents/medien', MED]);
       assert.equal(await page.evaluate(() => window.AetherFlyerMedienOnline.keinZugriff()), false);
+      // Liste hängt: Das Zeitlimit greift genau nach 3 s Seitenuhr (nicht früher), Ergebnis wie offline
       repo.modus = 'haengt';
-      const t0 = Date.now();
-      assert.equal(await page.evaluate(() => window.AetherFlyerMedienOnline.pruefe({ ausdruecklich: true })), 'offline', 'Zeitlimit wie offline');
-      const dauer = Date.now() - t0;
-      assert.ok(dauer >= 2500 && dauer < 8000, 'Zeitlimit der Tests (3 s): ' + dauer + ' ms');
+      const a0 = await appAnfragen(page);
+      await page.evaluate(() => { window.__erg = 'laeuft'; window.AetherFlyerMedienOnline.pruefe({ ausdruecklich: true }).then((e) => { window.__erg = e; }); });
+      assert.equal(await appAnfragen(page), a0 + 1, 'Liste angefragt');
+      await page.clock.runFor(2999);
+      assert.equal(await page.evaluate(() => window.__erg), 'laeuft', 'vor Ablauf des Zeitlimits noch offen');
+      await page.clock.runFor(1);
+      assert.equal(await page.evaluate(() => window.__erg), 'offline', 'Zeitlimit wie offline');
+      // keine Wiederholungsschleife: ohne Anlass keine neue Anfrage (Intervall hier 10 min), keine Zugriffs-Meldung
+      await page.clock.runFor(60 * 1000);
+      assert.equal(await appAnfragen(page), a0 + 1, 'nach dem Zeitlimit keine automatische Wiederholung');
+      assert.doesNotMatch(await text(page, '#toast'), /Kein Zugriff/, 'Zeitlimit gilt nicht als fehlender Zugriff');
+      // „Online prüfen“ fragt erneut: genau eine Anfrage, die nach dem Zeitlimit ebenso endet
+      await knopfFrei(page);
+      await page.click('#btnOnline');
+      // Die Prüfung des Klicks hängt (Seitenuhr steht): pruefe() gibt genau sie zurück, ohne neue Anfrage
+      await page.evaluate(() => { window.__erg = 'laeuft'; window.AetherFlyerMedienOnline.pruefe({ ausdruecklich: true }).then((e) => { window.__erg = e; }); });
+      assert.equal(await appAnfragen(page), a0 + 2, '„Online prüfen“ fragt erneut, genau eine Anfrage');
+      await page.clock.runFor(3000);
+      assert.equal(await page.evaluate(() => window.__erg), 'offline', 'auch die neue Anfrage endet mit dem Zeitlimit');
+      assert.deepEqual(repo.anfragen.filter((a) => a.modus === 'haengt').map((a) => a.pfad), [MED + '/contents/medien', MED + '/contents/medien']);
       // offline: keine Anfrage
       repo.anfragen = [];
+      const a1 = await appAnfragen(page);
       await context.setOffline(true);
       assert.equal(await page.evaluate(() => window.AetherFlyerMedienOnline.pruefe({ ausdruecklich: true })), 'offline');
       assert.equal(repo.anfragen.length, 0);
+      assert.equal(await appAnfragen(page), a1, 'offline: keine Anfrage (Zähler der App)');
+      await page.clock.resume();   // ab hier wieder mit laufender Seitenuhr wie bisher
       // fehlender Inhalt offline: „offline nicht verfügbar“
       await page.evaluate(async () => {
         const M = window.AetherFlyerMedien;
