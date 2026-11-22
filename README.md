@@ -1785,6 +1785,32 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   `seiteLoeschen` abschalten → d) rot, beim Verschieben nur `ziel === id` prüfen → c) und Ordner-Test rot; in
   `flyer-zip.js` die CRC verfälschen → ZIP-Tests rot; in `flyer-grafik.js` das BOM weglassen → CSV-Tests rot.
 
+- Ankündigung `settingsAck` (`tests/speichern.test.js`, „Ankündigung settingsAck“; dazu `tests/host.test.js` und
+  `tests/e2e.test.js` bei Neustart, Build-Wechsel, Neuladen aus dem Speicher und gespeichertem Build offline): a) Feld im
+  Spiel-iframe, `version` 1, übrige Felder unverändert; b) Test-Spiel liest `settingsAck` und schickt eine
+  Sammel-Nachricht mit `id` → Antwort `ok: true`, Werte gespeichert; c) Test-Spiel ohne Kenntnis des Felds (einzeln,
+  ohne `id`) wie vorher. Gegenprobe (muss rot werden): Feld in `hostScript()` entfernt → a) und b) rot.
+
+### Zeitabhängige Tests: Seitenuhr statt Wanduhr
+
+Prüft ein Test Zeitlimits, Intervalle oder Hinweise, die nach einer Zeit verschwinden, dann steuert er die Uhr der
+Seite (Playwright `page.clock`) statt auf eine Wanduhr-Spanne zu warten (`waitForTimeout`, `Date.now() - t0`). Unter
+Last (langsamer CI-Rechner) laufen Wanduhr und Seite auseinander; so wurde F3b e) „Zeitlimit (Liste hängt) …“ rot
+(Merge-Lauf #82, Versuch 1): Das Test-Intervall von 150 ms gilt auch für die Paket-Prüfung, die „Online prüfen“
+sperrt, solange sie läuft. Unter CPU-Drosselung ×12 kam der Klick gesperrt an und ging verloren.
+
+Muster (Vorbild: `tests/flyer-f3b.test.js`, Hilfen `uhrAnhalten`, `knopfFrei`, `pruefungFertig`):
+
+1. `await page.clock.install()` vor dem Laden der Seite; die Uhr läuft dann zunächst normal mit.
+2. Nach dem Aufbau die Uhr anhalten (`page.clock.pauseAt(…)`). Ab dann feuern Timer der Seite nur, wenn der Test
+   sie weiterstellt (`page.clock.runFor(ms)`).
+3. Auf Ereignisse warten, nicht auf Zeit: Knopf frei, Ende der laufenden Prüfung (deren Promise), Zähler der App, der
+   beim Absenden zählt (`AetherFlyerMedienOnline.anfragen()`), sichtbarer Text.
+4. Zeitlimits genau prüfen: `runFor(grenze - 1)` → noch offen, `runFor(1)` → abgelaufen. „Keine Wiederholungsschleife“:
+   `runFor(…)` über mehrere Intervall-Takte, danach dieselbe Zahl Anfragen.
+5. Nachweis unter Last: CPU-Drosselung per CDP (`Emulation.setCPUThrottlingRate`, ×4 und ×12, dazu CPU-Konkurrenz),
+   je Profil 5 Durchgänge grün. Gegenproben: ohne Zeitlimit bzw. mit Wiederholungsschleife müssen rot werden.
+
 Mit `AETHER_REAL_BUILD=/pfad/zu/builds/<hash> npm test` läuft zusätzlich ein echter Emscripten-Build durch den Mock.
 Screenshots landen in `tests/output/`.
 
