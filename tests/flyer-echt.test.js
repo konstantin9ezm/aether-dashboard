@@ -6,6 +6,13 @@
 // (S1, IG-Technik-2 …), nie Inhalte; Bilder und die Zusammenfassung landen in FLYER_AUSGABE (Standard: ein
 // temporäres Verzeichnis außerhalb des Repos).
 // Aufruf: FLYER_ECHT=/pfad/aether-flyer-paket.json node --test tests/flyer-echt.test.js
+// Gewollte Abweichungen (ERWARTET): Seit Dashboard PR #37 legt die Darstellung in jedem Block mit Status-Punkten einen
+// Zähler an (<span class="zaehler"> als letztes Kind des data-zaehler-Elements, siehe flyer-aenderungen.js
+// zaehlerBerechnen). Im echten Paket betrifft das nur IG-Technik-2 (zwei Zähler-Zeilen, die Seite wird 26 px höher).
+// Der Vergleich nimmt genau diese Änderung als erwartet an: Je Seite wird gezählt, wie viele Zähler die neue
+// Darstellung gegenüber dem Paket-HTML neu anlegt – das muss genau der Wert aus ERWARTET sein (sonst 0), und die Seite
+// muss genau um mehrPx höher sein. Für den Pixelvergleich werden nur diese neu angelegten Zähler wieder entfernt;
+// danach muss auch diese Seite pixelgleich zum alten Code sein. Jede andere Abweichung bleibt rot.
 'use strict';
 
 const { test, before, after } = require('node:test');
@@ -20,6 +27,8 @@ const ECHT = process.env.FLYER_ECHT || '';
 const ALT_COMMIT = process.env.FLYER_ALT_COMMIT || '3e35c4f';
 const ROOT = path.join(__dirname, '..');
 const AUSGABE = process.env.FLYER_AUSGABE || path.join(os.tmpdir(), 'aether-flyer-echt');
+// Seite → { neueZaehler, mehrPx }: neu angelegte Zähler-Zeilen und Mehrhöhe in CSS-Pixeln gegenüber dem alten Code
+const ERWARTET = Object.freeze({ 'IG-Technik-2': Object.freeze({ neueZaehler: 2, mehrPx: 26 }) });
 const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.js': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 let browser = null;
@@ -50,7 +59,10 @@ function alterCode() {
 }
 
 // Jede Seite 1:1 abseits der Oberfläche darstellen (deckend weißer Grund) und als PNG aufnehmen → { id → Buffer }
-async function aufnahmen(url) {
+// neu = true (neuer Code): zusätzlich je Seite die neu angelegten Zähler zählen (data-zaehler-Elemente in
+// Dokumentreihenfolge, die in der Darstellung ein Kind .zaehler haben, im Paket-HTML aber nicht) und die Höhe messen;
+// bei Seiten aus ERWARTET werden genau diese Zähler vor der Aufnahme wieder entfernt → zaehler { id → { neu, hoehe } }
+async function aufnahmen(url, neu = false) {
   const context = await browser.newContext({ viewport: { width: 1300, height: 1400 }, deviceScaleFactor: 1, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
   try {
     const page = await context.newPage();
@@ -64,9 +76,9 @@ async function aufnahmen(url) {
     await page.waitForFunction(() => window.AetherFlyerAnsicht.paket() && document.getElementById('dateiImport').value === '');
     await page.evaluate(() => window.AetherFlyerAnsicht.schriftenBereit());
     const ids = await page.evaluate(() => window.AetherFlyerAnsicht.paket().dokumente.map((d) => d.id));
-    const bilder = {};
+    const bilder = {}, zaehler = {};
     for (const id of ids) {
-      await page.evaluate(async (id) => {
+      zaehler[id] = await page.evaluate(async ([id, neu, erwartet]) => {
         const A = window.AetherFlyerAnsicht, dok = A.paket().dokumente.find((d) => d.id === id);
         const alt = document.getElementById('echt-box');
         if (alt) alt.remove();
@@ -77,11 +89,25 @@ async function aufnahmen(url) {
         const d = A.darstellen(dok, box, A.optionen(dok, 'bild'));
         await d.fertig;
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      }, id);
+        if (!neu) return null;
+        const mitZaehler = (wurzel) => Array.from(wurzel.querySelectorAll('[data-zaehler]'))
+          .map((z) => Array.prototype.find.call(z.children, (c) => c.classList.contains('zaehler')) || null);
+        const quelle = mitZaehler(new DOMParser().parseFromString(dok.html, 'text/html').body);
+        const jetzt = mitZaehler(d.wurzel);
+        // Höhe wie die Aufnahme (Elementscreenshot: auf ganze Pixel aufgerundet)
+        const hoehe = Math.ceil(d.host.getBoundingClientRect().height - 0.01);
+        if (quelle.length !== jetzt.length) return { neu: -1, hoehe: hoehe };
+        const neue = jetzt.filter((k, i) => k && !quelle[i]);
+        if (erwartet && neue.length === erwartet.neueZaehler) {
+          for (const k of neue) k.remove();
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
+        return { neu: neue.length, hoehe: hoehe };
+      }, [id, neu, ERWARTET[id] || null]);
       bilder[id] = await page.locator('#echt-box .flyer-host').screenshot({ animations: 'disabled' });
     }
     assert.deepEqual(fehler, []);
-    return { ids, bilder };
+    return { ids, bilder, zaehler };
   } finally {
     await context.close();
   }
@@ -98,10 +124,22 @@ after(async () => {
   for (const s of server) await new Promise((r) => s.close(r));
 });
 
-test('h) die Original-Seiten des echten Pakets sehen nach der Umwandlung pixelgleich aus wie vorher; Grafiken je Seite; Paketgröße', { skip: !ECHT && 'FLYER_ECHT nicht gesetzt (nur lokal, das echte Paket kommt nie in die CI)' }, async () => {
+test('h) die Original-Seiten des echten Pakets sehen nach der Umwandlung pixelgleich aus wie vorher (gewollte Zähler aus PR #37 ausgenommen); Grafiken je Seite; Paketgröße', { skip: !ECHT && 'FLYER_ECHT nicht gesetzt (nur lokal, das echte Paket kommt nie in die CI)' }, async () => {
   const neuUrl = await dienen(ROOT), altUrl = await dienen(alterCode());
-  const alt = await aufnahmen(altUrl), neu = await aufnahmen(neuUrl);
+  const alt = await aufnahmen(altUrl), neu = await aufnahmen(neuUrl, true);
   assert.deepEqual(neu.ids, alt.ids, 'dieselben Seiten in derselben Reihenfolge');
+  // Gewollte Abweichungen: neu angelegte Zähler je Seite genau wie in ERWARTET (sonst keine), Mehrhöhe genau mehrPx
+  const pngHoehe = (b) => b.readUInt32BE(20);
+  const gewollt = [];
+  for (const id of alt.ids) {
+    const e = ERWARTET[id] || { neueZaehler: 0, mehrPx: 0 }, z = neu.zaehler[id];
+    assert.equal(z.neu, e.neueZaehler, `${id}: neu angelegte Zähler`);
+    if (ERWARTET[id]) {
+      assert.equal(z.hoehe - pngHoehe(alt.bilder[id]), e.mehrPx, `${id}: Mehrhöhe durch die neuen Zähler`);
+      gewollt.push(`  ${id}: ${z.neu} neue Zähler-Zeilen, ${pngHoehe(alt.bilder[id])} → ${z.hoehe} px (+${e.mehrPx}); ohne sie verglichen`);
+    }
+  }
+  for (const id of Object.keys(ERWARTET)) assert.ok(alt.ids.includes(id), `${id} aus ERWARTET gibt es im Paket`);
   // Pixelvergleich im Browser (dekodierte RGBA-Werte)
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -156,7 +194,9 @@ test('h) die Original-Seiten des echten Pakets sehen nach der Umwandlung pixelgl
   await ctx2.close();
   const gleich = ergebnis.filter((r) => r.anders === 0).length;
   const zeilen = [
-    `Seiten: ${ergebnis.length}, pixelgleich: ${gleich}`,
+    `Seiten: ${ergebnis.length}, wie erwartet (pixelgleich, gewollte Abweichungen ausgenommen): ${gleich}`,
+    `Gewollte Abweichungen: ${gewollt.length}`,
+    ...gewollt,
     ...ergebnis.filter((r) => r.anders !== 0).map((r) => `  ${r.id}: ${r.anders === -1 ? 'andere Größe' : r.anders + ' Pixel anders'}`),
     `HTML nach der Umwandlung bytegleich: ${export_.html}`,
     `Paket v2 (formatiert wie der Export): 1 Version ${export_.eins} Bytes, 4 Versionen ${export_.vier} Bytes`,
@@ -168,5 +208,5 @@ test('h) die Original-Seiten des echten Pakets sehen nach der Umwandlung pixelgl
   console.log(zeilen.join('\n'));
   assert.ok(export_.html, 'HTML bytegleich');
   assert.ok(export_.aus.every((x) => x.png === x.n), 'jede Grafik als PNG');
-  assert.equal(gleich, ergebnis.length, 'alle Seiten pixelgleich');
+  assert.equal(gleich, ergebnis.length, 'alle Seiten wie erwartet (pixelgleich nach Abzug der gewollten Zähler)');
 });

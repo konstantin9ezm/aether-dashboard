@@ -42,6 +42,7 @@
   const B = window.AetherFlyerBearbeiten || null;
   const U = window.AetherFlyerUebersicht || null;
   const GR = window.AetherFlyerGrafik || null;
+  const PX = window.AetherFlyerPptx || null;
   const ST = window.AetherFlyerStruktur;
   const M = window.AetherFlyerMedien || null;
   const BI = window.AetherFlyerBibliothek || null;
@@ -564,6 +565,10 @@
     }
     if (GR && typeof GR.einrichten === 'function') {
       try { GR.einrichten(); } catch (e) { /* Seite läuft ohne „Grafiken & Daten“ */ }
+    }
+    // PowerPoint-Export (braucht „Bild“ aus flyer-export.js)
+    if (E && PX && typeof PX.einrichten === 'function') {
+      try { Promise.resolve(PX.einrichten()).catch(() => {}); } catch (e) { /* Seite läuft ohne PowerPoint */ }
     }
     // F3b: Player (Modus „Medium“), Bibliothek, Online-Abgleich der Medien
     if (M && PL && typeof PL.einrichten === 'function') {

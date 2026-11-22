@@ -9,7 +9,8 @@
 <title>Aether – Flyer</title>
 <!--
   Flyer & Infografiken: zeigt die Dokumente eines Flyer-Pakets (aether-flyer-paket.json, Format „aether-flyer-paket“)
-  als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js.
+  als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js,
+  PowerPoint (jede Seite als Bild auf einer Folie) über flyer-pptx.js.
   Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem Repo aether (docs/flyer, Zweig main, gelesen über
   die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt; F3b: Medien der Bibliothek
   ebenso aus dem privaten Repo aether-medien, Ordner medien/) und liegt danach in
@@ -22,7 +23,8 @@
   Skripte (ohne Inline-Skript wegen der CSP): gemeinsam.js, flyer-paket.js, flyer-struktur.js (Versionen, Ordner,
   Seiten im Format v2, F3a), flyer-speicher.js, flyer-ansicht.js,
   flyer-online.js, flyer-export.js, flyer-aenderungen.js (Änderungsschicht, Teil 2), flyer-bearbeiten.js (Bearbeiten,
-  Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-medien.js (Bibliothek:
+  Export, Abgleich, Sicherung, Teil 2), flyer-uebersicht.js (Versionen, Tafeln, F3a), flyer-pptx.js (PowerPoint-Export:
+  jede Seite als Bild auf einer Folie), flyer-medien.js (Bibliothek:
   Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer-medien-tafeln.js
   (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer-player.js (Player, Medien in Seiten,
   Modus „Medium“, F3b), flyer-medien-online.js (Abgleich mit dem privaten Repo aether-medien, nur lesend, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
@@ -247,6 +249,11 @@ button.g-sel{ display:block; width:100%; min-height:48px; margin:10px 0 0; backg
 .g-fertig{ font-weight:600; margin:6px 0; }
 .g-hinweis{ margin:6px 0 0; }
 /* Sichern-Dialog (wie im Logo-Werkzeug); liegt über dem Vollbild */
+/* PowerPoint: Auswahl des Folienformats direkt unter dem Knopf (über dem Vollbild, unter Tafel, Dialog und Meldung) */
+.pptx-wahl{ position:fixed; left:0; top:0; z-index:22; display:flex; gap:4px; padding:4px; border-radius:12px; background:var(--panel);
+  border:1px solid var(--line); box-shadow:0 6px 24px rgba(0,0,0,.35); max-width:calc(100vw - 16px); }
+.pptx-wahl button{ flex:1 1 auto; white-space:nowrap; min-width:0; }
+.pptx-wahl button[aria-checked="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
 #modal{ position:fixed; inset:0; background:rgba(4,5,14,.6); display:flex; align-items:center; justify-content:center; padding:16px; z-index:25; }
 #modal[hidden]{ display:none; }
 .dlg{ background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:16px; width:min(520px,100%); max-height:90%; overflow:auto; }
@@ -345,6 +352,7 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
     <button type="button" id="btnImport">Paket importieren</button>
     <input type="file" id="dateiImport" hidden>
     <button type="button" id="btnAllePdf" hidden>Alle als PDF</button>
+    <button type="button" id="btnAllePptx" aria-haspopup="menu" aria-expanded="false" aria-controls="pptxWahl" hidden>Alle als PowerPoint</button>
     <button type="button" id="btnExport" hidden>Paket exportieren</button>
     <button type="button" id="btnSichern" hidden>Änderungen sichern</button>
     <button type="button" id="btnEinspielen" hidden>Änderungen einspielen</button>
@@ -405,6 +413,7 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
     <button type="button" id="vbReset" hidden>Dokument zurücksetzen</button>
     <button type="button" id="vbPdf" hidden>PDF</button>
     <button type="button" id="vbBild" hidden>Bild</button>
+    <button type="button" id="vbPptx" aria-haspopup="menu" aria-expanded="false" aria-controls="pptxWahl" hidden>PowerPoint</button>
     <button type="button" id="vbExport" class="hervor" hidden>Export</button>
     <button type="button" id="vbZu" aria-label="Schließen">✕</button>
   </div>
@@ -437,6 +446,8 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
 
 <div id="druck" aria-hidden="true"></div>
 
+<div id="pptxWahl" class="pptx-wahl" role="menu" aria-label="Folienformat" hidden><button type="button" role="menuitemradio" data-format="a4" aria-checked="true">A4 hochkant</button><button type="button" role="menuitemradio" data-format="16x9" aria-checked="false">16:9 quer</button></div>
+
 <div id="modal" hidden><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="mTitel">
   <h2 id="mTitel"></h2><p id="mText"></p>
   <div id="mInhalt"></div>
@@ -457,6 +468,7 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
 <script src="flyer-bearbeiten.js"></script>
 <script src="flyer-uebersicht.js"></script>
 <script src="flyer-grafik.js"></script>
+<script src="flyer-pptx.js"></script>
 <script src="flyer-bibliothek.js"></script>
 <script src="flyer-medien-tafeln.js"></script>
 <script src="flyer-player.js"></script>

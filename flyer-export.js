@@ -665,6 +665,7 @@
     druckvorbereitung: druckvorbereitung,
     druckeAlle: druckeAlle,
     druckeEins: druckeEins,
+    druckListe: druckListe,   // PowerPoint-Export (flyer-pptx.js): genau die Seiten von „Alle als PDF“
     bildVorbereiten: bildVorbereiten,
     bildDatei: bildDatei,
     herunterladenUndFreigeben: herunterladenUndFreigeben,
