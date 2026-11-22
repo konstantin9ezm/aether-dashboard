@@ -340,6 +340,34 @@
   #saveHint .sh-more li { overflow-wrap: anywhere; }
   #saveHint .sh-more p { margin: 0 0 8px; color: #d9d0ea; }
 
+  /* Tafel „Aether läuft schon in einem anderen Fenster“ (nur ein Fenster speichert) */
+  #fensterTafel {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(12px, var(--safe-t)) max(12px, var(--safe-r)) max(12px, var(--safe-b)) max(12px, var(--safe-l));
+    background: rgba(5,6,14,0.72);
+    overflow: auto;
+  }
+  #fensterTafel .ft-box {
+    width: min(600px, 100%); max-height: 100%; overflow: auto;
+    padding: 24px 26px; border-radius: 20px;
+    background: #121731; border: 1px solid #3a4170;
+    box-shadow: 0 16px 48px rgba(0,0,0,.55);
+    color: #eef0fb;
+  }
+  #fensterTafel h2 { margin: 0 0 10px; font-size: 21px; line-height: 1.3; }
+  #fensterTafel p { margin: 0 0 16px; font-size: 16px; line-height: 1.45; color: #d4d8ef; }
+  #fensterTafel .ft-knoepfe { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+  #fensterTafel .ft-knoepfe button {
+    flex: 1 1 200px; min-height: 48px; padding: 10px 16px; border-radius: 12px;
+    border: 1px solid #3a4170; background: #1b2247; color: #eef0fb; font-weight: 600; cursor: pointer;
+    touch-action: manipulation;
+  }
+  #fensterTafel .ft-knoepfe .ft-haupt { background: #8b7cf6; border-color: #8b7cf6; color: #0d0a1f; }
+  #fensterTafel button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  #fensterTafel .ft-klein { margin: 0; font-size: 13px; color: #9aa1c6; }
+  #fensterTafel .ft-status { margin: 12px 0 0; font-size: 14px; color: #fbd38d; }
+
 
   /* Feedback-Dialog (über dem laufenden Spiel; das X bleibt darüber erreichbar) */
   #feedback {
@@ -828,6 +856,20 @@
       <p class="fb-hint">Keine Mail-App? Text kopieren und an die Adresse oben schicken.</p>
       <p class="fb-status" id="fbStatus" aria-live="polite"></p>
     </div>
+  </div>
+</div>
+
+<!-- Nur ein Fenster speichert: Tafel im Fenster ohne Speicherrecht (README „Nur ein Fenster speichert“) -->
+<div id="fensterTafel" hidden>
+  <div class="ft-box" role="dialog" aria-modal="true" aria-labelledby="ftTitel" aria-describedby="ftText">
+    <h2 id="ftTitel">Aether läuft schon in einem anderen Fenster</h2>
+    <p id="ftText">Damit nichts verloren geht, speichert immer nur ein Fenster. Hier ist das Spiel angehalten.</p>
+    <div class="ft-knoepfe">
+      <button class="ft-haupt" id="ftWeiter" type="button">Hier weiterspielen</button>
+      <button id="ftSchliessen" type="button">Fenster schließen</button>
+    </div>
+    <p class="ft-klein">„Hier weiterspielen“ hält das andere Fenster an; dort erscheint dieselbe Tafel mit „Hier weiterspielen“.</p>
+    <p class="ft-status" id="ftStatus" role="status" hidden></p>
   </div>
 </div>
 
@@ -1609,8 +1651,6 @@
     return { ok: true, grund: null, keys: keys };
   }
   function grenzeMelden(r) { speicherFehlerZeigen('grenze', r.keys); return r; }
-  // Darf dieses Fenster speichern? (Teil „Nur ein Fenster speichert“ ersetzt das.)
-  function darfSpeichern() { return true; }
 
   // Nachricht 'aether:setting' (einzeln) bzw. 'aether:settings' (Sammel) aus dem Spiel. Antwort nur mit gültiger id.
   function storeGameSetting(msg, quelle) {
@@ -1691,6 +1731,121 @@
     zurueck = {};
     saveFehler = null;
     speicherHinweisZu();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Nur ein Fenster speichert (Variante B, README „Nur ein Fenster speichert“)
+  // ---------------------------------------------------------------------------
+  // Ist die Seite in mehreren Fenstern/Tabs desselben Browsers offen, hält genau eines die Web Lock
+  // FENSTER_SPERRE: Nur dieses lädt den Spielrahmen und schreibt Spiel-Einstellungen. Die anderen zeigen die Tafel
+  // „Aether läuft schon in einem anderen Fenster“. „Hier weiterspielen“ übernimmt die Sperre mit steal; das bisherige
+  // Fenster bekommt dabei einen AbortError, entlädt sein Spiel und zeigt dieselbe Tafel.
+  // Ersatzweg ohne Web Locks: BroadcastChannel (Frage „wer spielt?“, KANAL_WARTEN_MS auf Antwort warten). Ohne beides
+  // speichert jedes Fenster wie bisher.
+  var FENSTER_SPERRE = 'aether-dashboard-spiel';   // selbst gewählt: Name der Sperre und des Kanals
+  var KANAL_WARTEN_MS = 150;                       // selbst gewählt: nur Ersatzweg
+  // zustand: 'pruefe' (beim Start) | 'halter' (speichert) | 'wartet' (Tafel) | 'uebernimmt' (nach „Hier weiterspielen“)
+  var fenster = { zustand: 'pruefe', weg: '', startMs: null, bereitMs: null, rahmenMs: null, kanal: null, freigeben: null };
+  function darfSpeichern() { return fenster.zustand === 'halter'; }
+  function fensterBereit() { if (fenster.bereitMs === null) fenster.bereitMs = Math.round(performance.now() * 10) / 10; }
+
+  function fensterHalten() {
+    fensterBereit();
+    fenster.zustand = 'halter';
+    tafelZeigen(false);
+    syncStartFrame();
+  }
+  function fensterAngehalten() {
+    fensterBereit();
+    var imSpiel = !!game || !!(frame && frame.state !== 'start');
+    fenster.zustand = 'wartet';
+    if (frame && frame.state === 'loading' && loadAbort) { try { loadAbort.abort(); } catch (e) { /* egal */ } }
+    if (game) stopGame(true);
+    if (frame) discardFrame(frame);
+    if (imSpiel) showView('builds'); else syncStartFrame();
+    tafelZeigen(true);
+  }
+  function tafelZeigen(an) {
+    var t = $('fensterTafel'), war = !t.hidden;
+    t.hidden = !an;
+    $('app').inert = !!an;
+    $('game').inert = !!an;
+    if (an) {
+      $('ftStatus').hidden = true;
+      $('ftWeiter').disabled = false;
+      if (!war) { try { $('ftWeiter').focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+    }
+  }
+
+  // Web Lock anfordern: opt { ifAvailable: true } beim Start, { steal: true } bei „Hier weiterspielen“.
+  function sperreAnfordern(opt) {
+    var p;
+    try {
+      p = navigator.locks.request(FENSTER_SPERRE, opt, function (lock) {
+        if (!lock) { fensterAngehalten(); return null; }
+        fensterHalten();
+        return new Promise(function (resolve) { fenster.freigeben = resolve; });   // gehalten bis zum Schließen der Seite
+      });
+    } catch (e) { fensterHalten(); return; }   // Sperre hier nicht nutzbar: wie bisher speichern
+    p.catch(function (e) {
+      // Ein anderes Fenster hat übernommen (steal → AbortError): Spiel hier anhalten.
+      if (e && e.name === 'AbortError' && fenster.zustand === 'halter') { fensterAngehalten(); return; }
+      if (fenster.zustand === 'pruefe' || fenster.zustand === 'uebernimmt') fensterHalten();
+    });
+  }
+  function kanalStart() {
+    var k;
+    try { k = new BroadcastChannel(FENSTER_SPERRE); } catch (e) { fensterHalten(); return; }
+    fenster.kanal = k;
+    k.onmessage = function (e) {
+      var d = e.data || {};
+      if (d.t === 'frage' && fenster.zustand === 'halter') k.postMessage({ t: 'halte' });
+      else if (d.t === 'halte' && fenster.zustand === 'pruefe') fensterAngehalten();
+      else if (d.t === 'uebernehme' && fenster.zustand === 'halter') fensterAngehalten();
+    };
+    k.postMessage({ t: 'frage' });
+    setTimeout(function () { if (fenster.zustand === 'pruefe') fensterHalten(); }, KANAL_WARTEN_MS);
+  }
+  function fensterStart() {
+    fenster.startMs = Math.round(performance.now() * 10) / 10;
+    if (navigator.locks && typeof navigator.locks.request === 'function') { fenster.weg = 'locks'; sperreAnfordern({ ifAvailable: true }); }
+    else if (typeof BroadcastChannel === 'function') { fenster.weg = 'kanal'; kanalStart(); }
+    else { fenster.weg = 'keiner'; fensterHalten(); }
+  }
+  function hierWeiterspielen() {
+    if (fenster.zustand !== 'wartet') return;
+    fenster.zustand = 'uebernimmt';
+    $('ftWeiter').disabled = true;
+    if (fenster.weg === 'locks') sperreAnfordern({ steal: true });
+    else {
+      if (fenster.kanal) { try { fenster.kanal.postMessage({ t: 'uebernehme' }); } catch (e) { /* egal */ } }
+      fensterHalten();
+    }
+  }
+  function fensterSchliessen() {
+    try { window.close(); } catch (e) { /* egal */ }
+    // Browser schließen nur Fenster, die ein Skript geöffnet hat (Tabs, Home-Bildschirm-App: nein).
+    setTimeout(function () {
+      if (window.closed) return;
+      var st = $('ftStatus');
+      st.textContent = 'Der Browser lässt dieses Fenster nicht per Knopf schließen. Bitte den Tab bzw. die App selbst schließen – oder „Hier weiterspielen“ tippen.';
+      st.hidden = false;
+    }, 300);
+  }
+  // Nur lesend, für Diagnose und Tests: Zustand, Weg und Zeitpunkte (ms seit Seitenstart).
+  try {
+    Object.defineProperty(window, '__aetherFenster', { value: Object.freeze({
+      get zustand() { return fenster.zustand; }, get weg() { return fenster.weg; }, get startMs() { return fenster.startMs; },
+      get bereitMs() { return fenster.bereitMs; }, get rahmenMs() { return fenster.rahmenMs; }
+    }) });
+  } catch (e) { /* egal */ }
+  // Nur für Tests (Schalter vor dem Skript gesetzt): Nachricht wie aus dem Spiel verarbeiten, Antwort zurückgeben.
+  if (window.AETHER_TEST_SPEICHER === true) {
+    window.__aetherSpeicherTest = function (msg) {
+      var antwort = null;
+      storeGameSetting(msg, { postMessage: function (m) { antwort = m; } });
+      return antwort;
+    };
   }
   // JSON als JavaScript-Literal im Skript: jedes "<" maskieren, damit ein Wert
   // mit schließendem Skript-Tag oder HTML-Kommentar das Skript nicht beenden kann.
@@ -1901,12 +2056,14 @@
   function syncStartFrame() {
     if (frame && frame.state !== 'start') { layoutGame(); return; }
     var visible = !$('buildsView').hidden;
-    var b = visible ? startableSelection() : null;
+    // Fenster ohne Speicherrecht (bzw. solange das noch geprüft wird): kein Spielrahmen.
+    var b = visible && darfSpeichern() ? startableSelection() : null;
     if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path || frame.build.fassung !== b.fassung)) discardFrame(frame);
     if (b && !frame) {
       frame = { iframe: createGameFrame(b), build: b, state: 'start', doc: null, tapped: false, pointer: '' };
       var wrap = $('game');
       wrap.insertBefore(frame.iframe, wrap.firstChild);
+      if (fenster.rahmenMs === null) fenster.rahmenMs = Math.round(performance.now());
     }
     if (frame) frame.build = b;
     $('playOff').hidden = !!frame || !visible;
@@ -1946,7 +2103,7 @@
 
   // Tipp/Klick auf „Spielen“ im Start-Rahmen.
   function startFromFrame(f, msg) {
-    if (f.state !== 'start' || $('buildsView').hidden) return;
+    if (f.state !== 'start' || $('buildsView').hidden || !darfSpeichern()) return;
     f.state = 'loading';
     f.pointer = typeof msg.pointerType === 'string' ? msg.pointerType : '';
     play(f);
@@ -4265,6 +4422,15 @@
   $('shDetails').addEventListener('click', speicherDetails);
   $('shClose').addEventListener('click', function () { speicherHinweisZu(); });
   $('shRetry').addEventListener('click', speicherErneut);
+  // Tafel „Aether läuft schon in einem anderen Fenster“: Enter = Hier weiterspielen (außer auf „Fenster schließen“).
+  $('ftWeiter').addEventListener('click', hierWeiterspielen);
+  $('ftSchliessen').addEventListener('click', fensterSchliessen);
+  document.addEventListener('keydown', function (e) {
+    if ($('fensterTafel').hidden || e.key !== 'Enter' || e.repeat) return;
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON' && $('fensterTafel').contains(document.activeElement)) return;
+    e.preventDefault();
+    hierWeiterspielen();
+  });
   document.addEventListener('keydown', function (e) {
     var h = $('saveHint');
     if (h.hidden || h.classList.contains('ok') || feedback || e.repeat) return;
@@ -4360,6 +4526,7 @@
   // ---------------------------------------------------------------------------
   // Start
   // ---------------------------------------------------------------------------
+  fensterStart();   // nur ein Fenster speichert (asynchron; bis dahin entsteht kein Spielrahmen)
   token = readStoredToken();
   updateTools();
   if (location.hash === '#projekt') openProject();
