@@ -1836,9 +1836,26 @@
   try {
     Object.defineProperty(window, '__aetherFenster', { value: Object.freeze({
       get zustand() { return fenster.zustand; }, get weg() { return fenster.weg; }, get startMs() { return fenster.startMs; },
-      get bereitMs() { return fenster.bereitMs; }, get rahmenMs() { return fenster.rahmenMs; }
+      get bereitMs() { return fenster.bereitMs; }, get rahmenMs() { return fenster.rahmenMs; },
+      get speicherSchutz() { return speicherSchutz; }
     }) });
   } catch (e) { /* egal */ }
+  // ---------------------------------------------------------------------------
+  // Speicher-Schutz: einmal beim Öffnen dauerhaften Speicher erbitten (navigator.storage.persist), damit der Browser
+  // Spiel-Einstellungen und gespeicherte Builds nicht bei Platzmangel verwirft. Keine Anzeige (das Dashboard hat keine
+  // Diagnose-Stelle); das Ergebnis steht nur intern in speicherSchutz: 'ja' | 'nein' | 'unbekannt' (API fehlt/Fehler).
+  // ---------------------------------------------------------------------------
+  var speicherSchutz = 'unbekannt';
+  function speicherSchuetzen() {
+    try {
+      var st = navigator.storage;
+      if (!st || typeof st.persist !== 'function') return;
+      Promise.resolve(typeof st.persisted === 'function' ? st.persisted() : false)
+        .then(function (schon) { return schon === true ? true : st.persist(); })
+        .then(function (ok) { speicherSchutz = ok === true ? 'ja' : 'nein'; })
+        .catch(function () { speicherSchutz = 'unbekannt'; });
+    } catch (e) { speicherSchutz = 'unbekannt'; }
+  }
   // Nur für Tests (Schalter vor dem Skript gesetzt): Nachricht wie aus dem Spiel verarbeiten, Antwort zurückgeben.
   if (window.AETHER_TEST_SPEICHER === true) {
     window.__aetherSpeicherTest = function (msg) {
@@ -4527,6 +4544,7 @@
   // Start
   // ---------------------------------------------------------------------------
   fensterStart();   // nur ein Fenster speichert (asynchron; bis dahin entsteht kein Spielrahmen)
+  speicherSchuetzen();
   token = readStoredToken();
   updateTools();
   if (location.hash === '#projekt') openProject();
