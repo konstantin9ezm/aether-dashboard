@@ -337,6 +337,221 @@
     return aus;
   }
 
+  /* ---------- Bedienung (Teil 2) ---------- */
+  let eingerichtet = false;
+  let bereit = Promise.resolve(false);
+  let moeglich = false;            // Selbstprobe von „Bild“ bestanden (ohne Seitenbild keine Folie)
+  let laeuft = false;              // ein Export läuft: beide Knöpfe gesperrt
+  let format = STANDARD_FORMAT;    // zuletzt gewählte Variante (aus dem Gerätespeicher)
+  let wahlFuer = null;             // offene Auswahl: 'alle' (Übersicht) | 'eins' (Vollbild)
+
+  // Genau die Seiten von „Alle als PDF“ (aktuelle Ansicht Alle bzw. Ordner, ohne ausgeblendete)
+  function liste() { const ex = EX(); return ex && typeof ex.druckListe === 'function' ? ex.druckListe() : []; }
+  function knopfVon(wo) { return wo === 'eins' ? $('vbPptx') : $('btnAllePptx'); }
+  function knoepfe() {
+    const a = A();
+    const alle = $('btnAllePptx'), eins = $('vbPptx');
+    if (alle) {
+      const n = liste().length;
+      alle.hidden = !moeglich;
+      if (!laeuft) alle.textContent = 'Alle als PowerPoint (' + n + ')';
+      alle.disabled = laeuft || n === 0;
+      if (alle.disabled && wahlFuer === 'alle') wahlZu(false);
+    }
+    if (eins) {
+      const dok = a ? a.offenesDokument() : null;
+      eins.hidden = !moeglich || !dok;
+      if (!laeuft) eins.textContent = 'PowerPoint';
+      eins.disabled = laeuft;
+      if ((eins.hidden || eins.disabled) && wahlFuer === 'eins') wahlZu(false);
+    }
+  }
+
+  // Gerätespeicher (Store „geraet“): zuletzt gewählte Variante laden bzw. merken
+  function speicher() { return window.AetherFlyerSpeicher || null; }
+  function formatLaden() {
+    const s = speicher();
+    if (!s || typeof s.ladeGeraet !== 'function') return Promise.resolve();
+    return Promise.resolve(s.ladeGeraet(SPEICHER_FORMAT)).then((v) => { if (typeof v === 'string' && FORMATE[v]) format = v; }, () => {});
+  }
+  function formatMerken(f) {
+    format = f;
+    const s = speicher();
+    if (s && typeof s.speichereGeraet === 'function') { try { Promise.resolve(s.speichereGeraet(SPEICHER_FORMAT, f)).catch(() => {}); } catch (e) { /* nur dieses Mal */ } }
+  }
+
+  // Auswahl direkt unter dem Knopf (passt sie unten nicht mehr hin: darüber), waagerecht im Fenster gehalten
+  function lageSetzen() {
+    const m = $('pptxWahl'), k = knopfVon(wahlFuer);
+    if (!m || m.hidden || !k) return;
+    const r = k.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+    const rand = 8;
+    m.style.left = '0px'; m.style.top = '0px';
+    const w = m.offsetWidth, h = m.offsetHeight;
+    const x = Math.min(Math.max(rand, r.left), Math.max(rand, vw - w - rand));
+    let y = r.bottom + 4;
+    if (y + h > vh - rand && r.top - 4 - h >= rand) y = r.top - 4 - h;
+    m.style.left = Math.round(x) + 'px';
+    m.style.top = Math.round(y) + 'px';
+  }
+  function wahlZeigen(wo) {
+    const m = $('pptxWahl'), k = knopfVon(wo);
+    if (!m || !k || k.hidden || k.disabled) return;
+    wahlFuer = wo;
+    for (const b of m.querySelectorAll('button[data-format]')) b.setAttribute('aria-checked', b.getAttribute('data-format') === format ? 'true' : 'false');
+    m.hidden = false;
+    k.setAttribute('aria-expanded', 'true');
+    lageSetzen();
+    const akt = m.querySelector('button[aria-checked="true"]') || m.querySelector('button[data-format]');
+    if (akt) { try { akt.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+  }
+  function wahlZu(fokus) {
+    const m = $('pptxWahl'), k = knopfVon(wahlFuer);
+    wahlFuer = null;
+    if (k) k.setAttribute('aria-expanded', 'false');
+    if (!m || m.hidden) return;
+    m.hidden = true;
+    if (fokus && k && !k.hidden && !k.disabled) { try { k.focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+  }
+  function knopfTipp(wo) {
+    if (laeuft) return;
+    if (wahlFuer === wo) { wahlZu(true); return; }
+    wahlZu(false);
+    wahlZeigen(wo);
+  }
+  function varianteTipp(f) {
+    if (!FORMATE[f] || !wahlFuer || laeuft) return;
+    const wo = wahlFuer;
+    formatMerken(f);
+    wahlZu(true);
+    starte(wo, f);
+  }
+  // Tippen/Klicken daneben schließt (der Knopf selbst schaltet über seinen Klick um)
+  function daneben(e) {
+    if (!wahlFuer) return;
+    const m = $('pptxWahl'), k = knopfVon(wahlFuer);
+    if ((m && m.contains(e.target)) || (k && k.contains(e.target))) return;
+    wahlZu(false);
+  }
+  // Tastatur bei offener Auswahl (vor der Ansicht, die sonst blättern bzw. das Vollbild schließen würde):
+  // Esc/Backspace schließt, Pfeile/Pos1/Ende wechseln die Variante, Tab schließt und bleibt am Knopf;
+  // Enter/Leertaste lösen die fokussierte Variante wie ein Klick aus.
+  function taste(e) {
+    if (!wahlFuer || e.metaKey || e.ctrlKey || e.altKey) return;
+    const m = $('pptxWahl');
+    if (!m || m.hidden) return;
+    const opt = Array.from(m.querySelectorAll('button[data-format]'));
+    const i = opt.indexOf(document.activeElement);
+    if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat || e.key === 'Tab') wahlZu(true);
+    } else if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Home', 'End'].indexOf(e.key) >= 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      let j;
+      if (e.key === 'Home') j = 0;
+      else if (e.key === 'End') j = opt.length - 1;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = i <= 0 ? opt.length - 1 : i - 1;
+      else j = i < 0 || i >= opt.length - 1 ? 0 : i + 1;
+      if (opt[j]) opt[j].focus();
+    }
+  }
+
+  // Fertige Datei weitergeben wie PDF/ZIP. navigator.share braucht eine frische Nutzergeste: Ist sie nach dem
+  // Zeichnen verbraucht (lange Exporte, iPhone/iPad), erst ein kurzer Hinweis mit „Teilen“ (ein Tipp, dann Teilen-Menü).
+  function geben(r, erfolg) {
+    const datei = r.datei, g = G(), b = B();
+    const sofort = () => {
+      if (b && typeof b.weitergeben === 'function') b.weitergeben(datei, datei.name, () => meldung(erfolg));
+      else { EX().herunterladenUndFreigeben(datei); meldung(erfolg); }
+    };
+    const geste = !!(navigator.userActivation && navigator.userActivation.isActive);
+    if (!g || !g.kannTeilen([datei]) || geste) { sofort(); return; }
+    const m = $('modal'), box = $('mInhalt');
+    if (!m || !box) { sofort(); return; }
+    $('mTitel').textContent = datei.name;
+    $('mText').textContent = 'Fertig: ' + r.folien + (r.folien === 1 ? ' Folie' : ' Folien') + ' · ' + groesse(datei.size) + '. Zum Weitergeben „Teilen“ antippen.';
+    while (box.firstChild) box.removeChild(box.firstChild);
+    const k = document.createElement('button');
+    k.type = 'button';
+    k.className = 'primary';
+    k.textContent = 'Teilen';
+    k.addEventListener('click', () => { m.hidden = true; sofort(); }, { once: true });
+    box.appendChild(k);
+    m.hidden = false;
+    try { k.focus(); } catch (e) { /* egal */ }
+  }
+
+  // Export starten: wo = 'alle' (Seiten von „Alle als PDF“) | 'eins' (angezeigte Seite), f = Format
+  async function starte(wo, f) {
+    const a = A(), pk = a ? a.paket() : null;
+    if (laeuft || !pk || !FORMATE[f]) return null;
+    const datum = new Date();
+    let doks, name;
+    if (wo === 'eins') {
+      const d = a.offenesDokument();
+      if (!d) return null;
+      doks = [d];
+      name = dateiName({ version: pk.nummer, seite: d.id, format: f, datum: datum });
+    } else {
+      doks = liste();
+      const oid = typeof a.aktuellerOrdner === 'function' ? a.aktuellerOrdner() : null;
+      const o = oid === null || oid === undefined ? null : (Array.isArray(pk.ordner) ? pk.ordner : []).find((x) => x && x.id === oid);
+      name = dateiName({ version: pk.nummer, ordner: oid === null || oid === undefined ? null : (o && o.name ? o.name : String(oid)), format: f, datum: datum });
+    }
+    if (!doks.length) { meldung('Keine Seiten für PowerPoint'); return null; }
+    const knopf = knopfVon(wo);
+    laeuft = true;
+    knoepfe();
+    meldung('PowerPoint wird erstellt (' + FORMATE[f].name + ', ' + doks.length + (doks.length === 1 ? ' Folie' : ' Folien') + ')');
+    let r;
+    try {
+      r = await exportiere(doks, {
+        format: f, name: name, titel: 'Aether-Flyer Version ' + pk.nummer,
+        fortschritt: (i, n) => { if (knopf) knopf.textContent = i < n ? 'Folie ' + (i + 1) + ' / ' + n : 'Datei wird geschrieben …'; }
+      });
+    } catch (e) {
+      laeuft = false;
+      knoepfe();
+      meldung('Die PowerPoint-Datei ließ sich nicht erstellen – ' + String((e && e.message) || e));
+      return null;
+    }
+    laeuft = false;
+    knoepfe();
+    const zusatz = r.verkleinert.length ? ' (verkleinert: ' + r.verkleinert.join(', ') + ')' : '';
+    geben(r, 'PowerPoint gesichert: ' + r.folien + (r.folien === 1 ? ' Folie' : ' Folien') + ' · ' + groesse(r.datei.size) + zusatz);
+    return r;
+  }
+
+  // Nach der Ansicht und dem Export einrichten: Knöpfe zeigen, sobald die Selbstprobe von „Bild“ bestanden ist.
+  // Promise: true, wenn PowerPoint hier möglich ist (und die gemerkte Variante geladen).
+  function einrichten() {
+    if (eingerichtet) return bereit;
+    eingerichtet = true;
+    const alle = $('btnAllePptx'), eins = $('vbPptx'), m = $('pptxWahl');
+    if (alle) alle.addEventListener('click', () => knopfTipp('alle'));
+    if (eins) eins.addEventListener('click', () => knopfTipp('eins'));
+    if (m) for (const b of m.querySelectorAll('button[data-format]')) b.addEventListener('click', () => varianteTipp(b.getAttribute('data-format')));
+    window.addEventListener('keydown', taste, true);
+    document.addEventListener('pointerdown', daneben, true);
+    window.addEventListener('resize', lageSetzen);
+    window.addEventListener('scroll', lageSetzen, { capture: true, passive: true });
+    document.addEventListener('flyer:kategorie', knoepfe);
+    document.addEventListener('flyer:vollbild', (e) => {
+      const d = e && e.detail;
+      if (wahlFuer === 'eins' && !(d && d.offen)) wahlZu(false);
+      knoepfe();
+    });
+    knoepfe();
+    const ex = EX();
+    const probe = ex && typeof ex.einrichten === 'function' ? Promise.resolve(ex.einrichten()) : Promise.resolve(false);
+    bereit = Promise.all([probe.then((ok) => { moeglich = ok === true; }, () => { moeglich = false; }), formatLaden()])
+      .then(() => { knoepfe(); return moeglich; });
+    return bereit;
+  }
+
   window.AetherFlyerPptx = Object.freeze({
     FORMATE: FORMATE,
     STANDARD_FORMAT: STANDARD_FORMAT,
@@ -349,6 +564,13 @@
     dateiName: dateiName,
     groesse: groesse,
     schreiber: schreiber,
-    exportiere: exportiere
+    exportiere: exportiere,
+    // Teil 2
+    einrichten: einrichten,
+    bereit: () => bereit,
+    liste: liste,
+    format: () => format,
+    laeuft: () => laeuft,
+    starte: starte
   });
 })();
