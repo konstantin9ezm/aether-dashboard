@@ -18,10 +18,17 @@
 // dargestellt über ihre Sicht (h.paket: Dokumente wie im Format v1). Abgleich und Export arbeiten auf dem ganzen Paket
 // im Format v2 (h.lokal: lokaler Stand aller Versionen; Abgleich gegen das neue Paket im Format v2).
 // Gespeichert wird über AetherFlyerSpeicher (IndexedDB „aether-flyer“, Store „aenderungen“) – nie das Token.
+// Dynamische Werte: Änderungsart „wert“ (bewusstes Überschreiben bzw. Verknüpfen, flyer-werte.js):
+//   k = „<schlüssel>#<n>“ (n-tes Element mit data-wert="<schlüssel>" im Dokument): Basis-Wert „@<schlüssel>“ (live) bzw.
+//       „=<Text>“, wenn das Paket schon data-wert-hand trägt; eigener Wert „=<Text>“ = von Hand überschrieben
+//       (Darstellung: data-wert-hand, Export: data-wert-hand und der Text).
+//   k = „t:<t-Kennung>“ (normales Textelement data-t): Basis-Wert „@<schlüssel>“, wenn es schon data-wert trägt, sonst
+//       „“; eigener Wert „@<schlüssel>“ = verknüpft (Darstellung und Export: data-wert am Element).
+// Eine neue Live-Zahl ändert keinen Basis-Wert – ohne Überschreiben gibt es also keinen Abgleichskonflikt.
 (function () {
   'use strict';
 
-  const ARTEN = ['text', 'status', 'stand'];
+  const ARTEN = ['text', 'status', 'stand', 'wert'];
   const STATUS = ['ok', 'run', 'next', 'plan'];          // dazu '' = ohne Status
   const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const STANDARD_VERSION = '1.1';
@@ -111,7 +118,7 @@
     const t = String(wert === undefined || wert === null ? '' : wert).replace(/\r\n?/g, '\n');
     return umbruch ? t : t.replace(/\n/g, ' ');
   }
-  const MARKEN_SEL = '[data-t],[data-s],[data-block],[data-zaehler],[data-stand],ae-t';
+  const MARKEN_SEL = '[data-t],[data-s],[data-block],[data-zaehler],[data-stand],[data-wert],ae-t';
   // Text als Textknoten einsetzen (nie HTML); Zeilenumbrüche als <br>, wenn erlaubt. Enthält der Träger weitere
   // Markierungen, bleiben diese Elemente stehen: nur die eigenen Textknoten werden ersetzt (der erste bekommt den Text).
   function textSchreiben(traeger, wert, umbruch) {
@@ -167,7 +174,7 @@
   // Werte eines Dokuments (bereinigt gelesen, wie dargestellt): text k → { wert, umbruch }, status k → wert ('' = ohne),
   // stand k → { wert, format } (nur Stand-Elemente mit reinem Text).
   function werteAus(wurzel) {
-    const text = new Map(), status = new Map(), stand = new Map();
+    const text = new Map(), status = new Map(), stand = new Map(), wert = new Map();
     for (const el of mitAttr(wurzel, 'data-t')) {
       const k = el.getAttribute('data-t');
       if (!k || text.has(k)) continue;
@@ -187,13 +194,29 @@
       const tr = textTraeger(el);
       stand.set(standKennung(i), { wert: textLesen(tr), format: el.getAttribute('data-stand'), umbruch: hatUmbruch(tr) });
     });
-    return { text: text, status: status, stand: stand };
+    // Dynamische Werte (Art „wert“): je Schlüssel durchgezählt, dazu jedes Textelement (verknüpft oder nicht)
+    const zaehl = new Map();
+    for (const el of mitAttr(wurzel, 'data-wert')) {
+      const sl = el.getAttribute('data-wert');
+      if (!sl) continue;
+      const n = (zaehl.get(sl) || 0) + 1;
+      zaehl.set(sl, n);
+      const hand = el.getAttribute('data-wert-hand');
+      wert.set(sl + '#' + n, hand !== null ? '=' + hand : '@' + sl);
+    }
+    for (const el of mitAttr(wurzel, 'data-t')) {
+      const k = el.getAttribute('data-t');
+      if (!k || wert.has('t:' + k)) continue;
+      const sl = el.getAttribute('data-wert');
+      wert.set('t:' + k, sl ? '@' + sl : '');
+    }
+    return { text: text, status: status, stand: stand, wert: wert };
   }
   function werte(dok) {
     const html = String(dok.html);
     let w = werteCache.get(html);
     if (!w) {
-      try { w = werteAus(P().bereinigeHtml(html)); } catch (e) { w = { text: new Map(), status: new Map(), stand: new Map() }; }
+      try { w = werteAus(P().bereinigeHtml(html)); } catch (e) { w = { text: new Map(), status: new Map(), stand: new Map(), wert: new Map() }; }
       if (werteCache.size > 200) werteCache.clear();
       werteCache.set(html, w);
     }
@@ -362,6 +385,7 @@
     const o = opt || {};
     const stande = standElemente(wurzel);
     const aktiv = new Set();   // Listenpunkte mit eigenem Status (Zähler wird dann angelegt, siehe zaehlerBerechnen)
+    wertAnwenden(wurzel, dokId, liste, o);
     for (const e of liste || []) {
       if (!e || e.dok !== dokId) continue;
       if (e.art === 'text') {
@@ -387,6 +411,39 @@
       }
     }
     return zaehlerBerechnen(wurzel, { nurVorhandene: o.nurVorhandene, aktiv: aktiv });
+  }
+
+  // Dynamische Werte (Art „wert“) vor allem anderen: Kennungen data-ae-wk (nur Darstellung) für die Tafel, eigene
+  // Überschreibungen als data-wert-hand, Verknüpfungen als data-wert. Im Export (nurVorhandene) nur die data-*-Angaben
+  // des Pakets (data-wert, data-wert-hand), keine eigenen Hilfsangaben.
+  function wertAnwenden(wurzel, dokId, liste_, o) {
+    const zaehl = new Map(), proK = new Map();
+    for (const el of mitAttr(wurzel, 'data-wert')) {
+      const sl = el.getAttribute('data-wert');
+      if (!sl) continue;
+      const n = (zaehl.get(sl) || 0) + 1;
+      zaehl.set(sl, n);
+      proK.set(sl + '#' + n, el);
+      if (!o.nurVorhandene) el.setAttribute('data-ae-wk', sl + '#' + n);
+    }
+    for (const e of liste_ || []) {
+      if (!e || e.dok !== dokId || e.art !== 'wert') continue;
+      if (/^t:/.test(e.k)) {
+        for (const el of alleMit(wurzel, 'data-t', e.k.slice(2))) {
+          if (/^@./.test(e.neu)) {
+            el.setAttribute('data-wert', e.neu.slice(1));
+            if (!o.nurVorhandene) { el.setAttribute('data-ae-wk', e.k); el.setAttribute('data-ae-verknuepft', ''); }
+          } else if (e.neu === '') el.removeAttribute('data-wert');
+        }
+      } else {
+        const el = proK.get(e.k);
+        if (!el) continue;
+        if (/^=/.test(e.neu)) {
+          el.setAttribute('data-wert-hand', e.neu.slice(1));
+          if (o.nurVorhandene) textSchreiben(textTraeger(el), e.neu.slice(1), false);
+        } else if (/^@/.test(e.neu)) el.removeAttribute('data-wert-hand');
+      }
+    }
   }
 
   /* ---------- Speichern ---------- */
@@ -449,7 +506,7 @@
   // Eigenen Wert setzen (aus dem Vollbild). neu = Basis-Wert → Eintrag weg. → Promise<Boolean> (gespeichert)
   function setze(dokId, art, k, wert) {
     if (gesperrt) return gesperrtFehler();
-    if (art !== 'text' && art !== 'status') return Promise.reject(fehler('bearbeiten', 'Unbekannte Art.', String(art)));
+    if (art !== 'text' && art !== 'status' && art !== 'wert') return Promise.reject(fehler('bearbeiten', 'Unbekannte Art.', String(art)));
     const dok = dokIn(basis(), dokId);
     if (!dok) return Promise.reject(fehler('bearbeiten', 'Dokument nicht im Paket.', String(dokId)));
     const w = werte(dok)[art];
@@ -458,7 +515,12 @@
     const altWert = art === 'text' ? b.wert : b;
     let neu;
     if (art === 'text') neu = normalisiere(wert, b.umbruch);
-    else {
+    else if (art === 'wert') {
+      neu = String(wert === null || wert === undefined ? '' : wert);
+      // Überschreiben nur an dynamischen Werten („=Text“), Verknüpfen nur an Textelementen („@schlüssel“ bzw. „“ = lösen)
+      if (/^t:/.test(k) ? !/^(@[^\s]+)?$/.test(neu) : !/^[=@]/.test(neu)) return Promise.reject(fehler('bearbeiten', 'Ungültiger Wert.', neu));
+      if (/^=/.test(neu)) neu = '=' + normalisiere(neu.slice(1), false);
+    } else {
       neu = wert === null || wert === undefined ? '' : String(wert);
       if (neu && STATUS.indexOf(neu) < 0) return Promise.reject(fehler('bearbeiten', 'Unbekannter Status.', neu));
     }
@@ -473,6 +535,8 @@
     } else {
       eintraege.set(key, { ver: ver(), dok: dokId, k: k, art: art, alt: altWert, neu: neu, exportiert: null, zeit: jetztIso(), konflikt: null });
     }
+    // Verknüpfen ersetzt eine eigene Text-Änderung derselben Stelle (der Wert kommt ab jetzt aus der Quelle)
+    if (art === 'wert' && /^t:/.test(k) && /^@/.test(neu)) eintraege.delete(schluessel(ver(), dokId, 'text', k.slice(2)));
     standNachziehen(dokId, true);
     const p = speichern();
     melde({ dok: dokId });
@@ -675,11 +739,15 @@
   // ist wie in der Darstellung das erste Element, das die Bereinigung übrig lässt – so zählen stand1, stand2 … gleich.
   const WEG = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'link', 'meta', 'base', 'form', 'template',
     'portal', 'noscript', 'fencedframe', 'handler', 'listener'];
-  function htmlMitAenderungen(html, dokId, eigene) {
+  function htmlMitAenderungen(html, dokId, eigene, mitWerten) {
     const doc = new DOMParser().parseFromString('<!doctype html><body>' + String(html), 'text/html');
     const wurzel = Array.prototype.find.call(doc.body.children, (c) => WEG.indexOf(name(c)) < 0) || doc.body;
-    anwenden(wurzel, dokId, eigene, { nurVorhandene: true });
-    return doc.body.innerHTML;
+    if (eigene.length) anwenden(wurzel, dokId, eigene, { nurVorhandene: true });
+    // Dynamische Werte: data-wert bleibt, als Text der aktuelle Wert (Schnappschuss). Ändert sich dabei nichts und gab
+    // es keine eigenen Einträge, bleibt das HTML wörtlich (unverändertes Paket bitgleich).
+    const W = mitWerten ? window.AetherFlyerWerte : null;
+    const neu = W && typeof W.schnappschuss === 'function' ? W.schnappschuss(wurzel) : false;
+    return eigene.length || neu ? doc.body.innerHTML : String(html);
   }
   // Paket = lokaler Stand aller Versionen (Format v2) + Änderungsschicht. → { paket, fassung, text, bytes } oder wirft
   // (AppError) – dann wird nichts ausgegeben.
@@ -696,10 +764,11 @@
     }
     for (const v of neu.versionen) {
       for (const d of v.seiten) {
-        const eigene = proDok.get(v.nummer + '\n' + d.id);
-        if (!eigene || !eigene.length) continue;
+        const eigene = proDok.get(v.nummer + '\n' + d.id) || [];
+        const mitWerten = String(d.html).indexOf('data-wert') >= 0 || eigene.some((e) => e.art === 'wert');
+        if (!eigene.length && !mitWerten) continue;
         const vorher = markierungen(d.html);
-        d.html = htmlMitAenderungen(d.html, d.id, eigene);
+        d.html = htmlMitAenderungen(d.html, d.id, eigene, mitWerten);
         if (markierungen(d.html) !== vorher) throw fehler('export', 'Export fehlgeschlagen.', 'Version ' + v.nummer + ', Seite ' + d.id + ': Markierungen wären verändert worden.');
       }
     }
@@ -716,7 +785,7 @@
   function htmlMitSchicht(v, dok) {
     const eigene = [];
     for (const e of eintraege.values()) if (e.ver === v && e.dok === dok.id) eigene.push(e);
-    return eigene.length ? htmlMitAenderungen(dok.html, dok.id, eigene) : dok.html;
+    return eigene.length ? htmlMitAenderungen(dok.html, dok.id, eigene, false) : dok.html;
   }
   // Nach erfolgreicher Weitergabe: exportiert := neu für alle Einträge, Fassung merken
   function markiereExportiert(fassung) {
@@ -766,12 +835,13 @@
       const vv = v2 ? e.ver : ver();
       if (typeof e.dok !== 'string' || !e.dok) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'dok fehlt.');
       if (typeof e.k !== 'string' || !e.k) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'k fehlt.');
-      if (ARTEN.indexOf(e.art) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'art muss text, status oder stand sein.');
+      if (ARTEN.indexOf(e.art) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'art muss text, status, stand oder wert sein.');
       if (typeof e.neu !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'neu muss ein Text sein.');
       if (!istTextOderNull(e.alt) || !istTextOderNull(e.exportiert)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'alt und exportiert müssen Text oder null sein.');
       if (e.zeit !== undefined && typeof e.zeit !== 'string') throw fehler('format', 'Sicherung fehlerhaft.', wo + 'zeit muss ein Text sein.');
       if (e.art === 'status' && e.neu && STATUS.indexOf(e.neu) < 0) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannter Status.');
       if (e.art === 'stand' && !/^stand\d+$/.test(e.k)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'unbekannte Stand-Kennung.');
+      if (e.art === 'wert' && !(/^t:./.test(e.k) ? /^(@\S+)?$/.test(e.neu) : /^[^#\s]+#[1-9]\d*$/.test(e.k) && /^[=@]/.test(e.neu))) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'ungültiger dynamischer Wert.');
       const key = schluessel(vv, e.dok, e.art, e.k);
       if (gesehen.has(key)) throw fehler('format', 'Sicherung fehlerhaft.', wo + 'doppelt.');
       gesehen.add(key);
@@ -860,6 +930,8 @@
     formatiereStand: formatiereStand,
     standText: standText,
     werteAus: werteAus,
+    // Text eines Elements setzen wie beim Bearbeiten (Textträger, nur Textknoten, weitere Markierungen bleiben)
+    textSetzen: (el, t) => textSchreiben(textTraeger(el), t, false),
     heute: heute,
     // Bearbeiten
     setze: setze,
