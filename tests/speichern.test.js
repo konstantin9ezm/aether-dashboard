@@ -558,7 +558,10 @@ describe('Nur ein Fenster speichert', () => {
     // Vom Skript geöffnetes Fenster (darf geschlossen werden)
     const [C] = await Promise.all([context.waitForEvent('page'), A.page.evaluate((u) => { window.open(u, '_blank'); }, baseUrl + 'index.html')]);
     await C.waitForSelector('#fensterTafel:not([hidden])');
-    await Promise.all([C.waitForEvent('close'), C.click('#ftSchliessen')]);
+    // Der Klick schließt die Seite selbst: endet das Schließen noch während Playwright den Klick nachbearbeitet, meldet
+    // click „Target page … has been closed“ (Wettlauf, CI-Lauf PR #40). Nur genau dieser Fall gilt als Erfolg – das
+    // close-Ereignis und isClosed() unten bleiben die eigentliche Prüfung.
+    await Promise.all([C.waitForEvent('close'), C.click('#ftSchliessen').catch((e) => { if (!/has been closed/.test(String(e && e.message))) throw e; })]);
     assert.equal(C.isClosed(), true);
     // Normaler Tab mit Verlauf (Browser lehnt window.close() ab): Hinweis
     const D = await newPage(context, { goto: false });
