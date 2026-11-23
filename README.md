@@ -1162,6 +1162,80 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   vorhandene eigene Einträge gehen vor, Widersprüche kommen in die Konfliktliste. Falsches Format oder zu neue Version
   ändern nichts (Fehlerbox). „Alle Änderungen verwerfen“ fragt vorher nach.
 
+**Dynamische Werte (Stufe 1, `flyer-werte.js`)**
+
+Zahlen und Listen in den Seiten kommen aus den Repos statt aus dem Paket-Text (Analyse vom 23.11.: 23 von 38 Seiten
+waren nach 6 Tagen in Zahlen veraltet). Platzhalter im Seiten-HTML:
+
+```html
+<span data-wert="aether.prs.gemergt" data-format="zahl">80</span>
+<span data-wert="aether.ci.pr.dauer" data-wert-teil="median">31 min</span>
+<span data-wert="aether.commits.seit" data-wert-teil="2026-11-01">42</span>
+```
+
+- `data-wert` = Schlüssel (Liste unten); `data-format` = `zahl` (Tausenderpunkt, „1.234“) | `prozent` („77 %“) |
+  `dauer-min` („7 min“) | `datum-kurz` („22.11.2026“) | `datum-lang` („22. November 2026“) | `liste` (Einträge mit
+  „ · “); ohne `data-format` gilt das Format des Schlüssels. `data-wert-teil` (optional) wählt einen Teil: `median`
+  (PR-Läufe), `art` (Merge-Lauf „verkürzt“/„voll“), bei Listen die Anzahl der Einträge, bei `aether.commits.seit` das
+  Datum `JJJJ-MM-TT`.
+- Der Text im Element ist zugleich der Rückfallwert: Ohne gespeicherten Wert (neues Gerät, offline), in älteren
+  Dashboards und im Paket allein gilt er. Neue Angaben stehen nur als zusätzliche `data-*`-Attribute im HTML (Format v2
+  bleibt; `bereinigeHtml` lässt sie stehen).
+- Optional `data-stand-quelle="werte"` an einem `data-stand`-Element: dort steht das Datum der jüngsten gelesenen Quelle
+  der Seite; ohne das Attribut bleibt `data-stand` wie bisher.
+
+| Schlüssel | Format | Quelle |
+|---|---|---|
+| `aether.prs.gemergt` | zahl | Suche `is:pr is:merged` im Repo aether (`total_count`) |
+| `aether.letzterMerge` | datum-kurz | dieselbe Suche: jüngstes `merged_at` |
+| `dashboard.prs.gemergt` | zahl | dieselbe Suche im öffentlichen aether-dashboard (ohne Token) |
+| `aether.roadmap.erledigt` / `.gesamt` / `.prozent` / `.anteil` („x/y“) | zahl / prozent | `ROADMAP.md` (Leser `parseRoadmap` aus `gemeinsam.js`) |
+| `aether.roadmap.naechstes` / `.danach` / `.spaeter` | liste | offene Punkte der Abschnitte „Als Nächstes“, „Danach …“, „Für später“ |
+| `aether.ci.pr.dauer` (Teil `median`) | dauer-min | letzter grüner PR-Lauf „Build“ (Median der letzten 5) |
+| `aether.ci.merge.dauer` (Teil `art`) | dauer-min | letzter Merge-Lauf auf main; „verkürzt“, wenn die Browser-Test-Jobs übersprungen wurden |
+| `aether.tests.nativ` | zahl | Zeilen `add_test(` in `CMakeLists.txt` |
+| `aether.welten` / `aether.systeme` | zahl | Dateien in `game/assets/worlds` bzw. `game/assets/systems` |
+| `engine.bausteine` / `.fertig` / `.vorschau` / `.geplant` | zahl | `engine-map.json` (gleicher Ursprung, auch offline) |
+| `aether.commits.seit` (Teil = Datum) | zahl | Commits auf main seit dem Datum (Anzahl über `Link: rel="last"`) |
+
+Browser-Prüfungen und die Seed-Prüfung gibt es hier bewusst nicht (kommen später über `kennzahlen.json` aus der
+aether-CI; keine Umwege über Job-Logs oder Artefakte). Ein Schlüssel ohne Quelle (z. B. für später) behält den
+Paket-Text und trägt im Modus „Text“ das Abzeichen „Hand · Stufe 2“.
+
+- **Lesen:** beim Öffnen, per „Online prüfen“, beim `online`-Ereignis und alle 10 Minuten; nie zwei gleichzeitig; nur die
+  Quellen, die die geöffnete Version nutzt (`data-wert` oder Verknüpfung – ohne solche Seiten keine Anfrage); höchstens
+  10 GitHub-Anfragen je Auffrischung (der Rest folgt bei der nächsten), bedingt mit ETag (`If-None-Match` → 304, zählt
+  bei GitHub nicht gegen das Rate-Limit); jede Anfrage mit dem Zeitlimit wie die Paket-Prüfung (danach abgebrochen;
+  nach einem Netz- oder Zeitlimit-Fehler keine weiteren Anfragen in dieser Auffrischung). Token nur gelesen und nur als
+  Header an api.github.com. **Ohne Token** bleiben Werte aus aether beim letzten bekannten Wert; aether-dashboard und die
+  Engine-Karte werden trotzdem gelesen.
+- **Zwischenspeicher:** IndexedDB `aether-flyer` Version 5, Store `werte` (siehe „Speicher“): letzter Wert, Zeitpunkt,
+  ETag, letzter Fehler – die Seite startet offline mit dem letzten Stand.
+- **Veraltet:** kein erfolgreiches Lesen seit 24 Stunden (Konstante `VERALTET_MS`, Entscheidung 23.11.) oder letzter
+  Versuch mit Fehler (offline, Zeitlimit, Fehlerantwort). Der letzte Wert bleibt stehen.
+- **Ansehen** (auch Kachel, PDF, Bild, PowerPoint): Werte ohne Markierung; in der Fußzeile nach den Quellen
+  „ · Werte vom TT.MM.JJJJ, HH:MM“ (ältester Wert der Seite) in Türkis (#7ff0f5), veraltet in Orange (#ffd08a) mit
+  „ · veraltet“ bzw. „ · offline“ – nur auf Seiten mit mindestens einem Wert.
+- **Modus „Text“:** dynamische Werte türkis gepunktet umrandet (#3fd1d8, 2 px, Abstand 3 px) mit Abzeichen „↻ live“,
+  veraltet orange (#ffb347) mit „⚠ <Alter>“ (z. B. „⚠ 26 Std. alt“) bzw. „⚠ offline“ / „⚠ Fehler“; gesperrt.
+  Antippen öffnet die Tafel: „S1 · dynamischer Wert „<schlüssel>““, Wert, Beschreibung, „Quelle: … · gelesen … · im Paket
+  gespeichert: …“, „Schließen“, „Jetzt neu lesen“, „Von Hand überschreiben …“ (eigene Änderung der Art `wert`, wird
+  exportiert und abgeglichen, Abzeichen „✎ von Hand“) und „Original“ (macht den Wert wieder live).
+- **Eine vorhandene Zahl verknüpfen** (ohne neues Paket): Vollbild → „Text“ → die Zahl antippen → im Textfeld „Mit Wert
+  verknüpfen …“ → Quelle wählen (die Liste zeigt den aktuellen Wert). Die Stelle ist danach dynamisch (Änderung der Art
+  `wert`, `@<schlüssel>`); „Original“ in ihrer Tafel löst die Verknüpfung, „Von Hand überschreiben …“ löst sie und öffnet
+  das normale Textfeld. Beim nächsten „Paket exportieren“ steht sie als `data-wert` im Paket.
+- **Änderungsart `wert`** (Änderungsschicht, Sicherung v3): `k` = `<schlüssel>#<n>` (n-tes Vorkommen) mit `=<Text>`
+  (überschrieben) bzw. `k` = `t:<t-Kennung>` mit `@<schlüssel>` (verknüpft). Basis-Wert ist `@<schlüssel>` – eine neue
+  Live-Zahl erzeugt deshalb keinen Abgleichskonflikt; Konflikte gibt es nur bei widersprechendem Überschreiben bzw.
+  Verknüpfen. Ältere Dashboards lesen eine Sicherung mit Einträgen der Art `wert` nicht („art muss …“).
+- **Export:** PDF, Bild, PowerPoint zeichnen mit den Werten aus dem Zwischenspeicher (eingefroren zum Exportzeitpunkt);
+  PowerPoint-Notizen zusätzlich „Werte vom …“. „Paket exportieren“: `data-wert` bleibt, als Text steht der aktuelle Wert
+  (Schnappschuss); überschrieben → `data-wert-hand` und dieser Text; Seiten ohne Werte und ohne Änderungen bleiben
+  bitgleich. „Grafiken & Daten“: Zeilenart `art=wert` (kennung = Schlüssel, wert, quelle, zeit; die Spalten `quelle;zeit`
+  nur in CSVs von Seiten mit Werten).
+
+
 **Ablageort des Pakets (Umzug nach aether-medien):** `flyer/aether-flyer-paket.json` im privaten Repo aether-medien
 (`konstantin9ezm/aether-medien`, Zweig `main`; Ordner `flyer` neben `medien`). Warum nicht mehr `aether/docs/flyer/`:
 Jeder direkte Commit dorthin macht den nächsten Merge-Lauf in aether **voll** (ca. 140 statt ca. 7 Job-Minuten, weil
@@ -1306,7 +1380,7 @@ Export-Fassung (`version` `<JJJJ-MM-TT>.<n>`) bleibt der Stempel des ganzen Pake
   | `data-block` mit `data-zaehler` | Block mit abhakbaren Listeneinträgen und seine Überschrift |
   | `data-stand="kurz"` / `"lang"` | Datum des Dokuments |
 
-**Speicher:** IndexedDB `aether-flyer`, Version 4, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
+**Speicher:** IndexedDB `aether-flyer`, Version 5, mit den Ablagen `basis` (Schlüssel `aktuell`: `{ paket, quelle:
 'online'|'import', sha, uebernommen }`, das zuletzt übernommene Paket) und `online` (Schlüssel `stand`: `{ sha, version,
 stand, geprueft }`, die zuletzt bekannte Online-Datei) und – seit Teil 2 – `aenderungen` (je Eintrag Schlüssel
 `e:<dok>\n<art>\n<k>`: `{ dok, k, art, alt, neu, exportiert, zeit, konflikt }`, dazu `meta`: `{ exporte }`, die bisher
@@ -1318,7 +1392,9 @@ Versionen um (Schlüssel `e:<ver>\n<dok>\n<art>\n<k>`, `ver` = „1.1“ für al
 legt nur `medien` an: `d:<id>` → `{ blob, sha, groesse, mime, zeit }` (Inhalt), `b:<id>` (Startbild bzw. Vorschau,
 höchstens 1600 px), `k:<id>` (Mini-Bild, 360 px), `online` → `{ geprueft, zugriff, liste: [{ sha, name, groesse }] }`
 (zuletzt gelesene Liste von aether-medien, ohne Token); alles andere bleibt unverändert. Große Inhalte haben ein
-längeres Zeitlimit (10 s plus 1 s je 5 MB). Die Basis
+längeres Zeitlimit (10 s plus 1 s je 5 MB). Die Migration 4 → 5 (dynamische Werte) legt nur `werte` an: je Schlüssel
+`<schluessel>` bzw. `<schluessel>|<teil>` → `{ schluessel, wert, teile, quelle, zeit, etag, fehler }`; die
+Änderungsschicht kennt dazu die Art `wert`. Die Basis
 bleibt immer das zuletzt übernommene Paket; dargestellt wird Basis + Änderungsschicht. Kein Token, keine API-Antworten im
 Ganzen, kein `localStorage`-Schlüssel. Jeder Zugriff hat ein Zeitlimit (Öffnen 5 s, Lesen/Schreiben 10 s); ohne IndexedDB läuft die
 Seite, nur nicht offline. Beim Start fragt sie `navigator.storage.persist()` an (wenn vorhanden). Die Verbindung
@@ -1368,7 +1444,7 @@ jedes in seinem eigenen Shadow Root.
 
 | Datei | Inhalt |
 |---|---|
-| `gemeinsam.js` | gemeinsame Hilfsfunktionen (`githubApi`, `AppError`, `meldung`, `mitGeste`, `kannTeilen`, `herunterladen`, Zeitlimit) |
+| `gemeinsam.js` | gemeinsame Hilfsfunktionen (`githubApi` mit bedingten Anfragen, `parseRoadmap`, `AppError`, `meldung`, `mitGeste`, `kannTeilen`, `herunterladen`, Zeitlimit) |
 | `flyer-paket.js` | `AetherFlyerPaket`: Format v1 und v2 lesen und prüfen, Umwandlung v1 → v2 (`alsV2`), Fassungen vergleichen, Datum, Bereinigung von HTML und CSS, CSS für Shadow Root und Dokument aufteilen |
 | `flyer-struktur.js` | `AetherFlyerStruktur` (F3a): Versionen, Ordner und Seiten (reine Funktionen auf einer Kopie), Vorlagen, Sicht einer Version, Felder und Zusammenführen für den Abgleich |
 | `flyer-speicher.js` | `AetherFlyerSpeicher`: IndexedDB `aether-flyer`, `persist()` |
@@ -1386,6 +1462,7 @@ jedes in seinem eigenen Shadow Root.
 | `flyer-medien-tafeln.js` | `AetherFlyerMedienTafeln` (F3b): „+ Hinzufügen“, Menü einer Datei, Löschen, „Medien online stellen“ |
 | `flyer-player.js` | `AetherFlyerPlayer` (F3b): Player, Medien in Seiten (`data-medium`), Modus „Medium“ |
 | `flyer-medien-online.js` | `AetherFlyerMedienOnline` (F3b): Abgleich mit dem privaten Repo aether-medien (nur lesend) |
+| `flyer-werte.js` | `AetherFlyerWerte`: dynamische Werte (Quellen, Zwischenspeicher, Formate, Markierung, Tafel, Schnappschuss für den Export) |
 | `flyer.js` | `AetherFlyer`: Start, Import, Kopfzeile, Struktur (lokaler Stand v2, offene Version, Abgleich); Schnittstelle für Tests und Teil 2 |
 
 Fehlt eines der Module Ansicht, Online, Export, Bearbeiten, Übersicht, Grafik, PowerPoint, Bibliothek, Tafeln, Player oder Medien
@@ -1395,6 +1472,7 @@ online, bleiben seine Knöpfe verborgen und der Rest läuft weiter. Die CSP erla
 **Testschalter:** Setzt man vor dem Laden `window.AETHER_TEST_FLYER_INTERVALL_MS` (positive Zahl), gilt dieses
 Intervall statt der 10 Minuten; `window.AETHER_TEST_FLYER_SCHRIFT_FRIST_MS` ersetzt die 5 s Wartezeit auf die
 Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur Freigabe einer Download-Blob-URL;
+`window.AETHER_TEST_FLYER_WERTE_INTERVALL_MS` ersetzt die 10 Minuten der dynamischen Werte;
 `window.AETHER_TEST_PROJECT_TIMEOUT_MS` (aus `gemeinsam.js`) verkürzt das Zeitlimit der Anfragen. Das nutzen nur die E2E-Tests. **Testschnittstelle:** `window.AetherFlyer` (`bereit`, `stand`, `paket`,
 `paketV2`, `sicht`, `version`, `aendereStruktur`, `oeffneVersion`, `strukturZahl`, `strukturKonflikte`, `uebernehme`,
 `fehler`, `fehlerWeg`, `gespeichert`) und die Modul-Objekte.
@@ -1475,7 +1553,8 @@ entscheidest du selbst über Kopieren oder Mail.
 `index.html`, `screen-editor.html` und `logo.html` binden `gemeinsam.js` per `<script src="gemeinsam.js">` ein
 (globales Objekt `window.AetherGemeinsam`). Dort steht jede Hilfsfunktion, die mehr als eine dieser Seiten braucht,
 genau **einmal**: `AppError`, `fmtTime`, `shortSha`, `needTokenError`, Zeitlimit 15 s (`projTimeoutMs`,
-`projTimeoutError`, `withProjTimeout`), `githubApi(cfg)` mit `errorFromResponse`, `api` und `contentsPath`,
+`projTimeoutError`, `withProjTimeout`), `githubApi(cfg)` mit `errorFromResponse`, `api` (optional bedingt: `etag`,
+`erlaube304`) und `contentsPath`, der Leser der `ROADMAP.md` (`parseRoadmap`, Projektansicht und Flyer-Werte),
 sowie fürs Sichern `mitGeste`, `meldung`, `kannTeilen`, `kannHerunterladen` und `herunterladen`.
 
 Was hineingehört: reine Hilfsfunktionen ohne seitenspezifische Konfiguration. Was je Seite verschieden ist
@@ -1805,6 +1884,21 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   1024 × 768, 1366 × 1024 und 844 × 390. Die Datei wird unabhängig vom Schreiber gelesen (ZIP-Leser, JPEG-SOF).
 - `tests/flyer-pptx-messung.test.js` (nur lokal mit `FLYER_ECHT`, sonst übersprungen) – „Alle als PowerPoint“ mit dem
   echten Paket in beiden Formaten: Folienzahl, Größe, Dauer, größte Folie; Ziel unter ca. 25 MB.
+- `tests/flyer-werte.test.js` (dynamische Werte und Paket-Umzug, Chromium, nachgebaute API über `context.route` mit
+  ETag/304, Platzhalter-Paket mit Seite W1) – a) Formate, Teile, Fußzeile, Stand aus den Quellen, Markierung nur im
+  Modus „Text“; b) ohne Token (letzter Wert, nur das öffentliche Repo ohne Token), offline (⚠ offline, Fußzeile orange),
+  ohne Speicher (Paket-Text); c) Fehler 500 und Zeitlimit (Seitenuhr, grenze−1/+1) lassen den alten Wert stehen,
+  24-h-Grenze (Seitenuhr); d) PDF, Bild, PowerPoint mit eingefrorenem Wert ohne Markierung, Notiz „Werte vom“;
+  e) Paket-Export mit Platzhalter und Schnappschuss, Rundlauf ohne Konflikt, unverändertes Paket bitgleich (auch mit
+  `<br/>` und einfachen Anführungszeichen); f) Tafel, Überschreiben, „Original“, Verknüpfen und Lösen, Sicherung v3,
+  Abgleich der Art `wert` (neue Live-Zahl ohne Konflikt, widersprechendes Überschreiben als Konflikt); g) Migration
+  v4 → v5; h) CSV `art=wert`; i) höchstens 10 Anfragen je Auffrischung, ETag/304, keine Anfrage ohne Werte;
+  j) Paket aus aether-medien, 404/Ordner ohne Datei → alter Ort mit einmaligem Hinweis, 401/403 → einmalige Meldung
+  ohne Wiederholungsschleife; k) Tafel, Abzeichen und Fußzeile auf 1024 × 768, 1366 × 1024 und 844 × 390 ohne
+  Überlauf, Tippflächen ≥ 44 px. Gegenproben (von Hand, müssen rot werden): in `flyer-werte.js` das Alter nicht prüfen
+  → c) rot, den Wert nicht einsetzen → a) rot, `MAX_ANFRAGEN` 11 → i) rot; in `flyer-aenderungen.js` `data-wert-hand`
+  nicht setzen → f) rot, ohne Schnappschuss bzw. jede Seite neu schreiben → e) rot; in `flyer-pptx.js` die Notiz
+  weglassen → d) rot; in `flyer-online.js` aether-medien übergehen bzw. den Hinweis wiederholen → j) rot.
 - Gegenproben PowerPoint (von Hand, müssen rot werden): in `flyer-pptx.js` das Bild nicht mittig setzen (`x: 0, y: 0`)
   → c) rot; „Stand“ aus den Notizen nehmen → d) rot; die Seiten aus `aktuelleListe()` statt `druckListe()` nehmen → a)
   rot; Esc nicht behandeln → f) rot; in `tests/flyer-echt.test.js` `ERWARTET` leeren bzw. `mehrPx` ändern → h) rot.
@@ -1850,6 +1944,6 @@ Icons neu erzeugen (nach Änderungen an `icons/icon.svg`): `npm run icons`.
 `manifest.json`, `engine-map.json`, `webgpu-check.html` mit eingesetztem Commit, `screen-editor.html`, `logo.html`,
 `gemeinsam.js`, `flyer.html` mit `flyer.js`, `flyer-paket.js`, `flyer-struktur.js`, `flyer-speicher.js`, `flyer-ansicht.js`,
 `flyer-online.js`, `flyer-export.js`, `flyer-zip.js`, `flyer-aenderungen.js`, `flyer-bearbeiten.js`, `flyer-uebersicht.js`,
-`flyer-grafik.js` und `flyer-pptx.js` (F3b-Module ebenso), `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
+`flyer-grafik.js` und `flyer-pptx.js` (F3b-Module ebenso, dazu `flyer-werte.js`), `vendor/` mit three.js und Lizenzen, `fonts/` mit den Schriften des Logo-Editors, `icons/`) auf GitHub Pages
 (alle Actions sind auf Commit-SHAs gepinnt). Einmalig in den Repo-Einstellungen unter
 **Settings → Pages → Source** „GitHub Actions“ auswählen.

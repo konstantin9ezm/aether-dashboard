@@ -412,7 +412,7 @@ describe('Flyer bearbeiten: Umschalter und Bedienung', () => {
       assert.equal(await page.inputValue('#vbEditFeld'), 'Platzhalter Titel');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'vbEditFeld', 'Feld hat den Fokus');
       assert.deepEqual(await page.$$eval('#vbEdit button', (bs) => bs.map((b) => [b.id, b.textContent.trim()])),
-        [['vbEditOk', 'Übernehmen'], ['vbEditAb', 'Abbrechen'], ['vbEditOrig', 'Original']]);
+        [['vbEditOk', 'Übernehmen'], ['vbEditAb', 'Abbrechen'], ['vbEditOrig', 'Original'], ['vbEditWert', 'Mit Wert verknüpfen …']]);   // dynamische Werte: Verknüpfen
       assert.ok(await page.isDisabled('#vbEditOrig'), '„Original“ ohne Änderung nicht wählbar');
       assertTippflaechen(await groesse(page, '#vbEdit button'), 'Text-Leiste');
       assert.ok(await page.isHidden('#vbStatus'));
