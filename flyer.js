@@ -21,6 +21,8 @@
 // aendereStruktur; Inhalte liegen nur im Store „medien“ (AetherFlyerSpeicher). Die optionalen Module Bibliothek
 // (AetherFlyerBibliothek), Player (AetherFlyerPlayer, legt Medien in jede Darstellung) und der Online-Abgleich der
 // Medien (AetherFlyerMedienOnline) bekommen ihre Hilfen hier; fehlt eines, läuft der Rest weiter.
+// Dynamische Werte (AetherFlyerWerte, optional): Zwischenspeicher wird vor der ersten Anzeige geladen; im Anpasser direkt
+// nach der Änderungsschicht eingesetzt (Kachel, Vollbild, Druck, Bild, PowerPoint, Grafiken), markiert nur im Modus „Text“.
 (function () {
   'use strict';
 
@@ -48,6 +50,7 @@
   const BI = window.AetherFlyerBibliothek || null;
   const PL = window.AetherFlyerPlayer || null;
   const MO = window.AetherFlyerMedienOnline || null;
+  const W = window.AetherFlyerWerte || null;   // dynamische Werte (Stufe 1)
 
   /* ---------- Zustand ---------- */
   let basis = null;               // übernommenes Paket: { paket, quelle:'online'|'import', sha|null, uebernommen } (ohne Token)
@@ -335,6 +338,14 @@
     aendere: aendereStruktur
   });
 
+  /* ---------- Hilfen für die dynamischen Werte ---------- */
+  const werteHilfen = Object.freeze({
+    token: liesToken,
+    sicht: () => sicht(),
+    fehler: fehler,
+    fehlerWeg: fehlerWeg
+  });
+
   /* ---------- Hilfen für Bibliothek, Player und Medien online (F3b) ---------- */
   const medienHilfen = Object.freeze({
     token: liesToken,
@@ -354,13 +365,20 @@
   function anpasserSetzen() {
     if (!A || typeof A.setzeAnpasser !== 'function') return;
     const mitPlayer = !!PL && typeof PL.anpassen === 'function';
-    if (!AE && !mitPlayer) return;
+    const mitWerten = !!W && typeof W.anwenden === 'function';
+    if (!AE && !mitPlayer && !mitWerten) return;
     if (AE) AE.einrichten({ paket: () => sicht(), version: () => (effektiv() ? sicht().nummer : version), lokal: () => effektiv() });
     A.setzeAnpasser((wurzel, dok, ort) => {
       if (AE) {
         let markieren = false;
         try { markieren = ort === 'vollbild' && !!B && typeof B.modus === 'function' && (B.modus() === 'text' || B.modus() === 'status'); } catch (e) { markieren = false; }
         try { AE.anwenden(wurzel, dok.id, AE.fuerDok(dok.id), { markieren: markieren }); } catch (e) { /* Basis bleibt sichtbar */ }
+      }
+      // Dynamische Werte nach der Änderungsschicht (sie setzt Verknüpfungen und eigene Werte als data-*-Angaben)
+      if (mitWerten) {
+        let textModus = false;
+        try { textModus = ort === 'vollbild' && !!B && typeof B.modus === 'function' && B.modus() === 'text'; } catch (e) { textModus = false; }
+        try { W.anwenden(wurzel, dok, { markieren: textModus, ort: ort }); } catch (e) { /* Paket-Text bleibt sichtbar */ }
       }
       if (mitPlayer) PL.anpassen(wurzel, dok, ort);
     });
@@ -582,12 +600,17 @@
     if (M && MO && typeof MO.einrichten === 'function') {
       try { Promise.resolve(MO.einrichten(medienHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne Medien online */ }
     }
+    if (W && typeof W.einrichten === 'function') {
+      try { Promise.resolve(W.einrichten(werteHilfen)).catch(() => {}); } catch (e) { /* Seite läuft ohne dynamische Werte (Paket-Text) */ }
+    }
   }
   async function start() {
     persistAnfragen();
     anpasserSetzen();
     // Änderungsschicht zuerst in die Reihe: eine frühe Übernahme (Import) gleicht erst danach ab
     if (AE) reihe = reihe.then(() => AE.laden()).catch(() => {});
+    // Zwischenspeicher der dynamischen Werte ebenso vor der ersten Anzeige (sonst zeigte sie kurz die Paket-Texte)
+    if (W && typeof W.laden === 'function') reihe = reihe.then(() => W.laden()).catch(() => {});
     const b = await ladeBasis();
     if (b && b.paket) {
       try {

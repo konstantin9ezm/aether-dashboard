@@ -18,6 +18,8 @@
 // Daten (F8): CSV UTF-8 mit BOM, „;“, Spalten version;seite;kennung;art;wert;status (art = text | status | zaehler |
 //   stand); JSON mit Format-Kennung „aether-flyer-daten“, formatVersion 1 und Versionsnummer. Die Werte sind die der
 //   Darstellung (Basis + Änderungsschicht), Kennungen wie beim Bearbeiten (t…, s…, zaehler<n>, stand<n>).
+//   Dynamische Werte: Zeilenart art=wert (kennung = Schlüssel, wert = dargestellter Wert, dazu quelle und zeit); nur
+//   wenn eine Seite solche Zeilen hat, bekommt ihre CSV die zusätzlichen Spalten quelle;zeit (sonst unverändert).
 // Dateinamen nur ASCII: <version>_<kennung>_<nn>_<art>.png/.svg, <version>_<kennung>.csv/.json; mehrere Dateien → ZIP
 // (AetherFlyerZip, „stored“, CRC-32). Weitergabe über die vorhandenen Hilfen (Teilen, sonst Herunterladen, sonst
 // Dialog mit Link) – immer synchron im Klick (Nutzergeste fürs Teilen auf iPhone/iPad), darum wird vorher vorbereitet.
@@ -206,7 +208,7 @@
   }
 
   // Daten: Text sichtbar gelesen (Leerraum zusammengefasst, <br> = Zeilenumbruch)
-  const MARKEN = '[data-t],[data-s],[data-block],[data-zaehler],[data-stand],ae-t';
+  const MARKEN = '[data-t],[data-s],[data-block],[data-zaehler],[data-stand],[data-wert],[data-ae-werte-fuss],ae-t';   // dynamische Werte: Wert und Fußzeile „Werte vom …“ zählen nicht zum umgebenden Text
   function sichtText(n) {
     let t = '';
     for (const c of n.childNodes) {
@@ -246,6 +248,15 @@
       const k = stand.get(e);
       if (k) zeilen.push({ kennung: k, art: 'stand', wert: glaetten(sichtText(e)), status: '' });
     }
+    // Dynamische Werte (Darstellung mit den Werten aus dem Zwischenspeicher)
+    const W = window.AetherFlyerWerte || null;
+    const dyn = (wurzel.matches('[data-wert]') ? [wurzel] : []).concat(Array.from(wurzel.querySelectorAll('[data-wert]')));
+    for (const e of dyn) {
+      const sl = e.getAttribute('data-wert') || '', teil = e.getAttribute('data-wert-teil') || '';
+      const i = W && typeof W.info === 'function' ? W.info(sl, teil) : null;
+      const hand = e.hasAttribute('data-wert-hand');
+      zeilen.push({ kennung: sl + (teil ? '|' + teil : ''), art: 'wert', wert: textWert(e), status: '', quelle: hand ? 'von Hand' : (i && i.quelle) || '', zeit: hand ? '' : (i && i.zeit) || '' });
+    }
     return zeilen;
   }
   function messen(wurzel, dok) {
@@ -263,7 +274,9 @@
     return /[;"\r\n]/.test(s) || /^\s|\s$/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   function csv(nr, seite, zeilen) {
-    const z = [CSV_SPALTEN.join(';')].concat(zeilen.map((r) => [nr, seite, r.kennung, r.art, r.wert, r.status].map(csvFeld).join(';')));
+    const mitWert = zeilen.some((r) => r.art === 'wert');
+    const spalten = mitWert ? CSV_SPALTEN.concat(['quelle', 'zeit']) : CSV_SPALTEN;
+    const z = [spalten.join(';')].concat(zeilen.map((r) => [nr, seite, r.kennung, r.art, r.wert, r.status].concat(mitWert ? [r.quelle || '', r.zeit || ''] : []).map(csvFeld).join(';')));
     return '\ufeff' + z.join('\r\n') + '\r\n';
   }
   function json(s, fassung) {
@@ -280,6 +293,7 @@
       eintraege: s.zeilen.map((r) => {
         const e = { kennung: r.kennung, art: r.art, wert: r.wert, status: r.status };
         if (r.art === 'zaehler') { e.fertig = r.fertig; e.laeuft = r.laeuft; e.gesamt = r.gesamt; }
+        if (r.art === 'wert') { e.quelle = r.quelle || ''; e.zeit = r.zeit || null; }
         return e;
       }),
       grafiken: s.grafiken.map((g) => ({

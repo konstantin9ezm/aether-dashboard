@@ -1,4 +1,4 @@
-// Gemeinsame Hilfsfunktionen für index.html (Projektansicht), screen-editor.html und logo.html.
+// Gemeinsame Hilfsfunktionen für index.html (Projektansicht), screen-editor.html, logo.html und flyer.html.
 // Hier steht jede Funktion genau einmal; die Seiten binden die Datei per <script src="gemeinsam.js"> ein.
 // Regeln: keine Seiten-Texte außer den gemeinsamen Fehlermeldungen, keine Konfiguration einer Seite
 // (die kommt per Parameter), KEIN Speicher: kein localStorage, kein Cache, kein Token-Lesen oder -Schreiben.
@@ -63,6 +63,8 @@
   //   beiAntwort    optional: function (res) – wird bei jeder Antwort vor der Fehlerprüfung aufgerufen
   // opts je Anfrage: token, accept, signal, perm, notFound; ohneToken: true = ohne Authorization-Header
   // (nur für öffentliche Repos; ohne diese Angabe bleibt alles wie bisher).
+  // Bedingte Anfrage (Flyer, dynamische Werte): etag = zuletzt gelesener ETag (Header If-None-Match), erlaube304: true =
+  // eine Antwort 304 („nicht geändert“) kommt als Antwort zurück statt als Fehler. Ohne diese Angaben wie bisher.
   function githubApi(cfg) {
     async function errorFromResponse(res, ctx) {
       var status = res.status;
@@ -114,6 +116,7 @@
         'Authorization': 'Bearer ' + useToken
       };
       if (!useToken) delete headers['Authorization']; // nur mit opts.ohneToken: Anfrage ohne Token
+      if (typeof opts.etag === 'string' && opts.etag) headers['If-None-Match'] = opts.etag;
       var res;
       try {
         res = await fetch(cfg.apiBase + path, {
@@ -129,6 +132,7 @@
         throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
       }
       if (cfg.beiAntwort) cfg.beiAntwort(res);
+      if (res.status === 304 && opts.erlaube304 === true) return res;
       if (!res.ok) throw await errorFromResponse(res, opts);
       return res;
     }
@@ -139,6 +143,42 @@
     }
 
     return Object.freeze({ errorFromResponse: errorFromResponse, api: api, contentsPath: contentsPath });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ROADMAP.md lesen (Projektansicht in index.html und dynamische Werte der Flyer-Seite)
+  // ---------------------------------------------------------------------------
+  // Tolerant: Unbekanntes wird gezählt und übersprungen, nie ein Absturz.
+  // → { sections: [{ name, items: [{ done, text, prs: [{ n, repo:'aether'|'dashboard' }] }] }], skipped }
+  function parseRoadmap(text) {
+    text = String(text || '').slice(0, 500000).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+    text = text.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
+    var sections = [], cur = null, skipped = 0;
+    text.split('\n').forEach(function (line) {
+      var t = line.trim();
+      if (!t) return;
+      var h = /^##(?!#)\s*(.*?)\s*#*$/.exec(t);
+      if (h) {
+        cur = { name: h[1] || '(ohne Namen)', items: [] };
+        sections.push(cur);
+        return;
+      }
+      if (/^#(?!#)/.test(t)) return; // Dokumenttitel
+      var it = /^[-*+]\s*\[([ xX]?)\]\s*(.*)$/.exec(t);
+      if (!it) { skipped++; return; }
+      if (!cur) { cur = { name: 'Ohne Abschnitt', items: [] }; sections.push(cur); }
+      // „(PR #12)“ verweist auf dieses Repo (aether), „(Repo aether-dashboard, PR #8)“ auf das Dashboard.
+      // „(Repo aether-dashboard)“ ohne Nummer bleibt Text. Andere Repos werden nicht erkannt.
+      var prs = [];
+      var txt = it[2].replace(/\(\s*(?:Repo\s+aether-dashboard\s*,\s*)?PR\s*#\s*(\d{1,7})\s*\)/gi, function (all, n) {
+        n = Number(n); n = Number.isInteger(n) && n > 0 && n < 1e7 ? n : null;
+        var repo = /^\(\s*Repo/i.test(all) ? 'dashboard' : 'aether';
+        if (n && !prs.some(function (p) { return p.n === n && p.repo === repo; })) prs.push({ n: n, repo: repo });
+        return ' ';
+      }).replace(/\s+/g, ' ').trim();
+      cur.items.push({ done: it[1] === 'x' || it[1] === 'X', text: txt || '(ohne Text)', prs: prs });
+    });
+    return { sections: sections, skipped: skipped };
   }
 
   // ---------------------------------------------------------------------------
@@ -179,6 +219,7 @@
     projTimeoutError: projTimeoutError,
     withProjTimeout: withProjTimeout,
     githubApi: githubApi,
+    parseRoadmap: parseRoadmap,
     mitGeste: mitGeste,
     meldung: meldung,
     kannTeilen: kannTeilen,

@@ -79,7 +79,8 @@ const pruefungFertig = (page) => page.evaluate(() => window.AetherFlyerMedienOnl
 function medienApi(repo) {
   return async (route) => {
     const req = route.request(), url = new URL(req.url());
-    if (!url.pathname.startsWith(MED)) return route.fallback();
+    // Paket-Umzug: aether-medien/flyer beantwortet die allgemeine Mock-API (tests/flyer-hilfe.js), hier nur Medien
+    if (!url.pathname.startsWith(MED) || url.pathname.startsWith(MED + '/contents/flyer')) return route.fallback();
     repo.anfragen.push({ pfad: url.pathname, accept: req.headers().accept || '', auth: /^Bearer /.test(req.headers().authorization || ''), modus: repo.modus });
     const cors = { 'access-control-allow-origin': '*' };
     const json = (st, o) => route.fulfill({ status: st, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });
@@ -126,8 +127,8 @@ describe('F3b a) Speicher', () => {
       await oeffneFlyer(page);
       await ruhe(page);
       const db = await idb(page);
-      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur']);
-      assert.equal(db.basis.version, 4);
+      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur', 'werte']);
+      assert.equal(db.basis.version, 5);
       assert.deepEqual(db.basis.werte, [basis], 'basis unverändert');
       assert.deepEqual(db.online.werte, [online], 'online unverändert');
       assert.deepEqual(db.aenderungen.werte.sort((a, b) => (a.dok ? 1 : -1)), [{ exporte: ['2026-01-01.1'] }, eintrag], 'Änderungen unverändert');

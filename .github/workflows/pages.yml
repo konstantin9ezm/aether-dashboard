@@ -59,7 +59,7 @@ jobs:
       - name: Nur die statischen Dateien veröffentlichen
         run: |
           mkdir -p _site
-          cp index.html sw.js manifest.json engine-map.json webgpu-check.html screen-editor.html logo.html gemeinsam.js flyer.html flyer.js flyer-paket.js flyer-struktur.js flyer-speicher.js flyer-ansicht.js flyer-online.js flyer-export.js flyer-zip.js flyer-aenderungen.js flyer-bearbeiten.js flyer-uebersicht.js flyer-grafik.js flyer-pptx.js flyer-medien.js flyer-bibliothek.js flyer-medien-tafeln.js flyer-player.js flyer-medien-online.js _site/
+          cp index.html sw.js manifest.json engine-map.json webgpu-check.html screen-editor.html logo.html gemeinsam.js flyer.html flyer.js flyer-paket.js flyer-struktur.js flyer-speicher.js flyer-ansicht.js flyer-online.js flyer-export.js flyer-zip.js flyer-aenderungen.js flyer-bearbeiten.js flyer-uebersicht.js flyer-grafik.js flyer-pptx.js flyer-medien.js flyer-bibliothek.js flyer-medien-tafeln.js flyer-player.js flyer-medien-online.js flyer-werte.js _site/
           # three.js r128 (MIT) und Lizenzhinweise für den Screen-Editor (offline, kein CDN).
           mkdir -p _site/vendor
           cp vendor/three-r128.min.js vendor/three-r128.LICENSE.txt vendor/Jost-OFL.txt _site/vendor/

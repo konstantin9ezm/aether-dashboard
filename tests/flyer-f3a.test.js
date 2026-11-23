@@ -765,8 +765,8 @@ describe('F3a: Speicher (Teil A)', () => {
       await oeffneFlyer(page);
       await ruhe(page);
       const db = await idb(page);
-      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur']);
-      assert.equal(db.basis.version, 4);
+      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur', 'werte']);
+      assert.equal(db.basis.version, 5);
       assert.deepEqual(db.basis.werte, [basis], 'Basis unverändert (bleibt v1)');
       assert.deepEqual(db.aenderungen.schluessel.sort(), ['e:1.1\nS1\ntext\nt2', 'e:1.1\nS2\nstatus\ns1', 'meta']);
       const werte = db.aenderungen.werte.filter((w) => w.dok).sort((a, b) => a.dok.localeCompare(b.dok));

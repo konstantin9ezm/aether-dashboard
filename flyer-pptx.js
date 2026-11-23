@@ -15,7 +15,8 @@
 // 16,7 Mio. Pixel verkleinert) – dann als JPEG Qualität 0,92 auf Grund in Seitenfarbe (JPEG kennt keine
 // Transparenz). Seiten mit Video/Animation zeigen das Standbild wie bei PDF/Bild (Darstellung mit ort 'bild').
 // Notizen jeder Folie: Seiten-Id, Titel und „Stand“ der Seite (Text des ersten data-stand-Elements der Darstellung,
-// sonst der Stand des Pakets).
+// sonst der Stand des Pakets); auf Seiten mit dynamischen Werten zusätzlich „Werte vom TT.MM.JJJJ, HH:MM“ (Zeitpunkt der
+// Werte, mit denen die Folie gezeichnet wurde – eingefroren zum Exportzeitpunkt).
 // Speicher (iPad): Folien nacheinander zeichnen; jedes JPEG wird sofort ein Blob-Teil der ZIP (CRC vorher berechnet,
 // AetherFlyerZip.schreiber mit { crc }), Canvas danach freigegeben – nie alle Bilder gleichzeitig als Pixel im Speicher.
 // Seitenwahl: „Alle als PowerPoint (n)“ nimmt genau AetherFlyerExport.druckListe() (dieselben Seiten wie „Alle als
@@ -220,7 +221,7 @@
       platzhalter(3, 'Notizenplatzhalter 2', '<p:ph type="body" idx="1"/>', null, text) +
       '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>';
   }
-  function notizZeilen(n) { return ['Seite: ' + n.id, 'Titel: ' + (n.titel || ''), 'Stand: ' + (n.stand || '')]; }
+  function notizZeilen(n) { return ['Seite: ' + n.id, 'Titel: ' + (n.titel || ''), 'Stand: ' + (n.stand || '')].concat(n.werte ? ['Werte vom ' + n.werte] : []); }
 
   /* ---------- Schreiber ---------- */
   // opt: { format: 'a4'|'16x9', anzahl (Folien, vorab bekannt – [Content_Types].xml steht vorne), titel, zeit }
@@ -280,6 +281,11 @@
     const e = wurzel && (wurzel.matches && wurzel.matches('[data-stand]') ? wurzel : (wurzel.querySelector ? wurzel.querySelector('[data-stand]') : null));
     return e ? String(e.textContent || '').replace(/\s+/g, ' ').trim() : '';
   }
+  // Dynamische Werte: Zeitpunkt aus der Fußzeile der Darstellung (flyer-werte.js), sonst ''
+  function werteVon(wurzel) {
+    const e = wurzel && wurzel.querySelector ? wurzel.querySelector('[data-ae-werte-zeit]') : null;
+    return e ? String(e.getAttribute('data-ae-werte-zeit') || '') : '';
+  }
   function alsBlob(cv, typ, q) {
     return new Promise((resolve, reject) => {
       try { cv.toBlob((b) => resolve(b), typ, q); } catch (e) { reject(e); }
@@ -287,8 +293,8 @@
   }
   // Seite → { blob (JPEG), crc, w, h, stand, verkleinert }; Canvas sofort wieder frei
   async function folienBild(dok) {
-    let stand = '';
-    const sb = await EX().seitenBild(dok, undefined, (w) => { stand = standVon(w); return null; });
+    let stand = '', werte = '';
+    const sb = await EX().seitenBild(dok, undefined, (w) => { stand = standVon(w); werte = werteVon(w); return null; });
     if (!sb.img) throw (sb.bildFehler instanceof Error ? sb.bildFehler : new Error('Bild nicht möglich'));
     const cv = document.createElement('canvas');
     cv.width = sb.w; cv.height = sb.h;
@@ -306,7 +312,7 @@
     }
     if (!blob || !blob.size || blob.type !== 'image/jpeg') throw new Error('Canvas zu groß');
     const crc = Z().crc32(new Uint8Array(await blob.arrayBuffer()));
-    return { blob: blob, crc: crc, w: sb.w, h: sb.h, stand: stand, verkleinert: sb.verkleinert };
+    return { blob: blob, crc: crc, w: sb.w, h: sb.h, stand: stand, werte: werte, verkleinert: sb.verkleinert };
   }
   // doks → PowerPoint-Datei. opt: { format, name, titel, fortschritt(i, n, dok) } →
   // { datei, folien, ms, groessteFolie: { id, bytes }, verkleinert: [ids], lagen: [{ id, x, y, cx, cy }] }
@@ -326,7 +332,7 @@
         f.ursache = e;
         throw f;
       }
-      const lage = sch.folie({ daten: b.blob, crc: b.crc, w: b.w, h: b.h }, { id: dok.id, titel: dok.titel, stand: b.stand || (pk && pk.stand) || '' });
+      const lage = sch.folie({ daten: b.blob, crc: b.crc, w: b.w, h: b.h }, { id: dok.id, titel: dok.titel, stand: b.stand || (pk && pk.stand) || '', werte: b.werte || '' });
       aus.lagen.push(Object.assign({ id: dok.id, w: b.w, h: b.h }, lage));
       if (!aus.groessteFolie || b.blob.size > aus.groessteFolie.bytes) aus.groessteFolie = { id: dok.id, bytes: b.blob.size };
       if (b.verkleinert) aus.verkleinert.push(dok.id);

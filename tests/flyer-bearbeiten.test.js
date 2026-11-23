@@ -139,6 +139,8 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-expose-header
 async function antwort(route, url, headers) {
   const json = (status, obj) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(obj) });
   if (headers.authorization !== `Bearer ${TOKEN}` || mock.modus === 'auth') return json(401, { message: 'Bad credentials' });
+  // Paket-Umzug (Übergang): aether-medien/flyer ohne Paket – gelesen wird wie bisher am alten Ort docs/flyer
+  if (url.pathname === '/repos/konstantin9ezm/aether-medien/contents/flyer') return json(200, [{ name: 'README.md', path: 'flyer/README.md', sha: 'ccccccc000000000000000000000000000000009', type: 'file' }]);
   const ref = url.searchParams.get('ref');
   if (url.pathname === ORDNER && ref === 'main') {
     if (mock.modus === '404') return json(404, { message: 'Not Found' });
@@ -258,7 +260,7 @@ async function idbEintraege(page) {
   const st = await speicher(page);
   const s = st.idb.find((e) => e.db === 'aether-flyer' && e.store === 'aenderungen');
   assert.ok(s, 'Store aenderungen in IndexedDB aether-flyer');
-  assert.equal(s.version, 4, 'IndexedDB aether-flyer Version 4 (F3b)');
+  assert.equal(s.version, 5, 'IndexedDB aether-flyer Version 5 (dynamische Werte)');
   return s.werte.filter((w) => w && typeof w.dok === 'string')
     .map((w) => ({ dok: w.dok, k: w.k, art: w.art, alt: w.alt, neu: w.neu, exportiert: w.exportiert }))
     .sort((a, b) => (a.dok + a.art + a.k).localeCompare(b.dok + b.art + b.k));
@@ -410,7 +412,7 @@ describe('Flyer bearbeiten: Umschalter und Bedienung', () => {
       assert.equal(await page.inputValue('#vbEditFeld'), 'Platzhalter Titel');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'vbEditFeld', 'Feld hat den Fokus');
       assert.deepEqual(await page.$$eval('#vbEdit button', (bs) => bs.map((b) => [b.id, b.textContent.trim()])),
-        [['vbEditOk', 'Übernehmen'], ['vbEditAb', 'Abbrechen'], ['vbEditOrig', 'Original']]);
+        [['vbEditOk', 'Übernehmen'], ['vbEditAb', 'Abbrechen'], ['vbEditOrig', 'Original'], ['vbEditWert', 'Mit Wert verknüpfen …']]);   // dynamische Werte: Verknüpfen
       assert.ok(await page.isDisabled('#vbEditOrig'), '„Original“ ohne Änderung nicht wählbar');
       assertTippflaechen(await groesse(page, '#vbEdit button'), 'Text-Leiste');
       assert.ok(await page.isHidden('#vbStatus'));

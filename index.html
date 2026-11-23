@@ -962,6 +962,8 @@
   var G = window.AetherGemeinsam;
   var AppError = G.AppError;
   var shortSha = G.shortSha;
+  // Leser der ROADMAP.md (seit den dynamischen Werten der Flyer-Seite in gemeinsam.js, genau einmal)
+  var parseRoadmap = G.parseRoadmap;
   // Zeitlimit je Anfrage der Projektansicht (15 s, in den Tests kürzer) und
   // withProjTimeout(p): höchstens so lange auf p warten, sonst mit Zeitlimit-Fehler abbrechen.
   var projTimeoutMs = G.projTimeoutMs;
@@ -3700,37 +3702,7 @@
     });
   }
 
-  // Tolerant: Unbekanntes wird gezählt und übersprungen, nie ein Absturz.
-  function parseRoadmap(text) {
-    text = String(text || '').slice(0, 500000).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-    text = text.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
-    var sections = [], cur = null, skipped = 0;
-    text.split('\n').forEach(function (line) {
-      var t = line.trim();
-      if (!t) return;
-      var h = /^##(?!#)\s*(.*?)\s*#*$/.exec(t);
-      if (h) {
-        cur = { name: h[1] || '(ohne Namen)', items: [] };
-        sections.push(cur);
-        return;
-      }
-      if (/^#(?!#)/.test(t)) return; // Dokumenttitel
-      var it = /^[-*+]\s*\[([ xX]?)\]\s*(.*)$/.exec(t);
-      if (!it) { skipped++; return; }
-      if (!cur) { cur = { name: 'Ohne Abschnitt', items: [] }; sections.push(cur); }
-      // „(PR #12)“ verweist auf dieses Repo (aether), „(Repo aether-dashboard, PR #8)“ auf das Dashboard.
-      // „(Repo aether-dashboard)“ ohne Nummer bleibt Text. Andere Repos werden nicht erkannt.
-      var prs = [];
-      var txt = it[2].replace(/\(\s*(?:Repo\s+aether-dashboard\s*,\s*)?PR\s*#\s*(\d{1,7})\s*\)/gi, function (all, n) {
-        n = validNum(n);
-        var repo = /^\(\s*Repo/i.test(all) ? 'dashboard' : 'aether';
-        if (n && !prs.some(function (p) { return p.n === n && p.repo === repo; })) prs.push({ n: n, repo: repo });
-        return ' ';
-      }).replace(/\s+/g, ' ').trim();
-      cur.items.push({ done: it[1] === 'x' || it[1] === 'X', text: txt || '(ohne Text)', prs: prs });
-    });
-    return { sections: sections, skipped: skipped };
-  }
+  // Leser der ROADMAP.md: parseRoadmap aus gemeinsam.js (oben bei den gemeinsamen Hilfen).
 
   function progressBar(done, total) {
     var bar = el('div', 'bar' + (total > 0 && done === total ? ' full' : ''));

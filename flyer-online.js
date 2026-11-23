@@ -13,10 +13,17 @@
 // Token: kommt nur über h.token() von flyer.js herein, geht nur als Authorization-Header an api.github.com
 // (githubApi in gemeinsam.js) und wird hier nirgends abgelegt, in keine Adresse geschrieben und nie protokolliert.
 // Gespeichert wird nur über flyer.js (uebernehme, merkeOnline): das Paket bzw. { sha, version, stand } – nie das Token.
+// Ablageort (Umzug, Stufe 1 der dynamischen Werte): zuerst das private Repo konstantin9ezm/aether-medien, Zweig „main“,
+// flyer/aether-flyer-paket.json (Ordner „flyer“ neben „medien“) – ein Commit dort startet keinen vollen Merge-Lauf in
+// aether. Fehlt die Datei dort (404 oder Ordner ohne die Datei), gilt wie bisher aether/docs/flyer/ mit dem einmaligen
+// Hinweis „Paket noch am alten Ort – bitte nach aether-medien/flyer/ hochladen“ (#paketOrt, nicht wiederholend). Gibt es
+// beide, gilt aether-medien. Kein Zugriff auf aether-medien (401/403) wie bei den Medien: eine einmalige Meldung, danach
+// keine automatischen Versuche dort, bis „Online prüfen“ ausdrücklich gedrückt wird; gelesen wird dann am alten Ort.
 (function () {
   'use strict';
 
-  const QUELLE = Object.freeze({ repo: 'konstantin9ezm/aether', ref: 'main', ordner: 'docs/flyer', datei: 'aether-flyer-paket.json' });
+  const QUELLE = Object.freeze({ repo: 'konstantin9ezm/aether', ref: 'main', ordner: 'docs/flyer', datei: 'aether-flyer-paket.json' });   // alter Ort
+  const QUELLE_NEU = Object.freeze({ repo: 'konstantin9ezm/aether-medien', ref: 'main', ordner: 'flyer', datei: 'aether-flyer-paket.json' });
   // Selbst gewählt: alle 10 Minuten nachsehen (Tests setzen window.AETHER_TEST_FLYER_INTERVALL_MS vor dem Laden).
   const INTERVALL_MS = 10 * 60 * 1000;
   // Obergrenzen für die Arbeiten im Browser-Speicher (über flyer.js), damit „Prüfe online …“ nie stehen bleibt.
@@ -30,12 +37,20 @@
     ohneToken: 'Ohne Token keine Online-Prüfung – gezeigt wird der gespeicherte Stand.',
     offline: 'Offline – gezeigt wird der gespeicherte Stand.',
     keine: 'Noch keine Online-Version.',
-    kaputt: 'Online-Datei ist kein gültiges Flyer-Paket.'
+    kaputt: 'Online-Datei ist kein gültiges Flyer-Paket.',
+    alterOrt: 'Paket noch am alten Ort – bitte nach aether-medien/flyer/ hochladen',
+    keinZugriff: 'Kein Zugriff auf aether-medien – Repo anlegen bzw. den Token um das Repo erweitern'
   });
 
-  const QUELLE_PFAD = '/repos/' + QUELLE.repo;
   let h = null;        // Hilfen von flyer.js (siehe einrichten)
-  let gh = null;       // { api, contentsPath } aus gemeinsam.js
+  let gh = null;       // { api, contentsPath } aus gemeinsam.js (alter Ort, Repo aether)
+  let ghNeu = null;    // dasselbe für aether-medien
+  let keinZugriffNeu = false;   // in dieser Sitzung: kein Zugriff auf aether-medien → keine automatischen Versuche dort
+  let zugriffGemeldet = false;  // Meldung „Kein Zugriff …“ schon gezeigt
+  let ortGemeldet = false;      // Hinweis „Paket noch am alten Ort …“ schon gezeigt
+  // Orte: { pfad: '/repos/<repo>', api, ordner, datei }
+  function ortAlt() { return { pfad: '/repos/' + QUELLE.repo, api: gh, ordner: QUELLE.ordner, datei: QUELLE.datei, neu: false }; }
+  function ortNeu() { return { pfad: '/repos/' + QUELLE_NEU.repo, api: ghNeu, ordner: QUELLE_NEU.ordner, datei: QUELLE_NEU.datei, neu: true }; }
   let laeuft = null;   // Promise der laufenden Prüfung bzw. des laufenden Ladens (nie zwei gleichzeitig)
   let angebot = null;  // im Banner angebotene Online-Fassung: { paket|null, sha, version, stand }
 
@@ -95,10 +110,10 @@
   /* ---------- GitHub ---------- */
   // Eine GET-Anfrage samt Lesen der Antwort mit Zeitlimit; nach Ablauf wird sie auch abgebrochen.
   // 404 → AppError „keineonline“ (kein Fehler, nur Hinweis „Noch keine Online-Version.“).
-  function hole(pfad, token, alsJson, accept, notFound) {
+  function hole(pfad, token, alsJson, accept, notFound, api) {
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     const keine = notFound || new (G().AppError)('keineonline', TEXT.keine, '');
-    const p = gh.api(pfad, { token: token, accept: accept, signal: ctrl ? ctrl.signal : undefined, notFound: keine })
+    const p = (api || gh).api(pfad, { token: token, accept: accept, signal: ctrl ? ctrl.signal : undefined, notFound: keine })
       .then((res) => alsJson ? res.json() : res.text());
     return G().withProjTimeout(p).catch((e) => { if (ctrl) ctrl.abort(); throw e; });
   }
@@ -111,11 +126,12 @@
   // Paket-Datei laden und prüfen → { paket } oder { ergebnis } (zu neu/kaputt: schon gemeldet, nichts überschrieben).
   // perSha: genau die Fassung mit diesem sha laden (git/blobs, raw; 404 → AppError „blobweg“), sonst die Datei, die
   // gerade auf main liegt (contents, raw).
-  async function ladeDatei(token, sha, perSha) {
+  async function ladeDatei(token, sha, perSha, ort) {
+    const o = ort || ortAlt();
     const text = perSha
-      ? await hole(QUELLE_PFAD + '/git/blobs/' + encodeURIComponent(sha), token, false, RAW,
-        new (G().AppError)('blobweg', 'Online-Fassung nicht mehr da.', ''))
-      : await hole(gh.contentsPath(QUELLE.ordner + '/' + QUELLE.datei), token, false, RAW);
+      ? await hole(o.pfad + '/git/blobs/' + encodeURIComponent(sha), token, false, RAW,
+        new (G().AppError)('blobweg', 'Online-Fassung nicht mehr da.', ''), o.api)
+      : await hole(o.api.contentsPath(o.ordner + '/' + o.datei), token, false, RAW, null, o.api);
     let paket;
     try {
       paket = P().lies(text);
@@ -165,13 +181,45 @@
     return laeuft;
   }
 
-  async function pruefen() {
+  function ortHinweis(text) {
+    const el = $('paketOrt');
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+  // Neuer Ort (aether-medien/flyer): → { eintrag, ort } wenn die Datei dort liegt, sonst null (alter Ort gilt).
+  // Netz/Zeitlimit und andere Fehler gehen weiter an den Aufrufer (wie bisher: offline bzw. Fehlerbox).
+  async function neuerOrt(token, ausdruecklich) {
+    if (keinZugriffNeu && !ausdruecklich) return null;
+    const o = ortNeu();
+    let liste;
+    try {
+      liste = await hole(o.api.contentsPath(o.ordner), token, true, undefined, new (G().AppError)('fehltneu', 'Ordner flyer fehlt.', ''), o.api);
+    } catch (e) {
+      if (e && e.kind === 'fehltneu') liste = [];
+      else if (e && (e.kind === 'auth' || e.kind === 'forbidden')) {
+        keinZugriffNeu = true;
+        if (!zugriffGemeldet) { zugriffGemeldet = true; meldung(TEXT.keinZugriff); }
+        return null;
+      } else throw e;
+    }
+    keinZugriffNeu = false;
+    const eintrag = (Array.isArray(liste) ? liste : []).find((e) => e && e.type === 'file' && e.name === o.datei);
+    if (eintrag) { ortHinweis(''); return { eintrag: eintrag, ort: o }; }
+    // Übergang: Paket liegt (noch) am alten Ort – einmal darauf hinweisen
+    if (!ortGemeldet) { ortGemeldet = true; ortHinweis(TEXT.alterOrt); }
+    return null;
+  }
+
+  async function pruefen(ausdruecklich) {
     // 1. Ohne Token oder ohne Netz: nur ein kleiner Hinweis, kein Fehler.
     const token = tokenLesen();
     if (!token) { hinweis(TEXT.ohneToken); return 'ohnetoken'; }
     if (navigator.onLine === false) { hinweis(TEXT.offline); return 'offline'; }
-    // 2. Ordnerliste
-    const liste = await hole(gh.contentsPath(QUELLE.ordner), token, true);
+    // 2. Ordnerliste: zuerst aether-medien/flyer, sonst (Übergang) aether/docs/flyer
+    const neu = await neuerOrt(token, ausdruecklich === true);
+    const ort = neu ? neu.ort : ortAlt();
+    const liste = neu ? [neu.eintrag] : await hole(gh.contentsPath(QUELLE.ordner), token, true);
     const dateien = (Array.isArray(liste) ? liste : []).filter((e) => e && e.type === 'file' && typeof e.name === 'string');
     const eintrag = dateien.find((e) => e.name === QUELLE.datei);
     if (!eintrag) {
@@ -191,10 +239,10 @@
     if (lokal.paket && sha && on && on.sha === sha && typeof on.version === 'string' && on.version &&
         (lokal.basisSha || on.version !== lokal.paket.version)) {
       const schonDa = angebot && angebot.sha === sha ? angebot.paket : null;
-      anbieten({ paket: schonDa, sha: sha, version: on.version, stand: typeof on.stand === 'string' ? on.stand : '' }, lokal.paket);
+      anbieten({ paket: schonDa, sha: sha, version: on.version, stand: typeof on.stand === 'string' ? on.stand : '', ort: ort }, lokal.paket);
       return 'angebot';
     }
-    const r = await ladeDatei(token, sha);
+    const r = await ladeDatei(token, sha, false, ort);
     if (!r.paket) return r.ergebnis;
     const paket = r.paket;
     // 4. Neu lesen: falls während des Downloads ein Paket importiert wurde, wird es nicht ungefragt ersetzt (auch
@@ -216,7 +264,7 @@
       fertig(aktuellText(lokal.paket.version));
       return 'aktuell';
     }
-    anbieten({ paket: paket, sha: sha, version: paket.version, stand: paket.stand }, lokal.paket);
+    anbieten({ paket: paket, sha: sha, version: paket.version, stand: paket.stand, ort: ort }, lokal.paket);
     return 'angebot';
   }
 
@@ -232,7 +280,7 @@
       // Genau die angebotene Fassung (über ihren sha); ohne gültigen sha oder wenn es sie nicht mehr gibt: neu prüfen.
       if (!istSha(a.sha)) return pruefen();
       let r;
-      try { r = await ladeDatei(token, a.sha, true); } catch (e) {
+      try { r = await ladeDatei(token, a.sha, true, a.ort); } catch (e) {
         if (e && e.kind === 'blobweg') return pruefen();
         throw e;
       }
@@ -242,7 +290,7 @@
       if (paket.version !== a.version) {
         const l = await lokalLesen();
         if (!l.paket) return pruefen();
-        anbieten({ paket: paket, sha: a.sha, version: paket.version, stand: paket.stand }, l.paket);
+        anbieten({ paket: paket, sha: a.sha, version: paket.version, stand: paket.stand, ort: a.ort }, l.paket);
         return 'angebot';
       }
     }
@@ -256,7 +304,7 @@
       }
       // Das Banner hieß „Laden“ (neuer), jetzt ist die Online-Fassung älter: nur über „Trotzdem laden“.
       if (a.neuer !== false && P().vergleicheVersion(paket.version, lokal.paket.version) < 0) {
-        anbieten({ paket: paket, sha: a.sha, version: paket.version, stand: paket.stand }, lokal.paket);
+        anbieten({ paket: paket, sha: a.sha, version: paket.version, stand: paket.stand, ort: a.ort }, lokal.paket);
         return 'angebot';
       }
     }
@@ -269,9 +317,10 @@
   /* ---------- Schnittstelle ---------- */
   // Eine Prüfung starten (läuft schon eine, kommt deren Promise zurück). Lehnt nie ab; Ergebnis ist ein kurzes Wort
   // ('aktuell', 'angebot', 'geladen', 'keine', 'falschername', 'zuneu', 'kaputt', 'ohnetoken', 'offline', 'fehler').
-  function pruefe() {
+  // ausdruecklich (Knopf „Online prüfen“): auch nach „kein Zugriff“ wieder zuerst aether-medien fragen
+  function pruefe(ausdruecklich) {
     if (!h || !gh) return Promise.resolve('aus');
-    return exklusiv(TEXT.pruefe, pruefen);
+    return exklusiv(TEXT.pruefe, () => pruefen(ausdruecklich === true));
   }
 
   // Nach einem Import (flyer.js): Banner und „Aktuell …“ gehörten zum vorigen Paket – weg damit und neu prüfen (läuft
@@ -280,8 +329,8 @@
     if (!h || !gh) return Promise.resolve('aus');
     bannerWeg();
     if (!laeuft) hinweis('');
-    const neu = () => pruefe();
-    return laeuft ? laeuft.then(neu, neu) : neu();
+    const nochmal = () => pruefe();
+    return laeuft ? laeuft.then(nochmal, nochmal) : nochmal();
   }
 
   // h = { token(), lokal(), uebernehme(paket, {quelle, sha, nurWennLeer}), merkeOnline({sha, version, stand}), fehler(titel, text,
@@ -294,8 +343,12 @@
       apiBase: 'https://api.github.com', repoFull: QUELLE.repo, repoPath: '/repos/' + QUELLE.repo, ref: QUELLE.ref,
       tokenOrt: 'im Dashboard', ohneTokenArt: 'notoken'
     });
+    ghNeu = G().githubApi({
+      apiBase: 'https://api.github.com', repoFull: QUELLE_NEU.repo, repoPath: '/repos/' + QUELLE_NEU.repo, ref: QUELLE_NEU.ref,
+      tokenOrt: 'im Dashboard', ohneTokenArt: 'notoken'
+    });
     const btn = $('btnOnline');
-    if (btn) { btn.hidden = false; btn.addEventListener('click', () => { pruefe(); }); }
+    if (btn) { btn.hidden = false; btn.addEventListener('click', () => { pruefe(true); }); }
     const l = $('bannerLaden');
     if (l) l.addEventListener('click', () => { if (angebot) exklusiv(TEXT.lade, laden); });
     window.addEventListener('online', () => { pruefe(); });
@@ -304,5 +357,5 @@
     return pruefe();
   }
 
-  window.AetherFlyerOnline = Object.freeze({ einrichten: einrichten, pruefe: pruefe, nachImport: nachImport, QUELLE: QUELLE });
+  window.AetherFlyerOnline = Object.freeze({ einrichten: einrichten, pruefe: pruefe, nachImport: nachImport, QUELLE: QUELLE, QUELLE_NEU: QUELLE_NEU });
 })();

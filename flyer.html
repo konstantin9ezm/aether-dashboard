@@ -11,7 +11,8 @@
   Flyer & Infografiken: zeigt die Dokumente eines Flyer-Pakets (aether-flyer-paket.json, Format „aether-flyer-paket“)
   als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js,
   PowerPoint (jede Seite als Bild auf einer Folie) über flyer-pptx.js.
-  Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem Repo aether (docs/flyer, Zweig main, gelesen über
+  Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem privaten Repo aether-medien (Ordner flyer, Zweig main;
+  Übergang: sonst wie früher aus dem Repo aether, docs/flyer – gelesen über
   die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt; F3b: Medien der Bibliothek
   ebenso aus dem privaten Repo aether-medien, Ordner medien/) und liegt danach in
   IndexedDB „aether-flyer“ (ohne Token), damit die Seite offline startet (App-Hülle in sw.js).
@@ -27,7 +28,8 @@
   jede Seite als Bild auf einer Folie), flyer-medien.js (Bibliothek:
   Datenmodell, Git-Blob-SHA, Status, F3b), flyer-bibliothek.js (Reiter „Bibliothek“, F3b), flyer-medien-tafeln.js
   (Hinzufügen, Menü einer Datei, Löschen, „Medien online stellen“, F3b), flyer-player.js (Player, Medien in Seiten,
-  Modus „Medium“, F3b), flyer-medien-online.js (Abgleich mit dem privaten Repo aether-medien, nur lesend, F3b), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
+  Modus „Medium“, F3b), flyer-medien-online.js (Abgleich mit dem privaten Repo aether-medien, nur lesend, F3b),
+  flyer-werte.js (dynamische Werte: Zahlen aus den Repos, Zwischenspeicher, Markierung, Tafel), flyer.js (Steuerung, startet alles). Fehlt eines der optionalen Module
   (Ansicht, Online, Export, Bearbeiten), bleiben seine Bedienelemente verborgen.
 -->
 <style>
@@ -166,6 +168,19 @@ button:focus-visible, input:focus-visible, a:focus-visible{ outline:2px solid va
 .vb-edit textarea:focus-visible{ outline:2px solid var(--sel); outline-offset:2px; }
 .vb-edit .row{ margin:0; }
 .vb-edit button[aria-pressed="true"]{ background:var(--sel); color:var(--sel-ink); border-color:transparent; font-weight:600; }
+/* Dynamische Werte: Tafel (Antippen im Modus „Text“) und Liste „Mit Wert verknüpfen …“ (Richtwerte der Vorschau) */
+.wert-kasten{ border:2px solid #3fd1d8; border-radius:10px; background:var(--field); padding:8px 12px; min-width:0; overflow-wrap:anywhere; }
+.wert-kasten[data-zustand="alt"], .wert-kasten[data-zustand="leer"]{ border-color:#ffb347; }
+.wert-kasten[data-zustand="hand"], .wert-kasten[data-zustand="unbekannt"]{ border-color:var(--accent); }
+.wert-kopf{ display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; min-width:0; }
+.wert-zahl{ font-size:26px; font-weight:700; line-height:1.2; overflow-wrap:anywhere; min-width:0; }
+.wert-beschr{ font-size:15px; min-width:0; }
+.wert-quelle{ font-size:14px; color:var(--muted); margin-top:2px; }
+.wert-liste{ display:flex; flex-direction:column; gap:6px; max-height:40vh; overflow:auto; min-width:0; }
+button.wert-wahl{ display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; text-align:left; width:100%; }
+.wert-wahl b{ font-size:16px; }
+.wert-wahl .wert-name{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+.wert-wahl small{ flex-basis:100%; font-size:12px; color:var(--muted); }
 /* Konflikte nach einem Abgleich */
 .konfliktliste{ display:flex; flex-direction:column; gap:8px; margin:0 0 12px; }
 .konflikt{ border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:10px; padding:8px 12px; font-size:14px; overflow-wrap:anywhere; min-width:0; }
@@ -365,18 +380,19 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
+  <p id="paketOrt" class="klein warnung" role="status" hidden></p>
   <div id="konflikte" class="banner" role="status" hidden><span id="konflikteText"></span> <button type="button" id="konflikteZeigen" aria-expanded="false" aria-controls="konfliktListe">Anzeigen</button></div>
   <div id="konfliktListe" class="konfliktliste" hidden></div>
   <details id="onlineStellen" class="hilfe" hidden>
     <summary>Online stellen</summary>
     <ol>
       <li>„Paket exportieren“ – Fassung: <b id="hilfeFassung">noch nicht exportiert</b></li>
-      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether/upload/main/docs/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether/upload/main/docs/flyer</a></li>
+      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether-medien/upload/main/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether-medien/upload/main/flyer</a></li>
       <li>Datei <code>aether-flyer-paket.json</code> auswählen (ersetzt die alte).</li>
       <li>Commit-Nachricht: <code id="hilfeCommit">Flyer-Paket … [skip ci]</code> <button type="button" id="hilfeKopieren">Kopieren</button></li>
       <li>„Commit directly to the main branch“ wählen, „Commit changes“.</li>
     </ol>
-    <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
+    <p class="klein">Ablage seit dem Umzug: privates Repo aether-medien, Ordner flyer (neben medien) – nicht mehr aether/docs/flyer, denn jeder Commit dort macht den nächsten Merge-Lauf in aether voll. „[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
   </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
   <nav id="pfad" class="pfad" aria-label="Ordner" hidden><button type="button" id="pfadZurueck" aria-label="Einen Ordner zurück">‹</button><ol id="pfadListe"></ol><span id="pfadZahl" class="pfad-zahl"></span></nav>
@@ -421,7 +437,19 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
   <div id="vbEdit" class="vb-edit" hidden>
     <label for="vbEditFeld" id="vbEditLabel" class="klein"></label>
     <textarea id="vbEditFeld" rows="3" spellcheck="true"></textarea>
-    <div class="row"><button type="button" id="vbEditOk" class="primary">Übernehmen</button><button type="button" id="vbEditAb">Abbrechen</button><button type="button" id="vbEditOrig">Original</button></div>
+    <div class="row"><button type="button" id="vbEditOk" class="primary">Übernehmen</button><button type="button" id="vbEditAb">Abbrechen</button><button type="button" id="vbEditOrig">Original</button><button type="button" id="vbEditWert" aria-expanded="false" aria-controls="vbVerknuepfen" hidden>Mit Wert verknüpfen …</button></div>
+    <div id="vbVerknuepfen" class="wert-liste" role="group" aria-label="Quellen der dynamischen Werte" hidden></div>
+  </div>
+  <div id="vbWert" class="vb-edit" role="group" aria-labelledby="vbWertLabel" hidden>
+    <span id="vbWertLabel" class="klein"></span>
+    <div id="vbWertKasten" class="wert-kasten"><div class="wert-kopf"><b id="vbWertZahl" class="wert-zahl"></b> <span id="vbWertBeschr" class="wert-beschr"></span></div><div id="vbWertQuelle" class="wert-quelle"></div></div>
+    <div class="row"><button type="button" id="vbWertZu" class="primary">Schließen</button><button type="button" id="vbWertNeu">Jetzt neu lesen</button><button type="button" id="vbWertHand">Von Hand überschreiben …</button><button type="button" id="vbWertOrig" hidden>Original</button></div>
+    <div id="vbWertHandZeile" hidden>
+      <label for="vbWertFeld" class="klein">Eigener Text (bleibt, bis „Original“ den Wert wieder live macht)</label>
+      <textarea id="vbWertFeld" rows="2" spellcheck="false"></textarea>
+      <div class="row"><button type="button" id="vbWertHandOk" class="primary">Übernehmen</button><button type="button" id="vbWertHandAb">Abbrechen</button></div>
+    </div>
+    <p class="klein">Überschreiben legt eine eigene Änderung an (wird exportiert und abgeglichen); „Original“ macht den Wert wieder live.</p>
   </div>
   <div id="vbMedium" class="vb-edit" hidden>
     <span id="vbMediumLabel" class="klein"></span>
@@ -473,6 +501,7 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
 <script src="flyer-medien-tafeln.js"></script>
 <script src="flyer-player.js"></script>
 <script src="flyer-medien-online.js"></script>
+<script src="flyer-werte.js"></script>
 <script src="flyer.js"></script>
 </body>
 </html>

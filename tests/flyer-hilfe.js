@@ -126,6 +126,8 @@ async function githubApi(route) {
   mock.requests.push(url.pathname);
   const json = (status, obj) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(obj) });
   if (headers.authorization !== `Bearer ${TOKEN}`) return json(401, { message: 'Bad credentials' });
+  // Paket-Umzug (Übergang): aether-medien/flyer ohne Paket – gelesen wird wie bisher am alten Ort docs/flyer
+  if (url.pathname === '/repos/konstantin9ezm/aether-medien/contents/flyer') return json(200, [{ name: 'README.md', path: 'flyer/README.md', sha: 'ccccccc000000000000000000000000000000009', type: 'file' }]);
   if (url.pathname === ORDNER) return json(200, [{ name: 'aether-flyer-paket.json', path: 'docs/flyer/aether-flyer-paket.json', sha: mock.sha, type: 'file' }]);
   if (url.pathname === DATEI) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': RAW }, body: mock.datei });
   if (url.pathname.startsWith(BLOBS)) {

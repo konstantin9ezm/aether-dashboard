@@ -8,6 +8,9 @@
 // Nichts hier schreibt in ein Repo: Der Export ist eine Datei, die Konstantin selbst im Repo aether hochlädt.
 // Weitergabe wie beim Bild: Teilen-Dialog (navigator.share mit Datei), sonst Download (Blob-URL wird freigegeben),
 // sonst ein Dialog mit Link. Das Token kommt hier nie vor.
+// Dynamische Werte (flyer-werte.js): Im Modus „Text“ öffnet das Antippen eines Werts (data-wert, auch verknüpft) dessen
+// Tafel statt des Textfelds (gesperrt, Überschreiben nur bewusst); im Textfeld eines normalen Textelements verknüpft
+// „Mit Wert verknüpfen …“ die Stelle mit einer Quelle (Änderungsart „wert“).
 (function () {
   'use strict';
 
@@ -25,6 +28,7 @@
   const A = () => window.AetherFlyerAnsicht || null;
   const AE = () => window.AetherFlyerAenderungen || null;
   const EX = () => window.AetherFlyerExport || null;
+  const W = () => window.AetherFlyerWerte || null;
 
   /* ---------- Zustand ---------- */
   let h = null;                 // Hilfen von flyer.js: paket(), onlineVersion(), fehler(), fehlerWeg(), kopf()
@@ -82,6 +86,7 @@
     const e = $('vbEdit'), s = $('vbStatus');
     if (e) e.hidden = true;
     if (s) s.hidden = true;
+    verknuepfenZu();
     if (war && fokusZurueck !== false) {
       const b = $('vbBuehne');
       if (b) { try { b.focus({ preventScroll: true }); } catch (x) { /* egal */ } }
@@ -93,6 +98,11 @@
     if (wert === null) return;
     offen = { art: 'text', dok: dok, k: k };
     $('vbStatus').hidden = true;
+    const w = W();
+    if (w) w.tafelZu();
+    verknuepfenZu();
+    const vk = $('vbEditWert');
+    if (vk) vk.hidden = !w || !w.liste().length;
     $('vbEditLabel').textContent = dok.id + ' · Text ' + k + (ae.geaendert(dok.id, 'text', k) ? ' (geändert)' : '');
     const feld = $('vbEditFeld');
     feld.value = wert;
@@ -127,6 +137,43 @@
   }
   function uebernehmen() { if (offen && offen.art === 'text') aendern('text', $('vbEditFeld').value, false); }
 
+  /* ---------- Mit Wert verknüpfen (dynamische Werte) ---------- */
+  function verknuepfenZu() {
+    const l = $('vbVerknuepfen');
+    if (l) { l.hidden = true; leeren(l); }
+    const b = $('vbEditWert');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  // Liste der Quellen mit aktuellem Wert; die Wahl wird eine Änderung (Art „wert“, „@<schlüssel>“) am Textelement
+  function verknuepfenZeigen() {
+    const l = $('vbVerknuepfen'), w = W();
+    if (!l || !w || !offen || offen.art !== 'text') return;
+    if (!l.hidden) { verknuepfenZu(); return; }
+    leeren(l);
+    l.appendChild(el('span', 'Quelle wählen – die Stelle zeigt danach den aktuellen Wert (gesperrt, „Original“ in der Tafel löst die Verknüpfung):', 'klein'));
+    for (const q of w.liste()) {
+      const b = el('button', undefined, 'wert-wahl');
+      b.type = 'button';
+      b.setAttribute('data-schluessel', q.schluessel);
+      b.append(el('b', q.text !== null ? q.text : '–'), el('span', ' ' + q.schluessel, 'wert-name'), el('small', q.beschreibung));
+      b.addEventListener('click', () => { verknuepfen(q.schluessel); });
+      l.appendChild(b);
+    }
+    l.hidden = false;
+    $('vbEditWert').setAttribute('aria-expanded', 'true');
+  }
+  async function verknuepfen(schluessel) {
+    const o = offen;
+    if (!o || o.art !== 'text') return;
+    leisteZu();
+    try { await AE().setze(o.dok.id, 'wert', 't:' + o.k, '@' + schluessel); } catch (e) { fehlerZeigen(e); }
+    if (!AE().gespeichert()) meldung('Änderung nicht offline gespeichert');
+    await neuDarstellen([o.dok.id]);
+    knopfReset();
+    const w = W();
+    if (w) w.auffrischen();
+  }
+
   // Klick/Antippen im Vollbild (Modi Text und Status): Element mit data-t bzw. data-s im Dokument finden
   function klickImDokument(ev) {
     if (modus !== 'text' && modus !== 'status') return;   // „Ansehen“ und „Medium“: Klicks gehören dem Dokument bzw. Player
@@ -136,8 +183,16 @@
     const attr = modus === 'text' ? 'data-t' : 'data-s';
     const pfad = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
     let treffer = null;
+    const w = W();
     for (const n of pfad) {
       if (n === host) break;
+      // Dynamischer Wert (auch ein verknüpftes Textelement): gesperrt – Tafel statt Textfeld
+      if (modus === 'text' && w && n && n.nodeType === 1 && n.hasAttribute('data-wert') && n.getRootNode() === host.shadowRoot) {
+        ev.preventDefault();
+        leisteZu(false);
+        w.oeffneTafel(dok, n);
+        return;
+      }
       if (n && n.nodeType === 1 && n.hasAttribute(attr) && n.getRootNode() === host.shadowRoot) { treffer = n; break; }
     }
     if (!treffer) return;
@@ -339,6 +394,7 @@
   function wertText(art, v) {
     if (v === null || v === undefined) return '–';
     if (art === 'status') return STATUS_NAMEN[v] || v;
+    if (art === 'wert') return v === '' ? 'nicht verknüpft' : v.charAt(0) === '@' ? 'live: ' + v.slice(1) : 'von Hand: ' + v.slice(1);
     return v === '' ? '(leer)' : v;
   }
   // F3a: Struktur-Konflikte (Versionen, Ordner, Seiten) aus flyer.js
@@ -386,7 +442,7 @@
     for (const k of liste) {
       const karte = el('div', undefined, 'konflikt');
       karte.setAttribute('data-schluessel', k.schluessel);
-      karte.appendChild(el('b', (mehrereVersionen() ? 'Version ' + k.ver + ' · ' : '') + k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : 'Stand ') + k.k));
+      karte.appendChild(el('b', (mehrereVersionen() ? 'Version ' + k.ver + ' · ' : '') + k.dok + (k.titel ? ' · ' + k.titel : '') + ' – ' + (k.art === 'text' ? 'Text ' : k.art === 'status' ? 'Status ' : k.art === 'wert' ? 'Wert ' : 'Stand ') + k.k));
       const dl = el('dl');
       const zeile = (t, v) => { dl.appendChild(el('dt', t)); const dd = el('dd', v); dl.appendChild(dd); return dd; };
       zeile('Basis', wertText(k.art, k.basis)).className = 'k-basis';
@@ -435,6 +491,8 @@
     $('vbEditOk').addEventListener('click', uebernehmen);
     $('vbEditAb').addEventListener('click', () => leisteZu());
     $('vbEditOrig').addEventListener('click', () => { if (offen && offen.art === 'text') aendern('text', null, true); });
+    const vk = $('vbEditWert');
+    if (vk) vk.addEventListener('click', verknuepfenZeigen);
     for (const b of $('vbStatus').querySelectorAll('button[data-status]')) b.addEventListener('click', () => { if (offen && offen.art === 'status') aendern('status', b.getAttribute('data-status'), false); });
     $('vbStatusAb').addEventListener('click', () => leisteZu());
     $('vbReset').addEventListener('click', () => { dokumentZuruecksetzen(); });
@@ -482,6 +540,9 @@
     verwerfen: verwerfen,
     konflikteZeigen: konflikteZeigen,
     onlineVersion: () => onlineVersion,
+    // Dynamische Werte: Textfeld öffnen (nach dem Lösen einer Verknüpfung) und offene Stelle
+    oeffneText: (dok, k) => { if (modus === 'text') oeffneText(dok, k); },
+    offen: () => (offen ? { art: offen.art, dok: offen.dok.id, k: offen.k } : null),
     weitergeben: weitergeben   // F3a: auch für den Export „Grafiken & Daten“ (flyer-grafik.js)
   });
 })();
