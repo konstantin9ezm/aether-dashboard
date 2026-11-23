@@ -22,7 +22,7 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 // Alle Funktionen, die jetzt nur noch in gemeinsam.js stehen
 const FUNKTIONEN = ['AppError', 'fmtTime', 'shortSha', 'needTokenError', 'projTimeoutError', 'withProjTimeout',
-  'githubApi', 'errorFromResponse', 'api', 'contentsPath', 'mitGeste', 'meldung', 'kannTeilen', 'kannHerunterladen', 'herunterladen'];
+  'githubApi', 'errorFromResponse', 'api', 'contentsPath', 'parseRoadmap', 'mitGeste', 'meldung', 'kannTeilen', 'kannHerunterladen', 'herunterladen'];
 // Kennzeichnende Stellen aus den Funktionsrümpfen: fänden sich auch in einer umbenannten Kopie.
 const RUEMPFE = [
   [/AppError\.prototype\s*=/, 'AppError.prototype'],

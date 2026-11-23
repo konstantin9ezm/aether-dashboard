@@ -47,8 +47,160 @@
   const B = () => window.AetherFlyerBearbeiten || null;
 
   /* ---------- Quellen Q1–Q8 (Teil 2) ---------- */
-  const ABRUFE = [];
-  const SCHLUESSEL = {};
+  // Abruf: { id, art: 'aether' (Token nötig) | 'oeffentlich' (ohne Token) | 'eigen' (gleicher Ursprung, kein Budget),
+  //          quelle (Text für die Tafel), mitTeil (Teil gehört zum Speicher-Schlüssel), lesen(ctx) → { werte: { schlüssel:
+  //          { wert, teile } }, etag } oder 'unveraendert' (304) }. ctx.hole(pfad, { etag, accept, text, ohneToken }) zählt
+  //          gegen das Budget. Reihenfolge = Vorrang, falls das Budget nicht reicht.
+  // Browser-Prüfungen und Seed-Prüfung gibt es hier bewusst nicht (kommen später über kennzahlen.json aus der aether-CI).
+  const AE_PFAD = '/repos/' + AETHER;
+  const WORKFLOW = 'build.yml';   // Workflow „Build“ im Repo aether
+  function suche(repo) {
+    return '/search/issues?q=' + encodeURIComponent('repo:' + repo + ' is:pr is:merged') + '&sort=updated&order=desc&per_page=10';
+  }
+  function dauerMin(run) {
+    const a = Date.parse(run && (run.run_started_at || run.created_at)), b = Date.parse(run && run.updated_at);
+    return isFinite(a) && isFinite(b) && b >= a ? Math.round((b - a) / 6000) / 10 : null;
+  }
+  function median(z) {
+    const s = z.slice().sort((x, y) => x - y), m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2 * 10) / 10;
+  }
+  function formatFehler(was) { return new (G().AppError)('format', 'Unerwartete Antwort.', was); }
+  // Dateien eines Ordners (ohne README und versteckte Dateien)
+  function dateienZahl(liste) {
+    if (!Array.isArray(liste)) throw formatFehler('Ordnerliste erwartet');
+    return liste.filter((x) => x && x.type === 'file' && typeof x.name === 'string' && !/^\./.test(x.name) && !/^readme/i.test(x.name)).length;
+  }
+  const ABRUFE = [
+    // Q7: Engine-Karte – gleicher Ursprung (App-Hülle), auch offline
+    { id: 'engine', art: 'eigen', quelle: 'engine-map.json (Dashboard)', lesen: async () => {
+      let res = null;
+      const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      const t = setTimeout(() => { if (ctrl) ctrl.abort(); }, G().projTimeoutMs);
+      try { res = await fetch('engine-map.json', { cache: 'no-cache', credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined }); } catch (e) { res = null; } finally { clearTimeout(t); }
+      if (!res || !res.ok) {
+        // offline ohne Service Worker: App-Hülle direkt fragen
+        try { if (window.caches) { const c = await caches.open('aether-shell-v1'); const u = new URL('engine-map.json', location.href); res = await c.match(u.origin + u.pathname); } } catch (e) { res = null; }
+      }
+      if (!res || !res.ok) throw new (G().AppError)('network', 'engine-map.json nicht erreichbar.', '');
+      const j = await res.json();
+      if (!j || !Array.isArray(j.schichten)) throw formatFehler('engine-map.json ohne „schichten“');
+      const z = { fertig: 0, vorschau: 0, geplant: 0 };
+      let n = 0;
+      for (const sch of j.schichten) for (const b of (sch && Array.isArray(sch.bausteine) ? sch.bausteine : [])) {
+        if (!b || !b.name) continue;
+        n++;
+        const st = String(b.status || '').trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(z, st)) z[st]++;
+      }
+      return { werte: { 'engine.bausteine': { wert: n }, 'engine.fertig': { wert: z.fertig }, 'engine.vorschau': { wert: z.vorschau }, 'engine.geplant': { wert: z.geplant } } };
+    } },
+    // Q2: gemergte PRs im öffentlichen Dashboard-Repo – ohne Token
+    { id: 'dashboard.pulls', art: 'oeffentlich', quelle: 'GitHub · aether-dashboard', lesen: async (ctx) => {
+      const r = await ctx.hole(suche(DASHBOARD), { etag: ctx.etag, ohneToken: true });
+      if (r.status === 304) return 'unveraendert';
+      if (!r.daten || typeof r.daten.total_count !== 'number') throw formatFehler('total_count fehlt');
+      return { etag: r.etag, werte: { 'dashboard.prs.gemergt': { wert: r.daten.total_count } } };
+    } },
+    // Q1 + Q8 (letzter Merge): gemergte PRs im Repo aether (Suche: total_count; jüngstes merged_at unter den zuletzt
+    // aktualisierten). Rate-Grenze der Suche (30/min mit Token) – eine Anfrage je Auffrischung.
+    { id: 'aether.pulls', art: 'aether', quelle: 'GitHub · aether', lesen: async (ctx) => {
+      const r = await ctx.hole(suche(AETHER), { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      const j = r.daten;
+      if (!j || typeof j.total_count !== 'number') throw formatFehler('total_count fehlt');
+      const daten = (Array.isArray(j.items) ? j.items : []).map((x) => x && x.pull_request && x.pull_request.merged_at).filter((d) => typeof d === 'string' && isFinite(Date.parse(d)));
+      daten.sort((a, b) => Date.parse(b) - Date.parse(a));
+      const w = { 'aether.prs.gemergt': { wert: j.total_count } };
+      if (daten.length) w['aether.letzterMerge'] = { wert: daten[0] };
+      return { etag: r.etag, werte: w };
+    } },
+    // Q3: ROADMAP.md (Leser aus gemeinsam.js wie in der Projektansicht)
+    { id: 'aether.roadmap', art: 'aether', quelle: 'GitHub · ROADMAP.md', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/contents/ROADMAP.md?ref=main', { etag: ctx.etag, accept: RAW, text: true });
+      if (r.status === 304) return 'unveraendert';
+      const rm = G().parseRoadmap(r.daten);
+      let erledigt = 0, gesamt = 0;
+      const offen = (re) => { const s = rm.sections.find((x) => re.test(String(x.name).trim())); return s ? s.items.filter((i) => !i.done).map((i) => i.text) : []; };
+      for (const sec of rm.sections) for (const i of sec.items) { gesamt++; if (i.done) erledigt++; }
+      if (!gesamt) throw formatFehler('ROADMAP.md ohne Punkte');
+      return { etag: r.etag, werte: {
+        'aether.roadmap.erledigt': { wert: erledigt }, 'aether.roadmap.gesamt': { wert: gesamt },
+        'aether.roadmap.prozent': { wert: Math.round(erledigt / gesamt * 100) }, 'aether.roadmap.anteil': { wert: erledigt + '/' + gesamt },
+        'aether.roadmap.naechstes': { wert: offen(/^als\s+n(ä|ae)chstes/i) }, 'aether.roadmap.danach': { wert: offen(/^danach/i) },
+        'aether.roadmap.spaeter': { wert: offen(/^(f(ü|ue)r\s+)?sp(ä|ae)ter/i) }
+      } };
+    } },
+    // Q4a: letzter grüner PR-Lauf „Build“ und Median der letzten 5
+    { id: 'aether.ci.pr', art: 'aether', quelle: 'GitHub Actions · aether', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/actions/workflows/' + WORKFLOW + '/runs?event=pull_request&status=success&per_page=5', { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      const d = (r.daten && Array.isArray(r.daten.workflow_runs) ? r.daten.workflow_runs : []).map(dauerMin).filter((x) => x !== null);
+      if (!d.length) throw formatFehler('kein grüner PR-Lauf');
+      return { etag: r.etag, werte: { 'aether.ci.pr.dauer': { wert: d[0], teile: { median: median(d) } } } };
+    } },
+    // Q4b: letzter Merge-Lauf auf main; verkürzt, wenn die Browser-Test-Jobs übersprungen wurden (README aether, „CI“)
+    { id: 'aether.ci.merge', art: 'aether', quelle: 'GitHub Actions · aether', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/actions/workflows/' + WORKFLOW + '/runs?event=push&branch=main&status=completed&per_page=1', { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      const run = r.daten && Array.isArray(r.daten.workflow_runs) ? r.daten.workflow_runs[0] : null;
+      const min = dauerMin(run);
+      if (!run || min === null || !Number.isSafeInteger(Number(run.id))) throw formatFehler('kein Merge-Lauf');
+      const j = await ctx.hole(AE_PFAD + '/actions/runs/' + Number(run.id) + '/jobs?per_page=100&filter=latest', {});
+      const jobs = j.daten && Array.isArray(j.daten.jobs) ? j.daten.jobs : [];
+      const verkuerzt = jobs.some((x) => x && /Browser-Test/i.test(String(x.name || '')) && x.conclusion === 'skipped');
+      return { etag: r.etag, werte: { 'aether.ci.merge.dauer': { wert: min, teile: { art: verkuerzt ? 'verkürzt' : 'voll' } } } };
+    } },
+    // Q5: native Tests = Zeilen add_test( in CMakeLists.txt (wie heute gezählt; Kommentare zählen nicht)
+    { id: 'aether.cmake', art: 'aether', quelle: 'GitHub · CMakeLists.txt', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/contents/CMakeLists.txt?ref=main', { etag: ctx.etag, accept: RAW, text: true });
+      if (r.status === 304) return 'unveraendert';
+      const n = String(r.daten || '').split(/\r?\n/).map((l) => l.replace(/#.*/, '')).filter((l) => /^\s*add_test\s*\(/i.test(l)).length;
+      return { etag: r.etag, werte: { 'aether.tests.nativ': { wert: n } } };
+    } },
+    // Q6: Welten und Systeme (Dateien in game/assets/worlds bzw. game/assets/systems)
+    { id: 'aether.welten', art: 'aether', quelle: 'GitHub · game/assets/worlds', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/contents/game/assets/worlds?ref=main', { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      return { etag: r.etag, werte: { 'aether.welten': { wert: dateienZahl(r.daten) } } };
+    } },
+    { id: 'aether.systeme', art: 'aether', quelle: 'GitHub · game/assets/systems', lesen: async (ctx) => {
+      const r = await ctx.hole(AE_PFAD + '/contents/game/assets/systems?ref=main', { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      return { etag: r.etag, werte: { 'aether.systeme': { wert: dateienZahl(r.daten) } } };
+    } },
+    // Q8: Commits auf main seit einem Datum (data-wert-teil = JJJJ-MM-TT); Anzahl aus der letzten Seite (per_page=1)
+    { id: 'aether.commits', art: 'aether', mitTeil: true, quelle: 'GitHub · aether, main', lesen: async (ctx) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ctx.teil)) throw formatFehler('data-wert-teil muss ein Datum JJJJ-MM-TT sein');
+      const r = await ctx.hole(AE_PFAD + '/commits?sha=main&since=' + ctx.teil + 'T00:00:00Z&per_page=1', { etag: ctx.etag });
+      if (r.status === 304) return 'unveraendert';
+      const m = /[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(r.link || '');
+      const n = m ? Number(m[1]) : (Array.isArray(r.daten) ? r.daten.length : 0);
+      return { etag: r.etag, werte: { 'aether.commits.seit': { wert: n } } };
+    } }
+  ];
+  const SCHLUESSEL = Object.freeze({
+    'aether.prs.gemergt': { abruf: 'aether.pulls', format: 'zahl', beschreibung: 'Pull Requests im Repo aether, gemergt' },
+    'aether.letzterMerge': { abruf: 'aether.pulls', format: 'datum-kurz', beschreibung: 'Datum des zuletzt gemergten Pull Requests im Repo aether' },
+    'dashboard.prs.gemergt': { abruf: 'dashboard.pulls', format: 'zahl', beschreibung: 'Pull Requests im Repo aether-dashboard, gemergt' },
+    'aether.roadmap.erledigt': { abruf: 'aether.roadmap', format: 'zahl', beschreibung: 'Erledigte Punkte in ROADMAP.md' },
+    'aether.roadmap.gesamt': { abruf: 'aether.roadmap', format: 'zahl', beschreibung: 'Alle Punkte in ROADMAP.md' },
+    'aether.roadmap.prozent': { abruf: 'aether.roadmap', format: 'prozent', beschreibung: 'Anteil erledigter Punkte in ROADMAP.md' },
+    'aether.roadmap.anteil': { abruf: 'aether.roadmap', format: 'zahl', beschreibung: 'Erledigte von allen Punkten in ROADMAP.md (x/y)' },
+    'aether.roadmap.naechstes': { abruf: 'aether.roadmap', format: 'liste', beschreibung: 'Offene Punkte „Als Nächstes“ in ROADMAP.md (data-wert-teil = Anzahl)' },
+    'aether.roadmap.danach': { abruf: 'aether.roadmap', format: 'liste', beschreibung: 'Offene Punkte „Danach“ in ROADMAP.md (data-wert-teil = Anzahl)' },
+    'aether.roadmap.spaeter': { abruf: 'aether.roadmap', format: 'liste', beschreibung: 'Offene Punkte „Für später“ in ROADMAP.md (data-wert-teil = Anzahl)' },
+    'aether.ci.pr.dauer': { abruf: 'aether.ci.pr', format: 'dauer-min', beschreibung: 'Dauer des letzten grünen PR-Laufs „Build“ (data-wert-teil="median": Median der letzten 5)' },
+    'aether.ci.merge.dauer': { abruf: 'aether.ci.merge', format: 'dauer-min', beschreibung: 'Dauer des letzten Merge-Laufs „Build“ auf main (data-wert-teil="art": verkürzt oder voll)' },
+    'aether.tests.nativ': { abruf: 'aether.cmake', format: 'zahl', beschreibung: 'Native Tests (add_test in CMakeLists.txt)' },
+    'aether.welten': { abruf: 'aether.welten', format: 'zahl', beschreibung: 'Welten in game/assets/worlds' },
+    'aether.systeme': { abruf: 'aether.systeme', format: 'zahl', beschreibung: 'Sternsysteme in game/assets/systems' },
+    'engine.bausteine': { abruf: 'engine', format: 'zahl', beschreibung: 'Bausteine der Engine-Karte' },
+    'engine.fertig': { abruf: 'engine', format: 'zahl', beschreibung: 'Bausteine der Engine-Karte: fertig' },
+    'engine.vorschau': { abruf: 'engine', format: 'zahl', beschreibung: 'Bausteine der Engine-Karte: in Vorschau' },
+    'engine.geplant': { abruf: 'engine', format: 'zahl', beschreibung: 'Bausteine der Engine-Karte: geplant' },
+    'aether.commits.seit': { abruf: 'aether.commits', format: 'zahl', beschreibung: 'Commits auf main im Repo aether seit dem Datum in data-wert-teil' }
+  });
   /* ---------- Ende Quellen ---------- */
 
   /* ---------- Zustand ---------- */
