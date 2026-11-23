@@ -135,6 +135,8 @@ function standardOrdner() {
 async function antwort(route, url, headers) {
   const json = (status, obj) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(obj) });
   if (headers.authorization !== `Bearer ${TOKEN}`) return json(401, { message: 'Bad credentials' });
+  // Paket-Umzug (Übergang): aether-medien/flyer ohne Paket – gelesen wird wie bisher am alten Ort docs/flyer
+  if (url.pathname === '/repos/konstantin9ezm/aether-medien/contents/flyer') return json(200, [{ name: 'README.md', path: 'flyer/README.md', sha: 'ccccccc000000000000000000000000000000009', type: 'file' }]);
   const ref = url.searchParams.get('ref');
   if (url.pathname === ORDNER && ref === 'main') return json(200, standardOrdner());
   if (url.pathname === DATEI && ref === 'main') {
@@ -464,7 +466,7 @@ describe('Flyer Teil 2: Export', () => {
       assert.deepEqual(store.werte[store.schluessel.indexOf('meta')].exporte, [h + '.1']);
       assert.ok(await page.isVisible('#onlineStellen'));
       assert.equal(await text(page, '#hilfeFassung'), h + '.1');
-      assert.equal(await page.getAttribute('#hilfeLink', 'href'), 'https://github.com/konstantin9ezm/aether/upload/main/docs/flyer');
+      assert.equal(await page.getAttribute('#hilfeLink', 'href'), 'https://github.com/konstantin9ezm/aether-medien/upload/main/flyer');
       assert.equal(await text(page, '#hilfeCommit'), `Flyer-Paket ${h}.1 [skip ci]`);
       assert.equal(await page.isDisabled('#hilfeKopieren'), false);
 

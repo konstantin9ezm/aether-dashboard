@@ -817,7 +817,8 @@ Seite `flyer.html` (Kopfzeile „‹ Dashboard“ zurück zur Projektansicht `./
 rechts der Stand). Sie zeigt die Dokumente eines Flyer-Pakets – Flyer (DIN A4) und Infografiken –, läuft offline,
 prüft online auf eine neue Version und gibt Dokumente als PDF oder Bild weiter. Texte und Status lassen sich im Vollbild
 selbst ändern (Teil 2): Die Änderungen liegen offline auf dem Gerät über dem übernommenen Paket, werden als neue
-Paket-Fassung exportiert und von Hand im Repo aether hochgeladen – das Dashboard schreibt selbst nie in ein Repo.
+Paket-Fassung exportiert und von Hand im privaten Repo aether-medien (Ordner `flyer`) hochgeladen – das Dashboard
+schreibt selbst nie in ein Repo.
 Seit F3a gibt es **Versionen** (jede ein eigener, vollständiger Flyer), **Ordner** (als Kacheln, verschachtelt), **neue
 Seiten** aus Vorlagen oder als Kopie, **Ausblenden** der Original-Seiten und den Export **„Grafiken & Daten“** (PNG, SVG,
 CSV, JSON, ZIP); alles steht in derselben einen Paketdatei (Format v2, siehe unten).
@@ -1121,10 +1122,11 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   freigegeben –, sonst ein Dialog mit Link; scheitert das Teilen, kommt wie beim Bild der Dialog). Erst nach erfolgreicher
   Weitergabe (bzw. Antippen des Links im Dialog) gelten alle Änderungen als exportiert (Kopfzeile ohne Zusatz). Die Hilfe
   zeigt die zuletzt exportierte Fassung auch nach dem Neuladen.
-- **Online stellen** (aufklappbare Hilfe, mit F3a unverändert – weiter genau eine Datei): 1) „Paket exportieren“ (Fassung wird angezeigt), 2) Link öffnen
-  <https://github.com/konstantin9ezm/aether/upload/main/docs/flyer>, 3) Datei `aether-flyer-paket.json` auswählen
-  (ersetzt die alte), 4) Commit-Nachricht „Flyer-Paket `<Fassung>` [skip ci]“ (Knopf „Kopieren“), 5) „Commit directly to
-  the main branch“, „Commit changes“. „[skip ci]“ startet keinen CI-Lauf und kostet nichts.
+- **Online stellen** (aufklappbare Hilfe, weiter genau eine Datei): 1) „Paket exportieren“ (Fassung wird angezeigt),
+  2) Link öffnen <https://github.com/konstantin9ezm/aether-medien/upload/main/flyer>, 3) Datei `aether-flyer-paket.json`
+  auswählen (ersetzt die alte), 4) Commit-Nachricht „Flyer-Paket `<Fassung>` [skip ci]“ (Knopf „Kopieren“), 5) „Commit
+  directly to the main branch“, „Commit changes“. Seit dem Umzug (siehe „Ablageort des Pakets“) liegt das Paket in
+  aether-medien, nicht mehr in aether/docs/flyer.
 - **Abgleich** bei jeder Übernahme eines neuen Pakets R (online „Laden“, erstes Online-Laden, Import), genau einmal und
   idempotent, für jeden Eintrag e mit r = Wert in R: r = e.neu → Eintrag entfällt; r = e.alt oder r = e.exportiert →
   Eintrag bleibt, alt := r; Stand: das spätere Datum gewinnt; sonst – auch wenn die Stelle in R fehlt – Konflikt
@@ -1160,10 +1162,36 @@ beim Schließen des Vollbilds zurück auf „Ansehen“). In „Ansehen“ verh�
   vorhandene eigene Einträge gehen vor, Widersprüche kommen in die Konfliktliste. Falsches Format oder zu neue Version
   ändern nichts (Fehlerbox). „Alle Änderungen verwerfen“ fragt vorher nach.
 
-**Online-Datei:** `docs/flyer/aether-flyer-paket.json` im Repo aether (`konstantin9ezm/aether`, Zweig `main`), gelesen
-über die GitHub-API mit dem Token des Dashboards (`localStorage` `aether.githubToken`, nur gelesen) über `githubApi` aus
-`gemeinsam.js`, Fehlertexte wie im Logo-Werkzeug. Nur lesende GET-Anfragen, jede mit Zeitlimit 15 s (danach
-abgebrochen), nie zwei Prüfungen gleichzeitig.
+**Ablageort des Pakets (Umzug nach aether-medien):** `flyer/aether-flyer-paket.json` im privaten Repo aether-medien
+(`konstantin9ezm/aether-medien`, Zweig `main`; Ordner `flyer` neben `medien`). Warum nicht mehr `aether/docs/flyer/`:
+Jeder direkte Commit dorthin macht den nächsten Merge-Lauf in aether **voll** (ca. 140 statt ca. 7 Job-Minuten, weil
+der Stand von main dann nicht mehr dem grünen PR-Lauf entspricht). In aether-medien läuft keine CI des Spiels; dasselbe
+Token hat dort schon „Contents: Read-only“ (Medien der Bibliothek).
+
+- Zuerst fragt „Online prüfen“ die Ordnerliste `aether-medien/contents/flyer?ref=main`. Liegt die Datei dort, gilt sie
+  (auch wenn es zusätzlich noch die alte in aether gibt); „Laden“ holt die angebotene Fassung dann über
+  `aether-medien/git/blobs/<sha>`.
+- **Übergang:** Fehlt sie dort (404 oder Ordner ohne die Datei), liest die Seite wie bisher aus `aether/docs/flyer/` und
+  zeigt einmal je Sitzung den Hinweis „Paket noch am alten Ort – bitte nach aether-medien/flyer/ hochladen“ (Zeile unter
+  dem Online-Hinweis, nicht wiederholend; verschwindet, sobald die Datei in aether-medien liegt).
+- **Kein Zugriff** (401/403) wie bei den Medien: einmalige Meldung „Kein Zugriff auf aether-medien – Repo anlegen bzw.
+  den Token um das Repo erweitern“, danach keine automatischen Versuche dort (Intervall, online-Ereignis), bis „Online
+  prüfen“ gedrückt wird; das Paket wird dann am alten Ort gelesen. Offline/Zeitlimit wie bisher („Offline – …“).
+
+**Paket in aether-medien hochladen (Schritt für Schritt, GitHub im Browser, ohne CI):**
+
+1. Auf der Flyer-Seite „Paket exportieren“ (bzw. die vorhandene `aether-flyer-paket.json` nehmen).
+2. <https://github.com/konstantin9ezm/aether-medien/upload/main/flyer> öffnen (der Link steht auch in der Hilfe
+   „Online stellen“). Gibt es den Ordner `flyer` noch nicht, legt GitHub ihn mit dieser Adresse beim Hochladen an.
+3. „choose your files“ → `aether-flyer-paket.json` wählen (genau dieser Name; ersetzt eine vorhandene Datei).
+4. Commit-Nachricht z. B. „Flyer-Paket `<Fassung>`“, „Commit directly to the main branch“, „Commit changes“.
+5. Auf der Flyer-Seite „Online prüfen“: der Hinweis „Paket noch am alten Ort …“ verschwindet. Die alte Datei in
+   `aether/docs/flyer/` kann bleiben (aether-medien gilt) oder später mit einem normalen PR entfernt werden.
+
+**Online-Datei am alten Ort (Übergang):** `docs/flyer/aether-flyer-paket.json` im Repo aether (`konstantin9ezm/aether`,
+Zweig `main`), gelesen über die GitHub-API mit dem Token des Dashboards (`localStorage` `aether.githubToken`, nur
+gelesen) über `githubApi` aus `gemeinsam.js`, Fehlertexte wie im Logo-Werkzeug. Nur lesende GET-Anfragen, jede mit
+Zeitlimit 15 s (danach abgebrochen), nie zwei Prüfungen gleichzeitig. Ablauf (für aether-medien gleich, ohne Schritt 1):
 
 1. Ordnerliste `contents/docs/flyer?ref=main` (kleine JSON-Antwort). 404 → „Noch keine Online-Version.“ (kein Fehler).
    Fehlt die Datei, liegen dort aber andere `.json`-Dateien: „In docs/flyer liegt keine Datei mit genau dem Namen

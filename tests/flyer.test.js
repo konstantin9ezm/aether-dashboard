@@ -199,6 +199,8 @@ function standardOrdner() {
 async function antwort(route, url, headers) {
   const json = (status, obj) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(obj) });
   if (headers.authorization !== `Bearer ${TOKEN}` || mock.modus === 'auth') return json(401, { message: 'Bad credentials' });
+  // Paket-Umzug (Übergang): aether-medien/flyer ohne Paket – gelesen wird wie bisher am alten Ort docs/flyer
+  if (url.pathname === '/repos/konstantin9ezm/aether-medien/contents/flyer') return json(200, [{ name: 'README.md', path: 'flyer/README.md', sha: 'ccccccc000000000000000000000000000000009', type: 'file' }]);
   const ref = url.searchParams.get('ref');
   if (url.pathname === ORDNER && ref === 'main') {
     if (mock.modus === '404') return json(404, { message: 'Not Found' });
@@ -2162,7 +2164,7 @@ describe('Flyer: Dateien', () => {
       assert.doesNotMatch(t, /localStorage\.setItem/, `${d}: Token wird nie geschrieben`);
       const urls = [...t.matchAll(/https?:\/\/[^\s'"<>);]+/g)].map((m) => m[0]).filter((u) => !u.startsWith('http://www.w3.org/'));
       // Teil 2: in flyer.html zusätzlich genau der Upload-Link der Hilfe „Online stellen“ (Navigation, kein Abruf)
-      const erlaubt = d === 'flyer.html' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether/upload/main/docs/flyer']
+      const erlaubt = d === 'flyer.html' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether-medien/upload/main/flyer']
         // F3b: in flyer-medien.js genau der Upload-Link von „Medien online stellen“ (Navigation, kein Abruf)
         : d === 'flyer-medien.js' ? ['https://api.github.com', 'https://github.com/konstantin9ezm/aether-medien/upload/main/medien']
         // PowerPoint-Export: genau die XML-Namensräume von Office Open XML und Dublin Core (Kennungen in der Datei, nie abgerufen)

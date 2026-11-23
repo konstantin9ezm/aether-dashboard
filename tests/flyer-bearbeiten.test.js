@@ -139,6 +139,8 @@ const CORS = { 'access-control-allow-origin': '*', 'access-control-expose-header
 async function antwort(route, url, headers) {
   const json = (status, obj) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(obj) });
   if (headers.authorization !== `Bearer ${TOKEN}` || mock.modus === 'auth') return json(401, { message: 'Bad credentials' });
+  // Paket-Umzug (Übergang): aether-medien/flyer ohne Paket – gelesen wird wie bisher am alten Ort docs/flyer
+  if (url.pathname === '/repos/konstantin9ezm/aether-medien/contents/flyer') return json(200, [{ name: 'README.md', path: 'flyer/README.md', sha: 'ccccccc000000000000000000000000000000009', type: 'file' }]);
   const ref = url.searchParams.get('ref');
   if (url.pathname === ORDNER && ref === 'main') {
     if (mock.modus === '404') return json(404, { message: 'Not Found' });

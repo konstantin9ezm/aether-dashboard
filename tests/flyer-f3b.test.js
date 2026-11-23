@@ -79,7 +79,8 @@ const pruefungFertig = (page) => page.evaluate(() => window.AetherFlyerMedienOnl
 function medienApi(repo) {
   return async (route) => {
     const req = route.request(), url = new URL(req.url());
-    if (!url.pathname.startsWith(MED)) return route.fallback();
+    // Paket-Umzug: aether-medien/flyer beantwortet die allgemeine Mock-API (tests/flyer-hilfe.js), hier nur Medien
+    if (!url.pathname.startsWith(MED) || url.pathname.startsWith(MED + '/contents/flyer')) return route.fallback();
     repo.anfragen.push({ pfad: url.pathname, accept: req.headers().accept || '', auth: /^Bearer /.test(req.headers().authorization || ''), modus: repo.modus });
     const cors = { 'access-control-allow-origin': '*' };
     const json = (st, o) => route.fulfill({ status: st, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });

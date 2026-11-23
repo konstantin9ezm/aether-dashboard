@@ -11,7 +11,8 @@
   Flyer & Infografiken: zeigt die Dokumente eines Flyer-Pakets (aether-flyer-paket.json, Format „aether-flyer-paket“)
   als Kacheln mit Kategorie-Chips und im Vollbild; Druck/PDF und Bild über flyer-export.js,
   PowerPoint (jede Seite als Bild auf einer Folie) über flyer-pptx.js.
-  Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem Repo aether (docs/flyer, Zweig main, gelesen über
+  Das Paket kommt per „Paket importieren“ (Datei) oder online aus dem privaten Repo aether-medien (Ordner flyer, Zweig main;
+  Übergang: sonst wie früher aus dem Repo aether, docs/flyer – gelesen über
   die GitHub-API mit dem Token des Dashboards – nur gelesen, nie gespeichert, nie geloggt; F3b: Medien der Bibliothek
   ebenso aus dem privaten Repo aether-medien, Ordner medien/) und liegt danach in
   IndexedDB „aether-flyer“ (ohne Token), damit die Seite offline startet (App-Hülle in sw.js).
@@ -379,18 +380,19 @@ a.g-knopf-link{ display:inline-flex; align-items:center; justify-content:center;
   <p id="paketInfo" class="paketinfo"></p>
   <div id="banner" class="banner" role="status" hidden><span id="bannerText"></span> <button type="button" id="bannerLaden" class="primary"></button></div>
   <p id="onlineHinweis" class="klein" role="status"></p>
+  <p id="paketOrt" class="klein warnung" role="status" hidden></p>
   <div id="konflikte" class="banner" role="status" hidden><span id="konflikteText"></span> <button type="button" id="konflikteZeigen" aria-expanded="false" aria-controls="konfliktListe">Anzeigen</button></div>
   <div id="konfliktListe" class="konfliktliste" hidden></div>
   <details id="onlineStellen" class="hilfe" hidden>
     <summary>Online stellen</summary>
     <ol>
       <li>„Paket exportieren“ – Fassung: <b id="hilfeFassung">noch nicht exportiert</b></li>
-      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether/upload/main/docs/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether/upload/main/docs/flyer</a></li>
+      <li>Link öffnen: <a id="hilfeLink" href="https://github.com/konstantin9ezm/aether-medien/upload/main/flyer" target="_blank" rel="noopener noreferrer">github.com/konstantin9ezm/aether-medien/upload/main/flyer</a></li>
       <li>Datei <code>aether-flyer-paket.json</code> auswählen (ersetzt die alte).</li>
       <li>Commit-Nachricht: <code id="hilfeCommit">Flyer-Paket … [skip ci]</code> <button type="button" id="hilfeKopieren">Kopieren</button></li>
       <li>„Commit directly to the main branch“ wählen, „Commit changes“.</li>
     </ol>
-    <p class="klein">„[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
+    <p class="klein">Ablage seit dem Umzug: privates Repo aether-medien, Ordner flyer (neben medien) – nicht mehr aether/docs/flyer, denn jeder Commit dort macht den nächsten Merge-Lauf in aether voll. „[skip ci]“ startet keinen CI-Lauf und kostet nichts. Das Dashboard schreibt selbst nie ins Repo.</p>
   </details>
   <div id="fehler" class="hinweis" role="alert" hidden></div>
   <nav id="pfad" class="pfad" aria-label="Ordner" hidden><button type="button" id="pfadZurueck" aria-label="Einen Ordner zurück">‹</button><ol id="pfadListe"></ol><span id="pfadZahl" class="pfad-zahl"></span></nav>
