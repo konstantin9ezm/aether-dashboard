@@ -258,7 +258,7 @@ async function idbEintraege(page) {
   const st = await speicher(page);
   const s = st.idb.find((e) => e.db === 'aether-flyer' && e.store === 'aenderungen');
   assert.ok(s, 'Store aenderungen in IndexedDB aether-flyer');
-  assert.equal(s.version, 4, 'IndexedDB aether-flyer Version 4 (F3b)');
+  assert.equal(s.version, 5, 'IndexedDB aether-flyer Version 5 (dynamische Werte)');
   return s.werte.filter((w) => w && typeof w.dok === 'string')
     .map((w) => ({ dok: w.dok, k: w.k, art: w.art, alt: w.alt, neu: w.neu, exportiert: w.exportiert }))
     .sort((a, b) => (a.dok + a.art + a.k).localeCompare(b.dok + b.art + b.k));

@@ -126,8 +126,8 @@ describe('F3b a) Speicher', () => {
       await oeffneFlyer(page);
       await ruhe(page);
       const db = await idb(page);
-      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur']);
-      assert.equal(db.basis.version, 4);
+      assert.deepEqual(Object.keys(db).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur', 'werte']);
+      assert.equal(db.basis.version, 5);
       assert.deepEqual(db.basis.werte, [basis], 'basis unverändert');
       assert.deepEqual(db.online.werte, [online], 'online unverändert');
       assert.deepEqual(db.aenderungen.werte.sort((a, b) => (a.dok ? 1 : -1)), [{ exporte: ['2026-01-01.1'] }, eintrag], 'Änderungen unverändert');

@@ -63,6 +63,8 @@
   //   beiAntwort    optional: function (res) – wird bei jeder Antwort vor der Fehlerprüfung aufgerufen
   // opts je Anfrage: token, accept, signal, perm, notFound; ohneToken: true = ohne Authorization-Header
   // (nur für öffentliche Repos; ohne diese Angabe bleibt alles wie bisher).
+  // Bedingte Anfrage (Flyer, dynamische Werte): etag = zuletzt gelesener ETag (Header If-None-Match), erlaube304: true =
+  // eine Antwort 304 („nicht geändert“) kommt als Antwort zurück statt als Fehler. Ohne diese Angaben wie bisher.
   function githubApi(cfg) {
     async function errorFromResponse(res, ctx) {
       var status = res.status;
@@ -114,6 +116,7 @@
         'Authorization': 'Bearer ' + useToken
       };
       if (!useToken) delete headers['Authorization']; // nur mit opts.ohneToken: Anfrage ohne Token
+      if (typeof opts.etag === 'string' && opts.etag) headers['If-None-Match'] = opts.etag;
       var res;
       try {
         res = await fetch(cfg.apiBase + path, {
@@ -129,6 +132,7 @@
         throw new AppError('network', 'Keine Verbindung zu GitHub.', 'Prüfe die Internetverbindung und versuche es erneut.');
       }
       if (cfg.beiAntwort) cfg.beiAntwort(res);
+      if (res.status === 304 && opts.erlaube304 === true) return res;
       if (!res.ok) throw await errorFromResponse(res, opts);
       return res;
     }

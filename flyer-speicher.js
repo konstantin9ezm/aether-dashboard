@@ -15,11 +15,16 @@
 // „k:<id>“ → Blob (Mini-Bild für Kacheln, höchstens 360 px), „online“ → { geprueft, zugriff, liste: [{ sha, name, groesse }] }
 // (zuletzt gelesene Liste von aether-medien/medien/, für die Status-Punkte offline). Die Migration 3 → 4 legt nur den
 // Store an; alle anderen Stores bleiben unverändert.
+// Version 5 (Flyer, dynamische Werte): Store „werte“ mit dem Zwischenspeicher der dynamischen Werte (flyer-werte.js):
+// je Schlüssel „<schluessel>“ bzw. „<schluessel>|<teil>“ → { schluessel, wert, teile, quelle, zeit, etag, fehler }
+// (zeit = letztes erfolgreiches Lesen, etag = ETag der Antwort für bedingte Anfragen, fehler = null oder
+// { art:'offline'|'zugriff'|'fehler', zeit } – letzter Versuch gescheitert). Nie das Token, nie ganze API-Antworten.
+// Die Migration 4 → 5 legt nur den Store an; alle anderen Stores bleiben unverändert.
 (function () {
   'use strict';
 
   var DB_NAME = 'aether-flyer';
-  var DB_VERSION = 4;
+  var DB_VERSION = 5;
   var STORES = Object.freeze(['basis', 'online']);
   var SCHLUESSEL_BASIS = 'aktuell';  // Store basis:  { paket, quelle:'online'|'import', sha:String|null, uebernommen:ISO }
   var SCHLUESSEL_ONLINE = 'stand';   // Store online: { sha, version, stand, geprueft:ISO } – zuletzt bekannte Online-Datei
@@ -27,7 +32,7 @@
   // (konflikt: null oder { online, titel } bzw. { fehlt, titel } – offener Konflikt aus dem Abgleich), dazu „meta“ → { exporte: [Fassung …] }.
   var STORE_AENDERUNGEN = 'aenderungen';
   var SCHLUESSEL_META = 'meta';
-  var ARTEN = ['text', 'status', 'stand'];
+  var ARTEN = ['text', 'status', 'stand', 'wert'];   // „wert“: Überschreiben bzw. Verknüpfen eines dynamischen Werts
   var STANDARD_VERSION = '1.1';      // Einträge ohne ver (vor F3a) gehören zu Version 1.1
   // Store struktur: „lokal“ → { paket: v2-Paket|null (lokaler Stand; null = wie die Basis), konflikte: [...], exportiert: {...}|null }
   // Store geraet:   „version“ → Nummer der zuletzt geöffneten Version (nur dieses Gerät, nie im Paket)
@@ -66,6 +71,7 @@
         if (alt < 2) db.createObjectStore('aenderungen');   // Teil 2: Änderungsschicht (basis und online bleiben)
         if (alt < 3) { db.createObjectStore('struktur'); db.createObjectStore('geraet'); verschiebeAufVersion(req.transaction); }
         if (alt < 4) db.createObjectStore('medien');   // F3b: Datei-Inhalte und Bilder der Bibliothek (sonst bleibt alles)
+        if (alt < 5) db.createObjectStore('werte');    // Dynamische Werte: Zwischenspeicher (sonst bleibt alles)
       };
       req.onsuccess = function () {
         clearTimeout(timer);
@@ -508,6 +514,56 @@
     } catch (e) { return false; }
   }
 
+  // ---------------------------------------------------------------------------
+  // Dynamische Werte (Version 5)
+  // ---------------------------------------------------------------------------
+  var STORE_WERTE = 'werte';
+  function zahlOderNull(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
+  // Erlaubte Werte: Zahl, Text, Liste von Texten (alles andere → null)
+  function wertSauber(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    if (typeof v === 'string') return v;
+    if (Array.isArray(v)) return v.filter(function (x) { return typeof x === 'string'; });
+    return null;
+  }
+  function werteEintrag(w) {
+    if (!istObjekt(w) || typeof w.schluessel !== 'string' || !w.schluessel) return null;
+    var teile = null;
+    if (istObjekt(w.teile)) {
+      teile = {};
+      Object.keys(w.teile).forEach(function (k) { var x = wertSauber(w.teile[k]); if (x !== null) teile[k] = x; });
+    }
+    var f = istObjekt(w.fehler) && typeof w.fehler.art === 'string' ? { art: w.fehler.art, zeit: textOderNull(w.fehler.zeit) || jetztIso() } : null;
+    return {
+      schluessel: w.schluessel, wert: wertSauber(w.wert), teile: teile, quelle: typeof w.quelle === 'string' ? w.quelle : '',
+      zeit: textOderNull(w.zeit), etag: textOderNull(w.etag), fehler: f, anzahl: zahlOderNull(w.anzahl)
+    };
+  }
+  // → [{ schluessel, wert, teile, quelle, zeit, etag, fehler }] | null (ohne Store oder ohne IndexedDB)
+  async function ladeWerte() {
+    try {
+      if (!(await hatStore(STORE_WERTE))) return null;
+      var r = await vorgang(STORE_WERTE, 'readonly', function (s) { return s.getAll(); });
+      if (!r.ok || !Array.isArray(r.wert)) return null;
+      return r.wert.map(werteEintrag).filter(Boolean);
+    } catch (e) { return null; }
+  }
+  // liste = [Eintrag …] → true|false (eine Transaktion; vorhandene Schlüssel werden ersetzt, andere bleiben)
+  async function speichereWerte(liste) {
+    try {
+      if (!Array.isArray(liste)) return false;
+      var sauber = liste.map(werteEintrag).filter(Boolean);
+      if (!sauber.length) return true;
+      if (!(await hatStore(STORE_WERTE))) return false;
+      var r = await vorgang(STORE_WERTE, 'readwrite', function (s) {
+        var letzte;
+        sauber.forEach(function (w) { letzte = s.put(w, w.schluessel); });
+        return letzte;
+      });
+      return r.ok === true;
+    } catch (e) { return false; }
+  }
+
   window.AetherFlyerSpeicher = Object.freeze({
     DB_NAME: DB_NAME,
     DB_VERSION: DB_VERSION,
@@ -534,6 +590,9 @@
     ladeMedienOnline: ladeMedienOnline,
     speichereMedienOnline: speichereMedienOnline,
     platz: platz,
-    istDauerhaft: istDauerhaft
+    istDauerhaft: istDauerhaft,
+    // Dynamische Werte
+    ladeWerte: ladeWerte,
+    speichereWerte: speichereWerte
   });
 })();

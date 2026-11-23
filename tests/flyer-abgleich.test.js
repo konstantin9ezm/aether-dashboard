@@ -949,8 +949,8 @@ describe('Flyer Teil 2: Speicher', () => {
       assert.equal(await text(page, '#status'), 'offline bereit · Stand 01.02.2020');
       let st = await speicher(page);
       const db = st.idb.filter((e) => e.db === 'aether-flyer');
-      assert.deepEqual(db.map((e) => e.store).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur'], 'Stores nach der Migration');
-      assert.ok(db.every((e) => e.version === 4), 'Version 4 (F3b)');
+      assert.deepEqual(db.map((e) => e.store).sort(), ['aenderungen', 'basis', 'geraet', 'medien', 'online', 'struktur', 'werte'], 'Stores nach der Migration');
+      assert.ok(db.every((e) => e.version === 5), 'Version 5 (dynamische Werte)');
       const b = db.find((e) => e.store === 'basis'), on = db.find((e) => e.store === 'online');
       assert.deepEqual([b.schluessel, b.werte], [['aktuell'], [basisEintrag]], 'basis unverändert');
       assert.deepEqual([on.schluessel, on.werte], [['stand'], [onlineEintrag]], 'online unverändert');
