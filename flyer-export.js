@@ -24,6 +24,14 @@
 //   (aus einer data:-URL nicht) – darum hier data:-URLs statt Blob-URLs. Die Selbstprobe beim Einrichten (kleines SVG
 //   mit foreignObject als data:-URL → Canvas → Pixel lesen → toDataURL) prüft genau diesen Weg; scheitert sie, bleibt
 //   „Bild“ verborgen. Fehler beim echten Bild → „Bild“ aus.
+// - Maßstab im SVG-Bild: WebKit (Safari, alle Browser auf iPhone/iPad) wendet einen Maßstab oder eine Verschiebung
+//   des SVG (viewBox ≠ width/height, transform) nicht auf HTML im foreignObject an, das eine eigene Ebene hat
+//   (position, overflow, opacity, transform … – die Flyer-Seite selbst: position:relative; overflow:hidden). Ein
+//   über die viewBox auf doppelte Größe gezogenes Seitenbild zeigte die Seite deshalb nur einfach groß oben links
+//   (ein Viertel des Bildes, Rest leer) – unabhängig von devicePixelRatio. Darum ist das SVG-Bild der Seite genau
+//   1 : 1 (width/height = Seitenmaß in CSS-Pixeln, keine viewBox); vergrößert wird erst beim Zeichnen auf das Canvas
+//   (drawImage mit Zielgröße – das SVG wird dabei als Vektor in Zielgröße gezeichnet, bleibt also scharf). Aus
+//   demselben Grund verschiebt svgAusschnitt den Inhalt per CSS (negative Ränder) statt über die viewBox.
 // - Canvas-Größe: Safari auf iPhone/iPad zeichnet höchstens 16 777 216 Pixel (4096 × 4096) je Canvas; größer
 //   bleibt es leer und toDataURL liefert „data:,“. Größere Bilder werden proportional verkleinert (mit Meldung), das
 //   Canvas danach sofort freigegeben (Breite/Höhe 0), weil iOS auch den Canvas-Speicher insgesamt begrenzt.
@@ -300,7 +308,8 @@
     }
     cv.width = cv.height = 0;
   }
-  // Pixelmaße: doppelte Auflösung, über MAX_PIXEL proportional verkleinert.
+  // Pixelmaße des fertigen Bildes: doppelte Auflösung, über MAX_PIXEL proportional verkleinert. Unabhängig von
+  // devicePixelRatio (iPhone 3, iPad 2, Desktop 1): Lage, Ausschnitt und Auflösung sind auf jedem Gerät gleich.
   function pixelMasse(breite, hoehe) {
     let w = Math.max(1, Math.round(breite * BILD_FAKTOR)), h = Math.max(1, Math.round(hoehe * BILD_FAKTOR));
     let verkleinert = false;
@@ -353,7 +362,8 @@
       box.remove();
     }
   }
-  function svgText(teile, klon, breite, hoehe, m) {
+  // Seite (Stile + Klon der Wurzel) als XHTML-Text für ein foreignObject
+  function wurzelText(teile, klon) {
     const div = document.createElementNS(XHTML, 'div');
     div.setAttribute('class', 'ae-wurzel');
     for (const t of teile) {
@@ -363,9 +373,13 @@
       div.appendChild(st);
     }
     div.appendChild(klon);
-    const inhalt = new XMLSerializer().serializeToString(div);
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + m.w + '" height="' + m.h + '" viewBox="0 0 ' + breite + ' ' + hoehe +
-      '" preserveAspectRatio="none"><foreignObject x="0" y="0" width="' + breite + '" height="' + hoehe + '">' + inhalt +
+    return new XMLSerializer().serializeToString(div);
+  }
+  // SVG-Bild der ganzen Seite, genau 1 : 1 in CSS-Pixeln (ohne viewBox, ohne Maßstab – siehe Kopf, „Maßstab im
+  // SVG-Bild“). Die Pixelmaße (pixelMasse) gelten erst beim Zeichnen: drawImage(img, 0, 0, w, h).
+  function svgText(teile, klon, breite, hoehe) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + breite + '" height="' + hoehe + '">' +
+      '<foreignObject x="0" y="0" width="' + breite + '" height="' + hoehe + '">' + wurzelText(teile, klon) +
       '</foreignObject></svg>';
   }
 
@@ -400,7 +414,7 @@
         const breite = dok.breite > 0 ? dok.breite : Math.max(1, r.breite || 0);
         const hoehe = art(dok) === 'flyer' && dok.hoehe > 0 ? dok.hoehe : Math.max(1, r.hoehe || dok.hoehe || 0);
         const m = pixelMasse(breite, hoehe);
-        const img = await ladeBild(svgDatenUrl(svgText(teile, klon, breite, hoehe, m)));
+        const img = await ladeBild(svgDatenUrl(svgText(teile, klon, breite, hoehe)));
         if (!gilt()) return false;
         if (typeof img.decode === 'function') { try { await img.decode(); } catch (e) { /* Safari: decode von SVG kann ablehnen */ } }
         await aufwaermen(img);
@@ -435,7 +449,7 @@
     try {
       if (probe) await probe;
       if (!bildMoeglich) throw new Error('Bild in diesem Browser nicht möglich');
-      img = await ladeBild(svgDatenUrl(svgText(teile, klon, breite, hoehe, m)));
+      img = await ladeBild(svgDatenUrl(svgText(teile, klon, breite, hoehe)));
       if (typeof img.decode === 'function') { try { await img.decode(); } catch (e) { /* Safari: decode von SVG kann ablehnen */ } }
       await aufwaermen(img);
     } catch (e) { img = null; bildFehler = e; }
@@ -454,10 +468,9 @@
     })));
   }
   function svgAusschnitt(bild, x, y, w, h) {
-    if (!bild.svgVoll) bild.svgVoll = svgText(ohneDoppelteSchriften(bild.teile), bild.klon, bild.breite, bild.hoehe, { w: bild.breite, h: bild.hoehe });
-    const voll = bild.svgVoll;
-    return voll.replace(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="[^"]*" height="[^"]*" viewBox="[^"]*" preserveAspectRatio="none">/,
-      () => '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="' + x + ' ' + y + ' ' + w + ' ' + h + '">');
+    if (!bild.svgInhalt) bild.svgInhalt = wurzelText(ohneDoppelteSchriften(bild.teile), bild.klon);
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="' + x + ' ' + y + ' ' + w + ' ' + h + '">' +
+      '<foreignObject x="0" y="0" width="' + bild.breite + '" height="' + bild.hoehe + '">' + bild.svgInhalt + '</foreignObject></svg>';
   }
   // @font-face-Regeln des Pakets mit eingebetteten Schriften (für echte SVG mit Text)
   async function schriftRegeln() {
