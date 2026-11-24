@@ -93,7 +93,7 @@ function shareMock() {
       const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((x) => x.toString(16).padStart(2, '0')).join('');
       return { name: f.name, type: f.type, bytes: buf.byteLength, sha };
     }));
-    window.__share.calls.push({ title: d.title, files, active: navigator.userActivation ? navigator.userActivation.isActive : null });
+    window.__share.calls.push({ title: d.title, schluessel: Object.keys(d).sort(), files, active: navigator.userActivation ? navigator.userActivation.isActive : null });
   };
 }
 
@@ -234,7 +234,7 @@ describe('Logo-Werkzeug: Karte „Im Spiel (PNG)“', () => {
     await page.waitForFunction(() => window.__share.calls.length === 1);
     const c = await page.evaluate(() => window.__share.calls[0]);
     assert.equal(c.active, true, 'innerhalb der Nutzergeste');
-    assert.equal(c.title, undefined, 'derselbe Weg wie die anderen Sichern-Knöpfe: nur die Datei, kein title');
+    assert.deepEqual(c.schluessel, ['files'], 'derselbe Weg wie die anderen Sichern-Knöpfe: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     assert.deepEqual(c.files.map((f) => [f.name, f.type, f.bytes, f.sha]), [['aether-logo-fedcba9-original.png', 'image/png', PNG.length, sha256(PNG)]]);
     assert.deepEqual(log.errors, []);
     await context.close();
