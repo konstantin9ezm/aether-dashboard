@@ -1547,7 +1547,8 @@ function bildSichern(ev, keys){
   try { bilder = keys.map(pngBild); } catch (e) { meldung('Das Bild ließ sich nicht erzeugen'); return; }
   const files = bilder.map(b => b.datei);
   if (kannTeilen(files)){
-    navigator.share({ files, title:'Aether – ' + (screen().name || 'Screen') })
+    // Nur die Bilder: ein title/text würde auf iPhone/iPad bei „In Dateien sichern“ als eigene Textdatei mitgesichert
+    navigator.share({ files })
       .then(() => meldung(files.length === 1 ? 'Bild weitergegeben' : files.length + ' Bilder weitergegeben'))
       .catch(e => { if (e && e.name === 'AbortError') return; bilderZeigen(bilder, false); });
     return;

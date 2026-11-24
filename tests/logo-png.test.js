@@ -234,7 +234,7 @@ describe('Logo-Werkzeug: Karte „Im Spiel (PNG)“', () => {
     await page.waitForFunction(() => window.__share.calls.length === 1);
     const c = await page.evaluate(() => window.__share.calls[0]);
     assert.equal(c.active, true, 'innerhalb der Nutzergeste');
-    assert.equal(c.title, 'Aether – Logo', 'derselbe Weg wie die anderen Sichern-Knöpfe');
+    assert.equal(c.title, undefined, 'derselbe Weg wie die anderen Sichern-Knöpfe: nur die Datei, kein title');
     assert.deepEqual(c.files.map((f) => [f.name, f.type, f.bytes, f.sha]), [['aether-logo-fedcba9-original.png', 'image/png', PNG.length, sha256(PNG)]]);
     assert.deepEqual(log.errors, []);
     await context.close();
