@@ -548,7 +548,11 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
       const logo = svg[0].daten.toString('utf8');
       assert.match(logo, /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 30 11" width="120" height="44" preserveAspectRatio="xMidYMid meet"><rect width="30" height="11" rx="2" fill="#8c7cf0"\/><\/svg>$/);
       const kasten = svg[2].daten.toString('utf8'), g3 = j.grafiken[2];
-      assert.match(kasten, new RegExp(`^<svg xmlns="http://www\\.w3\\.org/2000/svg" width="${g3.breite}" height="${g3.hoehe}" viewBox="${g3.x} ${g3.y} ${g3.breite} ${g3.hoehe}"><foreignObject x="0" y="0" width="794" height="1123">`));
+      // Ausschnitt per CSS im eingebetteten HTML (Rahmen in Kastengröße, Seite darin verschoben), viewBox ohne
+      // Verschiebung und ohne Maßstab – WebKit (Safari) verschiebt HTML mit eigener Ebene nicht mit der viewBox mit
+      assert.match(kasten, new RegExp(`^<svg xmlns="http://www\\.w3\\.org/2000/svg" width="${g3.breite}" height="${g3.hoehe}" viewBox="0 0 ${g3.breite} ${g3.hoehe}">` +
+        `<foreignObject x="0" y="0" width="${g3.breite}" height="${g3.hoehe}"><div xmlns="http://www\\.w3\\.org/1999/xhtml" style="[^"]*width:${g3.breite}px !important;height:${g3.hoehe}px !important;overflow:hidden !important">` +
+        `<div style="[^"]*margin:-${g3.y}px 0 0 -${g3.x}px !important;width:794px !important"><div xmlns="http://www\\.w3\\.org/1999/xhtml" class="ae-wurzel">`));
       assert.ok(kasten.includes('Geänderte Einleitung; mit Semikolon'), 'SVG zeigt die Änderungsschicht');
       assert.ok(!/<script|\son\w+=/i.test(kasten + logo), 'kein Skript');
       // Einzeln wählen: eine Grafik → direkt; zwei → ZIP; SVG mit Hinweis für HTML-Kästen
@@ -637,7 +641,8 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
     const teilen = () => {
       window.__geteilt = [];
       Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
-      Object.defineProperty(navigator, 'share', { configurable: true, value: (d) => { window.__geteilt.push([d.title, ...d.files.map((f) => [f.name, f.type, f.size])]); return Promise.resolve(); } });
+      // Erstes Feld: alle übergebenen Schlüssel – nur „files“ (ein title/text würde auf iPhone/iPad als Textdatei mitgesichert)
+      Object.defineProperty(navigator, 'share', { configurable: true, value: (d) => { window.__geteilt.push([Object.keys(d).join(','), ...d.files.map((f) => [f.name, f.type, f.size])]); return Promise.resolve(); } });
     };
     await mitSeite({ init: [teilen] }, async ({ page, log }) => {
       await oeffneFlyer(page);
@@ -648,7 +653,7 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
       await page.click('#tafelInhalt .g-knopf[data-k="csv"]');
       await page.click('#tafelInhalt .g-knopf[data-k="png"]');
       const g = await page.evaluate(() => window.__geteilt.map((x) => [x[0], x[1][0], x[1][1]]));
-      assert.deepEqual(g, [['Aether 1.1 · S2 – Daten (CSV)', '1.1_S2.csv', 'text/csv'], ['Aether 1.1 · S2 – Grafiken (PNG)', '1.1_S2_png.zip', 'application/zip']]);
+      assert.deepEqual(g, [['files', '1.1_S2.csv', 'text/csv'], ['files', '1.1_S2_png.zip', 'application/zip']]);
       assert.deepEqual(log.errors, []);
     });
   });

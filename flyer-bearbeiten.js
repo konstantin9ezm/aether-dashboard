@@ -255,7 +255,9 @@
     const g = G();
     const files = [datei];
     if (g.kannTeilen(files)) {
-      navigator.share({ files: files, title: titel })
+      // Nur die Datei: Ein mitgegebener title/text landet auf iPhone/iPad bei „In Dateien sichern“ als eigene kleine
+      // Textdatei („Text“, „Text 2“ …) neben der Datei. titel dient nur noch dem Dialog mit Link (unten).
+      navigator.share({ files: files })
         .then(() => { if (nachher) nachher('geteilt'); })
         .catch((e) => {
           if (e && e.name === 'AbortError') return;

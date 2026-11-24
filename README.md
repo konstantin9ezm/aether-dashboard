@@ -859,7 +859,12 @@ CSV, JSON, ZIP); alles steht in derselben einen Paketdatei (Format v2, siehe unt
   gezeigte Liste.
 - **Bild:** PNG des offenen Dokuments in doppelter Auflösung (Flyer 1588 × 2246 px), Name `aether-<Id>.png`. Ohne
   Bibliothek: SVG mit `foreignObject` (als `data:`-URL) → Bild → Canvas → PNG, die Schriften (`fonts/…`) als
-  `data:`-URL eingebettet. Das Bild wird beim Öffnen und Blättern vorbereitet und beim Antippen synchron gezeichnet
+  `data:`-URL eingebettet. Das SVG-Bild ist genau 1 : 1 in CSS-Pixeln (ohne `viewBox`); die doppelte Auflösung entsteht
+  erst beim Zeichnen auf das Canvas (`drawImage` mit Zielgröße, das SVG wird dabei als Vektor gezeichnet). Grund:
+  WebKit/Safari wendet Maßstab und Verschiebung einer `viewBox` nicht auf HTML im `foreignObject` an, das eine eigene
+  Ebene hat (`position`, `overflow` … – die Flyer-Seite selbst); mit `viewBox` auf doppelte Größe stand die Seite auf
+  iPad/iPhone nur einfach groß oben links im Bild, Kästen darin waren teils beschnitten (Gerätetest 24.11.2026; betraf
+  „Bild“, PowerPoint und die PNG-Ausschnitte). Die Bildgröße hängt nicht von `devicePixelRatio` ab. Das Bild wird beim Öffnen und Blättern vorbereitet und beim Antippen synchron gezeichnet
   (sonst „Einen Moment – das Bild wird vorbereitet“). Über 16 777 216 Pixel (Canvas-Grenze von Safari auf iPhone/iPad)
   wird es proportional verkleinert, mit Meldung. Weg wie im Logo-Werkzeug: Teilen-Dialog (`navigator.share` mit Datei),
   sonst Download, sonst ein Dialog „Lange drücken und sichern.“; nur per Antippen (Nutzergeste), auch offline.
@@ -1013,8 +1018,11 @@ Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
 - **SVG:** SVG-Elemente als echte SVG (die berechneten Stile aus dem Paket-CSS werden eingesetzt, Schriften als
   `data:`-URL eingebettet, wenn Text vorkommt); das Logo (Hintergrund aus einer `data:`-SVG) als genau diese SVG.
   HTML-Kästen: Eine saubere SVG bräuchte einen eigenen Layout-Umsetzer (Umbruch, Schriften, Rahmen, Verläufe); darum
-  sind sie SVG mit eingebettetem HTML (`foreignObject`, ganze Seite, `viewBox` auf den Kasten) – die Tafel sagt das
-  ausdrücklich: „nur im Browser genau, in Grafikprogrammen evtl. nicht“.
+  sind sie SVG mit eingebettetem HTML (`foreignObject`, ganze Seite; der Ausschnitt entsteht per CSS darin – Rahmen in
+  Kastengröße mit `overflow:hidden`, die Seite um −x/−y verschoben –, nicht über die `viewBox`, weil WebKit/Safari HTML
+  mit eigener Ebene nicht mit der `viewBox` verschiebt) – die Tafel sagt das ausdrücklich: „nur im Browser genau, in
+  Grafikprogrammen evtl. nicht“. Solche Dateien zeigt die Vorschau der Dateien-App (iPhone/iPad) ggf. leer, weil sie
+  eingebettetes HTML nicht zeichnet; in Safari geöffnet stimmen sie.
 - **CSV:** UTF-8 mit BOM, Trenner „;“, Zeilenende CRLF, Spalten `version;seite;kennung;art;wert;status` (art = `text` |
   `status` | `zaehler` | `stand`; Kennungen wie beim Bearbeiten: `t<n>`, `s<n>`, `zaehler<n>`, `stand<n>`), Werte, wie
   die Seite sie zeigt (Basis + Änderungsschicht; beim Status ist `wert` der Text des Punkts). Anführungszeichen nur, wo
@@ -1027,7 +1035,8 @@ Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
   Version als `aether-flyer_<version>.zip` mit einem Ordner je Seite (ausgeblendete Seiten nicht). ZIP ohne Bibliothek
   (`flyer-zip.js`: Methode „stored“, CRC-32). Am echten Paket ist das ZIP der Version etwa 47 MB groß (PNG 18,4 MB,
   SVG 28,5 MB).
-- **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“), sonst Download, sonst ein Dialog
+- **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“; übergeben wird nur die Datei, kein
+  `title`/`text` – den sicherte iOS als eigene kleine Textdatei „Text“ daneben), sonst Download, sonst ein Dialog
   mit Link – immer im Antippen, darum bereitet die Tafel alles vorher vor („Grafiken werden erkannt und vorbereitet …“).
 
 **PowerPoint-Export** – jede Seite als Bild auf einer Folie (Variante a). „Alle als PowerPoint (`<n>`)“ steht in der
@@ -1479,7 +1488,7 @@ Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur
 
 **Grenzen**
 
-- Auf iPhone/iPad (Safari) noch nicht am Gerät geprüft; die Tests laufen in Chromium. „Bild“ erscheint nur, wenn beim
+- Die Tests laufen in Chromium (CI); WebKit nur lokal (`tests/flyer-export-webkit.test.js`). „Bild“ erscheint nur, wenn beim
   Start eine Selbstprobe gelingt (kleines SVG mit `foreignObject` → Canvas → Pixel lesen → `toDataURL`). Gibt der
   Browser das Bild beim echten Zeichnen nicht heraus (Canvas „tainted“), erscheint „Dieser Browser gibt das Bild nicht
   heraus – „Bild“ ist hier nicht verfügbar“ und der Knopf bleibt aus. „PDF“ ist davon nicht betroffen.
@@ -1899,6 +1908,23 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   → c) rot, den Wert nicht einsetzen → a) rot, `MAX_ANFRAGEN` 11 → i) rot; in `flyer-aenderungen.js` `data-wert-hand`
   nicht setzen → f) rot, ohne Schnappschuss bzw. jede Seite neu schreiben → e) rot; in `flyer-pptx.js` die Notiz
   weglassen → d) rot; in `flyer-online.js` aether-medien übergehen bzw. den Hinweis wiederholen → j) rot.
+- `tests/flyer-export-dichte.test.js` (Flyer-Export und Pixeldichte, Chromium, künstliche Testseite aus
+  `tests/flyer-testseite.js`: farbige Marken in den Ecken der Seite, ein Symbol, ein „Testkasten“) – mit
+  `deviceScaleFactor` 1, 2 (iPad) und 3 (iPhone): PowerPoint A4 und 16:9 über die Knöpfe, Folienbild 1588 × 2246 mit
+  allen vier Ecken der Seite an ihrer Stelle (± 2 px), Rahmen in EMU; ZIP „Grafiken & Daten“: PNG von Kasten und Symbol
+  in Elementgröße × 2 mit den Marken des Elements, scharfe 1-px-Linie, Kasten-SVG (Ausschnitt per CSS, als Bild
+  gezeichnet), CSV/JSON; alle drei Läufe liefern dieselben Zahlen. Aufbau: Das SVG-Bild der Seite ist genau 1 : 1 (ohne
+  `viewBox`, ohne Maßstab) – das ist die Sicherung gegen den WebKit-Fehler, den Chromium nicht hat (siehe „Bild“).
+  Teilen: `navigator.share` bekommt bei PowerPoint, ZIP, Bild und CSV genau `{ files }`; im Quelltext der Flyer-Seite
+  übergibt jeder Aufruf nur `files`. Gegenproben (von Hand, müssen rot werden): in `flyer-export.js` `svgText` wieder mit
+  `viewBox` auf doppelte Größe ziehen → Aufbau rot (Pixel bleiben in Chromium grün); in `flyer-pptx.js`
+  `drawImage(sb.img, 0, 0)` ohne Zielgröße → Folienbild rot; in `flyer-grafik.js` `ausschnitt(cv, 1, g)` → PNG rot; in
+  `flyer-export.js` `svgAusschnitt` wieder über die `viewBox` verschieben → Kasten-SVG rot; in `flyer-bearbeiten.js`
+  `title` mitgeben → Teilen rot.
+- `tests/flyer-export-webkit.test.js` (nur lokal mit `AETHER_WEBKIT_DRIVER=<Pfad zu WebKitWebDriver>`, sonst
+  übersprungen – so auch in der CI) – dieselbe Testseite in WebKitGTK (Zeichen-Engine wie Safari) über WebDriver, mit
+  `GDK_SCALE` 1 und 2: Seitenbild randgenau, Kasten als PNG und SVG. Mit dem alten Export-Code ist er rot (Marke unten
+  rechts fehlt, Inhalt reicht nur bis 793/1122 von 1588 × 2246). Einrichten: `apt-get install webkit2gtk-driver xvfb`.
 - Gegenproben PowerPoint (von Hand, müssen rot werden): in `flyer-pptx.js` das Bild nicht mittig setzen (`x: 0, y: 0`)
   → c) rot; „Stand“ aus den Notizen nehmen → d) rot; die Seiten aus `aktuelleListe()` statt `druckListe()` nehmen → a)
   rot; Esc nicht behandeln → f) rot; in `tests/flyer-echt.test.js` `ERWARTET` leeren bzw. `mehrPx` ändern → h) rot.
