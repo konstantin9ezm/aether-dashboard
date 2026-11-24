@@ -901,7 +901,7 @@ function shareMock() {
       for (let i = 0; i < b.length; i++) hash = Math.imul(hash ^ b[i], 16777619) >>> 0;
       return { name: f.name, type: f.type, sig, w: v.getUint32(16), h: v.getUint32(20), bytes: b.length, hash };
     }));
-    window.__share.calls.push({ title: d.title, files, active: navigator.userActivation ? navigator.userActivation.isActive : null });
+    window.__share.calls.push({ title: d.title, schluessel: Object.keys(d).sort(), files, active: navigator.userActivation ? navigator.userActivation.isActive : null });
   };
 }
 const PNG_SIG = '137,80,78,71,13,10,26,10';
@@ -922,6 +922,7 @@ describe('Screen-Editor: Als Bild sichern', () => {
     await page.waitForFunction(() => window.__share.calls.length === 1);
     const call = await page.evaluate(() => window.__share.calls[0]);
     assert.equal(call.active, true, 'share() innerhalb der Nutzergeste');
+    assert.deepEqual(call.schluessel, ['files'], 'Als Bild sichern: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     assert.deepEqual(call.files.map((f) => [f.name, f.type, f.sig, f.w, f.h]), [
       ['aether-screen-Mein-Menü-1-2-21x9.png', 'image/png', PNG_SIG, 2560, 1080],
       ['aether-screen-Mein-Menü-1-2-iphone-quer.png', 'image/png', PNG_SIG, 874, 402],
@@ -937,6 +938,7 @@ describe('Screen-Editor: Als Bild sichern', () => {
     await page.click('#btnBildVorschau');
     await page.waitForFunction(() => window.__share.calls.length === 2);
     const c2 = await page.evaluate(() => window.__share.calls[1]);
+    assert.deepEqual(c2.schluessel, ['files'], 'Als Bild sichern (Vorschau): nur files');
     assert.deepEqual(c2.files.map((f) => [f.name, f.w, f.h]), [['aether-screen-Mein-Menü-1-2-ipad-quer.png', 1194, 834]]);
     await page.evaluate(() => document.getElementById('btnBildVorschau').click());
     await page.waitForTimeout(200);

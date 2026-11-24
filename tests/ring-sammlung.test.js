@@ -126,7 +126,7 @@ function shareMock() {
       } else out.text = await f.text();
       return out;
     }));
-    window.__share.calls.push({ files });
+    window.__share.calls.push({ schluessel: Object.keys(d).sort(), files });
   };
 }
 
@@ -505,6 +505,7 @@ describe('Ring-Sammlung: Speicher, Datei, Tastatur', () => {
     await speichernUnter(page, 'Beta');
     await page.click('#rsDateiSichern');
     await page.waitForFunction(() => window.__share.calls.length === 1);
+    assert.deepEqual(await E(page, () => window.__share.calls[0].schluessel), ['files'], 'Ringe-Sammlung: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     const f = await E(page, () => window.__share.calls[0].files[0]);
     assert.match(f.name, /^aether-logo-ringe-\d{8}-\d{4}\.json$/);
     assert.equal(f.type, 'application/json');

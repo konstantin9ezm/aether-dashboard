@@ -128,7 +128,7 @@ function shareMock() {
       }
       return out;
     }));
-    window.__share.calls.push({ title: d.title, files, active });
+    window.__share.calls.push({ title: d.title, schluessel: Object.keys(d).sort(), files, active });
   };
 }
 
@@ -291,6 +291,7 @@ describe('Logo-Werkzeug: Sichern', () => {
     await page.waitForFunction(() => window.__share.calls.length === 1);
     const c = await page.evaluate(() => window.__share.calls[0]);
     assert.equal(c.active, true, 'share() innerhalb der Nutzergeste');
+    assert.deepEqual(c.schluessel, ['files'], 'SVG sichern: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     assert.deepEqual([c.files.length, c.files[0].name, c.files[0].type], [1, 'aether-logo-1234567.svg', 'image/svg+xml']);
     assert.equal(c.files[0].bytes, SVG.length, 'gleiche Länge');
     assert.equal(c.files[0].sha, SVG_SHA, 'byte-gleich mit der Originaldatei (SHA-256)');
@@ -314,6 +315,7 @@ describe('Logo-Werkzeug: Sichern', () => {
     let c = await sichere();
     let f = c.files[0];
     assert.equal(c.active, true);
+    assert.deepEqual(c.schluessel, ['files'], 'PNG sichern: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     assert.deepEqual([f.name, f.type, f.sig, f.w, f.h], ['aether-logo-1234567-2048.png', 'image/png', '137,80,78,71,13,10,26,10', 2048, 1024]);
     for (const e of f.ecken) assert.equal(e[3], 0, 'Ecke transparent');
     assertFarben(f.gruppen, ALLE, 'PNG 2048 alle');
@@ -323,6 +325,7 @@ describe('Logo-Werkzeug: Sichern', () => {
       for (const id of ALLE) await page.setChecked(`#ebene-${id}`, id !== aus);
       c = await sichere();
       f = c.files[0];
+      assert.deepEqual(c.schluessel, ['files'], `PNG ${w}: nur files`);
       assert.deepEqual([f.name, f.w, f.h], [`aether-logo-1234567-${w}.png`, w, w / 2]);
       for (const e of f.ecken) assert.equal(e[3], 0, `${w}: Ecke transparent`);
       assertFarben(f.gruppen, ALLE.filter((k) => k !== aus), `PNG ${w} ohne ${aus}`);

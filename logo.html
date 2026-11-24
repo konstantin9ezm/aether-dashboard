@@ -733,7 +733,8 @@ function dateiSichern(ev, macheDatei){
   try { d = macheDatei(); } catch (e) { meldung('Die Datei ließ sich nicht erzeugen'); return; }
   const files = [d.datei];
   if (kannTeilen(files)){
-    navigator.share({ files, title:'Aether – Logo' })
+    // Nur die Datei: ein title/text würde auf iPhone/iPad bei „In Dateien sichern“ als eigene Textdatei mitgesichert
+    navigator.share({ files })
       .then(() => meldung('Datei weitergegeben'))
       .catch(e => { if (e && e.name === 'AbortError') return; dialogZeigen(d.datei, d.url || URL.createObjectURL(d.datei), false); });
     return;

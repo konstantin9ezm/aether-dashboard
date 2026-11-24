@@ -147,7 +147,7 @@ function shareMock() {
       } else out.text = await f.text();
       return out;
     }));
-    window.__share.calls.push({ title: d.title, files, active });
+    window.__share.calls.push({ title: d.title, schluessel: Object.keys(d).sort(), files, active });
   };
 }
 
@@ -419,6 +419,7 @@ describe('Logo-Editor: SVG und PNG aus einer Beschreibung', () => {
     await page.waitForFunction(() => window.__share.calls.length === 1);
     let c = await E(page, () => window.__share.calls[0]);
     assert.equal(c.active, true, 'Teilen innerhalb der Nutzergeste');
+    assert.deepEqual(c.schluessel, ['files'], 'Editor-SVG: nur files – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert');
     assert.match(c.files[0].name, /^aether-logo-projekt-\d{8}-\d{4}\.svg$/);
     assert.equal(c.files[0].type, 'image/svg+xml');
     assert.equal(c.files[0].text, svg, 'SVG-Datei = Beschreibung');
@@ -434,6 +435,7 @@ describe('Logo-Editor: SVG und PNG aus einer Beschreibung', () => {
       n++;
       await page.waitForFunction((n) => window.__share.calls.length === n, n, { timeout: 30000 });
       c = await E(page, (n) => window.__share.calls[n - 1], n);
+      assert.deepEqual(c.schluessel, ['files'], `Editor-PNG ${w}: nur files`);
       const f = c.files[0];
       assert.match(f.name, new RegExp(`^aether-logo-projekt-\\d{8}-\\d{4}-${w}\\.png$`));
       assert.deepEqual([f.type, f.w, f.h], ['image/png', w, h], `${w}: Maße`);
