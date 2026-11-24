@@ -859,7 +859,12 @@ CSV, JSON, ZIP); alles steht in derselben einen Paketdatei (Format v2, siehe unt
   gezeigte Liste.
 - **Bild:** PNG des offenen Dokuments in doppelter Auflösung (Flyer 1588 × 2246 px), Name `aether-<Id>.png`. Ohne
   Bibliothek: SVG mit `foreignObject` (als `data:`-URL) → Bild → Canvas → PNG, die Schriften (`fonts/…`) als
-  `data:`-URL eingebettet. Das Bild wird beim Öffnen und Blättern vorbereitet und beim Antippen synchron gezeichnet
+  `data:`-URL eingebettet. Das SVG-Bild ist genau 1 : 1 in CSS-Pixeln (ohne `viewBox`); die doppelte Auflösung entsteht
+  erst beim Zeichnen auf das Canvas (`drawImage` mit Zielgröße, das SVG wird dabei als Vektor gezeichnet). Grund:
+  WebKit/Safari wendet Maßstab und Verschiebung einer `viewBox` nicht auf HTML im `foreignObject` an, das eine eigene
+  Ebene hat (`position`, `overflow` … – die Flyer-Seite selbst); mit `viewBox` auf doppelte Größe stand die Seite auf
+  iPad/iPhone nur einfach groß oben links im Bild, Kästen darin waren teils beschnitten (Gerätetest 24.11.2026; betraf
+  „Bild“, PowerPoint und die PNG-Ausschnitte). Die Bildgröße hängt nicht von `devicePixelRatio` ab. Das Bild wird beim Öffnen und Blättern vorbereitet und beim Antippen synchron gezeichnet
   (sonst „Einen Moment – das Bild wird vorbereitet“). Über 16 777 216 Pixel (Canvas-Grenze von Safari auf iPhone/iPad)
   wird es proportional verkleinert, mit Meldung. Weg wie im Logo-Werkzeug: Teilen-Dialog (`navigator.share` mit Datei),
   sonst Download, sonst ein Dialog „Lange drücken und sichern.“; nur per Antippen (Nutzergeste), auch offline.
@@ -1903,6 +1908,19 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   → c) rot, den Wert nicht einsetzen → a) rot, `MAX_ANFRAGEN` 11 → i) rot; in `flyer-aenderungen.js` `data-wert-hand`
   nicht setzen → f) rot, ohne Schnappschuss bzw. jede Seite neu schreiben → e) rot; in `flyer-pptx.js` die Notiz
   weglassen → d) rot; in `flyer-online.js` aether-medien übergehen bzw. den Hinweis wiederholen → j) rot.
+- `tests/flyer-export-dichte.test.js` (Flyer-Export und Pixeldichte, Chromium, künstliche Testseite aus
+  `tests/flyer-testseite.js`: farbige Marken in den Ecken der Seite, ein Symbol, ein „Testkasten“) – mit
+  `deviceScaleFactor` 1, 2 (iPad) und 3 (iPhone): PowerPoint A4 und 16:9 über die Knöpfe, Folienbild 1588 × 2246 mit
+  allen vier Ecken der Seite an ihrer Stelle (± 2 px), Rahmen in EMU; ZIP „Grafiken & Daten“: PNG von Kasten und Symbol
+  in Elementgröße × 2 mit den Marken des Elements, scharfe 1-px-Linie, Kasten-SVG (Ausschnitt per CSS, als Bild
+  gezeichnet), CSV/JSON; alle drei Läufe liefern dieselben Zahlen. Aufbau: Das SVG-Bild der Seite ist genau 1 : 1 (ohne
+  `viewBox`, ohne Maßstab) – das ist die Sicherung gegen den WebKit-Fehler, den Chromium nicht hat (siehe „Bild“).
+  Teilen: `navigator.share` bekommt bei PowerPoint, ZIP, Bild und CSV genau `{ files }`; im Quelltext der Flyer-Seite
+  übergibt jeder Aufruf nur `files`. Gegenproben (von Hand, müssen rot werden): in `flyer-export.js` `svgText` wieder mit
+  `viewBox` auf doppelte Größe ziehen → Aufbau rot (Pixel bleiben in Chromium grün); in `flyer-pptx.js`
+  `drawImage(sb.img, 0, 0)` ohne Zielgröße → Folienbild rot; in `flyer-grafik.js` `ausschnitt(cv, 1, g)` → PNG rot; in
+  `flyer-export.js` `svgAusschnitt` wieder über die `viewBox` verschieben → Kasten-SVG rot; in `flyer-bearbeiten.js`
+  `title` mitgeben → Teilen rot.
 - Gegenproben PowerPoint (von Hand, müssen rot werden): in `flyer-pptx.js` das Bild nicht mittig setzen (`x: 0, y: 0`)
   → c) rot; „Stand“ aus den Notizen nehmen → d) rot; die Seiten aus `aktuelleListe()` statt `druckListe()` nehmen → a)
   rot; Esc nicht behandeln → f) rot; in `tests/flyer-echt.test.js` `ERWARTET` leeren bzw. `mehrPx` ändern → h) rot.
