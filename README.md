@@ -1488,7 +1488,7 @@ Paket-Schriften; `window.AETHER_TEST_FLYER_FREIGABE_MS` ersetzt die 60 s bis zur
 
 **Grenzen**
 
-- Auf iPhone/iPad (Safari) noch nicht am Gerät geprüft; die Tests laufen in Chromium. „Bild“ erscheint nur, wenn beim
+- Die Tests laufen in Chromium (CI); WebKit nur lokal (`tests/flyer-export-webkit.test.js`). „Bild“ erscheint nur, wenn beim
   Start eine Selbstprobe gelingt (kleines SVG mit `foreignObject` → Canvas → Pixel lesen → `toDataURL`). Gibt der
   Browser das Bild beim echten Zeichnen nicht heraus (Canvas „tainted“), erscheint „Dieser Browser gibt das Bild nicht
   heraus – „Bild“ ist hier nicht verfügbar“ und der Knopf bleibt aus. „PDF“ ist davon nicht betroffen.
@@ -1921,6 +1921,10 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   `drawImage(sb.img, 0, 0)` ohne Zielgröße → Folienbild rot; in `flyer-grafik.js` `ausschnitt(cv, 1, g)` → PNG rot; in
   `flyer-export.js` `svgAusschnitt` wieder über die `viewBox` verschieben → Kasten-SVG rot; in `flyer-bearbeiten.js`
   `title` mitgeben → Teilen rot.
+- `tests/flyer-export-webkit.test.js` (nur lokal mit `AETHER_WEBKIT_DRIVER=<Pfad zu WebKitWebDriver>`, sonst
+  übersprungen – so auch in der CI) – dieselbe Testseite in WebKitGTK (Zeichen-Engine wie Safari) über WebDriver, mit
+  `GDK_SCALE` 1 und 2: Seitenbild randgenau, Kasten als PNG und SVG. Mit dem alten Export-Code ist er rot (Marke unten
+  rechts fehlt, Inhalt reicht nur bis 793/1122 von 1588 × 2246). Einrichten: `apt-get install webkit2gtk-driver xvfb`.
 - Gegenproben PowerPoint (von Hand, müssen rot werden): in `flyer-pptx.js` das Bild nicht mittig setzen (`x: 0, y: 0`)
   → c) rot; „Stand“ aus den Notizen nehmen → d) rot; die Seiten aus `aktuelleListe()` statt `druckListe()` nehmen → a)
   rot; Esc nicht behandeln → f) rot; in `tests/flyer-echt.test.js` `ERWARTET` leeren bzw. `mehrPx` ändern → h) rot.
