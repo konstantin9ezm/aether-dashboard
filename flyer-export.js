@@ -458,6 +458,9 @@
   // SVG eines Ausschnitts (x, y, w, h in CSS-Pixeln der Seite) mit der ganzen Seite als eingebettetem HTML
   // (foreignObject; nur im Browser genau) – für HTML-Kästen. Gleiche @font-face-Regeln (beide Arten binden dieselben
   // Schriften ein) stehen nur einmal darin; das Bild der Seite („Bild“, PNG) bleibt davon unberührt.
+  // Der Ausschnitt entsteht per CSS im eingebetteten HTML (Rahmen w × h mit overflow:hidden, die Seite darin um
+  // −x/−y verschoben), nicht über die viewBox: WebKit (Safari) verschiebt HTML mit eigener Ebene nicht mit der
+  // viewBox mit und zeigte sonst die linke obere Ecke der Seite statt des Kastens (siehe Kopf, „Maßstab im SVG-Bild“).
   function ohneDoppelteSchriften(teile) {
     const gesehen = new Set();
     return teile.map((t) => (typeof t !== 'string' ? t : t.replace(/@font-face\s*\{[^}]*\}/gi, (m) => {
@@ -467,10 +470,16 @@
       return m;
     })));
   }
+  // Rahmen-Stile fest (!important), damit eine allgemeine Regel des Paket-CSS (z. B. „*“ oder „div“) sie nicht verstellt
+  const FEST = 'display:block !important;box-sizing:content-box !important;position:static !important;float:none !important;' +
+    'transform:none !important;padding:0 !important;border:0 !important;';
   function svgAusschnitt(bild, x, y, w, h) {
     if (!bild.svgInhalt) bild.svgInhalt = wurzelText(ohneDoppelteSchriften(bild.teile), bild.klon);
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="' + x + ' ' + y + ' ' + w + ' ' + h + '">' +
-      '<foreignObject x="0" y="0" width="' + bild.breite + '" height="' + bild.hoehe + '">' + bild.svgInhalt + '</foreignObject></svg>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+      '<div xmlns="' + XHTML + '" style="' + FEST + 'margin:0 !important;width:' + w + 'px !important;height:' + h + 'px !important;overflow:hidden !important">' +
+      '<div style="' + FEST + 'margin:' + (-y) + 'px 0 0 ' + (-x) + 'px !important;width:' + bild.breite + 'px !important">' +
+      bild.svgInhalt + '</div></div></foreignObject></svg>';
   }
   // @font-face-Regeln des Pakets mit eingebetteten Schriften (für echte SVG mit Text)
   async function schriftRegeln() {

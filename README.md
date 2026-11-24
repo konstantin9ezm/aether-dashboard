@@ -1013,8 +1013,11 @@ Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
 - **SVG:** SVG-Elemente als echte SVG (die berechneten Stile aus dem Paket-CSS werden eingesetzt, Schriften als
   `data:`-URL eingebettet, wenn Text vorkommt); das Logo (Hintergrund aus einer `data:`-SVG) als genau diese SVG.
   HTML-Kästen: Eine saubere SVG bräuchte einen eigenen Layout-Umsetzer (Umbruch, Schriften, Rahmen, Verläufe); darum
-  sind sie SVG mit eingebettetem HTML (`foreignObject`, ganze Seite, `viewBox` auf den Kasten) – die Tafel sagt das
-  ausdrücklich: „nur im Browser genau, in Grafikprogrammen evtl. nicht“.
+  sind sie SVG mit eingebettetem HTML (`foreignObject`, ganze Seite; der Ausschnitt entsteht per CSS darin – Rahmen in
+  Kastengröße mit `overflow:hidden`, die Seite um −x/−y verschoben –, nicht über die `viewBox`, weil WebKit/Safari HTML
+  mit eigener Ebene nicht mit der `viewBox` verschiebt) – die Tafel sagt das ausdrücklich: „nur im Browser genau, in
+  Grafikprogrammen evtl. nicht“. Solche Dateien zeigt die Vorschau der Dateien-App (iPhone/iPad) ggf. leer, weil sie
+  eingebettetes HTML nicht zeichnet; in Safari geöffnet stimmen sie.
 - **CSV:** UTF-8 mit BOM, Trenner „;“, Zeilenende CRLF, Spalten `version;seite;kennung;art;wert;status` (art = `text` |
   `status` | `zaehler` | `stand`; Kennungen wie beim Bearbeiten: `t<n>`, `s<n>`, `zaehler<n>`, `stand<n>`), Werte, wie
   die Seite sie zeigt (Basis + Änderungsschicht; beim Status ist `wert` der Text des Punkts). Anführungszeichen nur, wo
