@@ -1576,6 +1576,17 @@ die drei Seiten offline nicht. `tests/gemeinsam.test.js` prüft, dass keine der 
 definiert wird. Auch `flyer.html` bindet die Datei ein (vor den Flyer-Modulen, siehe
 [Flyer & Infografiken](#flyer--infografiken)).
 
+### Teilen auf iPhone/iPad: nur `files` übergeben
+
+Überall, wo das Dashboard eine Datei über den Teilen-Dialog weitergibt (Logo-Werkzeug: SVG/PNG sichern, PNG
+(Original), Logo-Editor, Ringe-Sammlung; Screen-Editor: „Als Bild sichern“; Flyer-Seite: Bild, PDF/PowerPoint, ZIP,
+CSV, Medien), bekommt `navigator.share` genau `{ files }` – kein `title`, kein `text`, keine `url`. Grund: iOS/iPadOS
+sichert bei „In Dateien sichern“ einen mitgegebenen `title`/`text` als eigene kleine Textdatei („Text“, „Text 2“ …)
+neben der eigentlichen Datei. Dateinamen, Inhalte und der Rückfall ohne Teilen-Dialog (Download, sonst Dialog) bleiben
+davon unberührt. Wer bewusst nur Text oder einen Link teilt (ohne Datei), darf `title`/`text`/`url` übergeben – das
+gibt es derzeit nicht. `tests/teilen-ohne-textdatei.test.js` prüft das statisch für jeden `navigator.share`-Aufruf im
+Repo (ohne `node_modules`, `vendor`, `tests`).
+
 ## Ein- und Ausklappen
 
 Drei Listen sind beim Laden kurz und lassen sich aufklappen. Der Klapp-Zustand gilt **nur für die laufende
@@ -1921,6 +1932,12 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   `drawImage(sb.img, 0, 0)` ohne Zielgröße → Folienbild rot; in `flyer-grafik.js` `ausschnitt(cv, 1, g)` → PNG rot; in
   `flyer-export.js` `svgAusschnitt` wieder über die `viewBox` verschieben → Kasten-SVG rot; in `flyer-bearbeiten.js`
   `title` mitgeben → Teilen rot.
+- `tests/teilen-ohne-textdatei.test.js` (statisch, ohne Browser) – jeder `navigator.share`-Aufruf im Repo (ohne
+  `node_modules`, `vendor`, `tests`) übergibt ein Objekt-Literal; teilt er eine Datei, steht darin nur `files` (siehe
+  [Teilen auf iPhone/iPad](#teilen-auf-iphoneipad-nur-files-übergeben)); nur Text/Link ohne Datei ist erlaubt.
+  Gegenkontrolle der Prüfung im Test selbst. Je Stelle prüfen zudem die Browser-Tests (`logo`, `logo-png`,
+  `logo-editor`, `ring-sammlung`, `screen-editor`), dass der Teilen-Aufruf nur den Schlüssel `files` enthält.
+  Gegenprobe (von Hand, muss rot werden): in `logo.html` oder `screen-editor.html` wieder `title`/`text` mitgeben.
 - `tests/flyer-export-webkit.test.js` (nur lokal mit `AETHER_WEBKIT_DRIVER=<Pfad zu WebKitWebDriver>`, sonst
   übersprungen – so auch in der CI) – dieselbe Testseite in WebKitGTK (Zeichen-Engine wie Safari) über WebDriver, mit
   `GDK_SCALE` 1 und 2: Seitenbild randgenau, Kasten als PNG und SVG. Mit dem alten Export-Code ist er rot (Marke unten
