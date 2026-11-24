@@ -36,6 +36,8 @@
 //   bleibt es leer und toDataURL liefert „data:,“. Größere Bilder werden proportional verkleinert (mit Meldung), das
 //   Canvas danach sofort freigegeben (Breite/Höhe 0), weil iOS auch den Canvas-Speicher insgesamt begrenzt.
 // - Teilen: navigator.share braucht eine frische Nutzergeste – darum alles synchron im Klick, vorher mitGeste(ev).
+//   Übergeben werden nur die Dateien ({ files }): title/text sichert iOS bei „In Dateien sichern“ als eigene kleine
+//   Textdatei („Text“, „Text 2“ …) neben der Datei.
 // - window.print: auf iOS kehrt es sofort zurück (der Dialog ist nicht blockierend), auf dem Desktop erst nach dem
 //   Dialog. In der Home-Bildschirm-App (standalone) öffnete iOS lange gar keinen Druckdialog; ob das heute noch gilt,
 //   ist unsicher. Darum dort ein Hinweis, wenn nach dem Aufruf kein „beforeprint“ kommt.
@@ -564,7 +566,8 @@
     const zusatz = d.verkleinert ? ' – verkleinert auf ' + d.breite + ' × ' + d.hoehe + ' Pixel (Höchstgröße für iPhone/iPad)' : '';
     const files = [d.datei];
     if (g.kannTeilen(files)) {
-      navigator.share({ files: files, title: 'Aether – ' + dok.id })
+      // Nur die Datei – ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert
+      navigator.share({ files: files })
         .then(() => meldung('Bild weitergegeben' + zusatz))
         .catch((e) => { if (e && e.name === 'AbortError') return; dialogZeigen(d.datei, d.url, zusatz ? ' (' + zusatz.slice(3) + ')' : ''); });
       return;

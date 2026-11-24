@@ -641,7 +641,8 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
     const teilen = () => {
       window.__geteilt = [];
       Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
-      Object.defineProperty(navigator, 'share', { configurable: true, value: (d) => { window.__geteilt.push([d.title, ...d.files.map((f) => [f.name, f.type, f.size])]); return Promise.resolve(); } });
+      // Erstes Feld: alle übergebenen Schlüssel – nur „files“ (ein title/text würde auf iPhone/iPad als Textdatei mitgesichert)
+      Object.defineProperty(navigator, 'share', { configurable: true, value: (d) => { window.__geteilt.push([Object.keys(d).join(','), ...d.files.map((f) => [f.name, f.type, f.size])]); return Promise.resolve(); } });
     };
     await mitSeite({ init: [teilen] }, async ({ page, log }) => {
       await oeffneFlyer(page);
@@ -652,7 +653,7 @@ describe('F3a: Export „Grafiken & Daten“ (Teil F)', () => {
       await page.click('#tafelInhalt .g-knopf[data-k="csv"]');
       await page.click('#tafelInhalt .g-knopf[data-k="png"]');
       const g = await page.evaluate(() => window.__geteilt.map((x) => [x[0], x[1][0], x[1][1]]));
-      assert.deepEqual(g, [['Aether 1.1 · S2 – Daten (CSV)', '1.1_S2.csv', 'text/csv'], ['Aether 1.1 · S2 – Grafiken (PNG)', '1.1_S2_png.zip', 'application/zip']]);
+      assert.deepEqual(g, [['files', '1.1_S2.csv', 'text/csv'], ['files', '1.1_S2_png.zip', 'application/zip']]);
       assert.deepEqual(log.errors, []);
     });
   });

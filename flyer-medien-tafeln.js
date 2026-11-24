@@ -464,7 +464,8 @@
     }
     // Über der ZIP-Grenze: Dateien einzeln (ein Teilen-Dialog mit allen Dateien, sonst je Datei herunterladen)
     if (g.kannTeilen(vb.dateien)) {
-      navigator.share({ files: vb.dateien, title: 'Aether Medien' }).then(() => { meldung(vb.n + ' Dateien gesichert'); gemerkt(); }).catch(() => {});
+      // Nur die Dateien: ein title/text würde auf iPhone/iPad als eigene Textdatei mitgesichert
+      navigator.share({ files: vb.dateien }).then(() => { meldung(vb.n + ' Dateien gesichert'); gemerkt(); }).catch(() => {});
       return;
     }
     if (EX()) { for (const f of vb.dateien) EX().herunterladenUndFreigeben(f); meldung(vb.n + ' Dateien werden heruntergeladen'); gemerkt(); }

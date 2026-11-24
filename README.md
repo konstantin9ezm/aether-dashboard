@@ -1030,7 +1030,8 @@ Version (mit Fortschritt, „Abbrechen“; am Ende „ZIP sichern“).
   Version als `aether-flyer_<version>.zip` mit einem Ordner je Seite (ausgeblendete Seiten nicht). ZIP ohne Bibliothek
   (`flyer-zip.js`: Methode „stored“, CRC-32). Am echten Paket ist das ZIP der Version etwa 47 MB groß (PNG 18,4 MB,
   SVG 28,5 MB).
-- **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“), sonst Download, sonst ein Dialog
+- **Weitergabe** wie bei PDF und Bild: Teilen-Dialog (iPad: „In Dateien sichern“; übergeben wird nur die Datei, kein
+  `title`/`text` – den sicherte iOS als eigene kleine Textdatei „Text“ daneben), sonst Download, sonst ein Dialog
   mit Link – immer im Antippen, darum bereitet die Tafel alles vorher vor („Grafiken werden erkannt und vorbereitet …“).
 
 **PowerPoint-Export** – jede Seite als Bild auf einer Folie (Variante a). „Alle als PowerPoint (`<n>`)“ steht in der
