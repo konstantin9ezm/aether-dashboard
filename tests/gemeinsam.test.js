@@ -256,7 +256,7 @@ describe('gemeinsam.js: offline aus der App-Hülle, Token in keinem Cache', () =
     await page.goto(baseUrl + '#projekt');
     await page.waitForSelector('#projOffline:not([hidden])');
     await page.waitForSelector('#engineCard #engineBody .chip');
-    assert.equal((await page.$$('#engineBody .chip')).length, 20, 'Engine-Karte aus der App-Hülle');
+    assert.equal((await page.$$('#engineBody .chip')).length, 35, 'Engine-Karte aus der App-Hülle');
     assert.equal(await page.evaluate(() => typeof window.AetherGemeinsam), 'object');
     // Screen-Editor offline
     await page.goto(baseUrl + 'screen-editor.html');

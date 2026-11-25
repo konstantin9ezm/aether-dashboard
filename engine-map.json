@@ -2,6 +2,17 @@
   "$hinweis": "Engine-Karte für das Dashboard. Schichten von oben nach unten. status: fertig | vorschau | geplant. detail und gruppe sind optional.",
   "schichten": [
     {
+      "name": "Werkzeuge",
+      "bausteine": [
+        { "gruppe": "Editor-Kern", "name": "Szene", "detail": "Objektbaum aus Dateien", "status": "fertig" },
+        { "gruppe": "Editor-Kern", "name": "Objektart-Register", "detail": "Schema, Prüfung, Griffe", "status": "fertig" },
+        { "gruppe": "Editor-Kern", "name": "Befehle", "detail": "Rückgängig/Wiederholen", "status": "fertig" },
+        { "gruppe": "Editor-Kern", "name": "Auswahl", "detail": "je Modul", "status": "fertig" },
+        { "gruppe": "Editor-Kern", "name": "Tafeln/Layout", "detail": "layout v1, ImGui-Hülle", "status": "fertig" },
+        { "gruppe": "Studio", "name": "Aether Studio", "detail": "Windows + Web; Asteroiden, Felder", "status": "vorschau" }
+      ]
+    },
+    {
       "name": "Spiel/Lua",
       "bausteine": [
         { "name": "Lua-Skripting", "status": "geplant" }
@@ -17,7 +28,8 @@
         { "name": "UI", "detail": "RmlUi, Spielmenüs", "status": "fertig" },
         { "name": "Debug-UI", "detail": "Dear ImGui", "status": "fertig" },
         { "name": "Profiler", "detail": "Tracy, nur nativ", "status": "fertig" },
-        { "name": "Asset-System", "detail": "Katalog, Streaming", "status": "geplant" }
+        { "name": "Asset-System", "detail": "Katalog, Streaming", "status": "geplant" },
+        { "name": "Detailstufen", "detail": "LOD, Regeln H/E/D/S", "status": "fertig" }
       ]
     },
     {
@@ -26,7 +38,14 @@
         { "name": "Log", "status": "fertig" },
         { "name": "Mathe", "detail": "double-Positionen", "status": "fertig" },
         { "name": "Spielschleife", "detail": "60 Hz", "status": "fertig" },
-        { "name": "Frame-Zeiten", "detail": "Messung, 1-s-Fenster", "status": "fertig" }
+        { "name": "Frame-Zeiten", "detail": "Messung, 1-s-Fenster", "status": "fertig" },
+        { "name": "Bestimmte Rechnung", "detail": "AetherHash, bitgleich", "status": "fertig" },
+        { "name": "Kamera-Rechnung", "detail": "Kreisen, freier Flug", "status": "fertig" },
+        { "name": "Gesten", "detail": "Finger, Antippen, Zwei-Finger", "status": "fertig" },
+        { "name": "Texttabelle", "detail": "Sprachen de/en", "status": "fertig" },
+        { "name": "Foto-Funktion", "detail": "PNG/JPEG", "status": "fertig" },
+        { "name": "Daten-Schnittstelle", "detail": "eingebettete Tabelle", "status": "fertig" },
+        { "name": "Projekt-Speicher", "detail": "Ordner, Browser (IndexedDB)", "status": "fertig" }
       ]
     },
     {
@@ -35,8 +54,9 @@
         { "gruppe": "Plattform", "name": "SDL3-Backend", "status": "fertig" },
         { "gruppe": "Plattform", "name": "NULL-Backend", "status": "fertig" },
         { "gruppe": "Plattform", "name": "Web/Emscripten", "status": "fertig" },
-        { "gruppe": "Plattform", "name": "Einstellungen/Speicher", "status": "fertig" },
-        { "gruppe": "Renderer", "name": "OpenGL ES 3.0 / WebGL 2", "status": "vorschau" },
+        { "gruppe": "Plattform", "name": "Einstellungen/Speicher", "detail": "Speichern mit Ergebnis", "status": "fertig" },
+        { "gruppe": "Plattform", "name": "Tastatur", "detail": "physische Tasten, Tastensperren", "status": "fertig" },
+        { "gruppe": "Renderer", "name": "OpenGL ES 3.0 / WebGL 2", "detail": "Ferndurchgang, Teilrechteck", "status": "vorschau" },
         { "gruppe": "Renderer", "name": "WebGPU", "status": "geplant" },
         { "gruppe": "Renderer", "name": "Vulkan-RHI", "status": "geplant" }
       ]
