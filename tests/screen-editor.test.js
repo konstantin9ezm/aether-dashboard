@@ -187,7 +187,7 @@ describe('Tools-Karte', () => {
     await page.waitForSelector('#projOffline:not([hidden])');
     for (const id of ['ciCard', 'timelineCard', 'roadmapCard']) assert.ok(await page.isHidden('#' + id), `übrige Karten: nur der Hinweis (${id} aus)`);
     await page.waitForSelector('#engineCard #engineBody .chip');
-    assert.equal((await page.$$('#engineBody .chip')).length, 20, 'Engine-Karte aus der App-Hülle');
+    assert.equal((await page.$$('#engineBody .chip')).length, 35, 'Engine-Karte aus der App-Hülle');
     assert.ok(await page.isVisible('#toolsCard'), 'Tools-Karte bleibt sichtbar');
     for (const id of ['toolProfile', 'toolWebgpu']) {
       const s = await page.$eval('#' + id, (a) => ({ href: a.getAttribute('href'), aria: a.getAttribute('aria-disabled'), text: a.textContent.replace(/\s+/g, ' ').trim(), op: Number(getComputedStyle(a).opacity), pe: getComputedStyle(a).pointerEvents }));

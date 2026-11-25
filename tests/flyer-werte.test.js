@@ -160,7 +160,7 @@ describe('Dynamische Werte a) Formate und Darstellung', () => {
       await mitPaket(page);
       const erwartet = {
         '.w-zahl': '1.234', '.w-gross': '1.234', '.w-proz': '30 %', '.w-anteil': '3/10', '.w-dauer': '41 min', '.w-median': '30 min', '.w-merge': '7 min',
-        '.w-art': 'verkürzt', '.w-lang': '22. November 2026', '.w-kurz': '22.11.2026', '.w-liste': 'Punkt A · Punkt B', '.w-dash': '40', '.w-engine': '11',
+        '.w-art': 'verkürzt', '.w-lang': '22. November 2026', '.w-kurz': '22.11.2026', '.w-liste': 'Punkt A · Punkt B', '.w-dash': '40', '.w-engine': '25',
         '.w-tests': '3', '.w-welten': '2', '.w-systeme': '1', '.w-commits': '17', '.w-unbekannt': '3.308'
       };
       for (const [sel, t] of Object.entries(erwartet)) assert.equal(await textIn(page, 'kachel', sel), t, `Kachel ${sel}`);
@@ -242,7 +242,7 @@ describe('Dynamische Werte b) offline, ohne Token, ohne Speicher', () => {
       await auffrischen(page);
       await ruhe(page);
       assert.equal(await textIn(page, 'kachel', '.w-zahl'), '65', 'Text aus dem Paket');
-      assert.equal(await textIn(page, 'kachel', '.w-engine'), '11', 'Engine-Karte (gleicher Ursprung) trotzdem');
+      assert.equal(await textIn(page, 'kachel', '.w-engine'), '25', 'Engine-Karte (gleicher Ursprung) trotzdem');
       assert.notEqual(await W_(page, () => window.AetherFlyerWerte.zustand('aether.prs.gemergt')), 'live');
     });
   });
@@ -430,15 +430,15 @@ describe('Dynamische Werte f) Überschreiben, Verknüpfen, Abgleich der Änderun
       await page.click('#vbEditWert');
       await page.waitForSelector('#vbVerknuepfen:not([hidden])');
       const zeile = await page.$eval('#vbVerknuepfen button[data-schluessel="engine.fertig"]', (b) => b.textContent);
-      assert.match(zeile, /^11 engine\.fertig/);
+      assert.match(zeile, /^25 engine\.fertig/);
       await page.click('#vbVerknuepfen button[data-schluessel="engine.fertig"]');
       await page.waitForFunction(() => window.AetherFlyerAenderungen.alleVersionen().some((e) => e.k === 't:t4'));
       await ruhe(page);
-      assert.equal(await textIn(page, 'vollbild', '[data-t="t4"]'), '11');
+      assert.equal(await textIn(page, 'vollbild', '[data-t="t4"]'), '25');
       assert.equal(await attrIn(page, 'vollbild', '[data-t="t4"]', 'data-ae-wz'), 'live');
       // Export trägt die Verknüpfung als data-wert; Rundlauf ohne Konflikt
       const ex2 = await page.evaluate(() => window.AetherFlyerAenderungen.exportPaket(null).paket);
-      assert.match(ex2.versionen[0].seiten.find((s) => s.id === 'W1').html, /<div class="stv" data-t="t4" data-wert="engine\.fertig">11<\/div>/);
+      assert.match(ex2.versionen[0].seiten.find((s) => s.id === 'W1').html, /<div class="stv" data-t="t4" data-wert="engine\.fertig">25<\/div>/);
       // Lösen: Tafel → „Original“
       await vb(page, '[data-t="t4"]').click();
       await page.waitForSelector('#vbWert:not([hidden])');
