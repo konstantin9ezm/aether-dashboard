@@ -216,8 +216,9 @@
   }
   .fg-summe { flex: 1 1 180px; min-width: 0; }
   .fg-summe b { display: block; font-size: 15px; font-weight: 600; }
-  .fg-knoepfe { display: flex; gap: 8px; flex: 0 1 auto; max-width: 100%; }
-  .fg-knoepfe .btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  .fg-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 1 auto; max-width: 100%; }
+  .fg-knoepfe .btn { flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  @media (max-width: 360px) { .fg-knoepfe .btn { padding: 8px 10px; font-size: 13px; } }
   /* Hinweis nach „Veröffentlichen“: Kennung kopiert, die Schritte auf GitHub (das Dashboard startet nichts) */
   #fgDialog {
     position: fixed; inset: 0; z-index: 40;
