@@ -218,6 +218,53 @@
   .fg-summe b { display: block; font-size: 15px; font-weight: 600; }
   .fg-knoepfe { display: flex; gap: 8px; flex: 0 1 auto; max-width: 100%; }
   .fg-knoepfe .btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  /* Hinweis nach „Veröffentlichen“: Kennung kopiert, die Schritte auf GitHub (das Dashboard startet nichts) */
+  #fgDialog {
+    position: fixed; inset: 0; z-index: 40;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(16px, var(--safe-t)) max(16px, var(--safe-r)) max(16px, var(--safe-b)) max(16px, var(--safe-l));
+    background: rgba(0,0,0,.6);
+  }
+  #fgDialog[hidden] { display: none; }
+  .fg-dlg {
+    position: relative; width: 100%; max-width: 520px; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 20px; border-radius: 16px;
+    background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  }
+  .fg-dlg h2 { margin: 0; padding-right: 44px; font-size: 19px; overflow-wrap: anywhere; }
+  .fg-x {
+    position: absolute; top: 12px; right: 12px; width: 40px; height: 40px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font: inherit; font-size: 16px; cursor: pointer; touch-action: manipulation;
+  }
+  .fg-umfang { margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .fg-dlg code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; -webkit-user-select: text; user-select: text; }
+  .fg-gross {
+    display: block; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--warn); background: var(--panel-2); color: var(--text); font-size: 18px;
+  }
+  .fg-schritte { list-style: none; counter-reset: fg; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .fg-schritte li { counter-increment: fg; display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+  .fg-schritte li::before {
+    content: counter(fg); flex: none; width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--warn); color: #0b0e14; font-size: 13px; font-weight: 700;
+  }
+  .fg-reihe { display: flex; flex-direction: column; gap: 8px; }
+  .fg-reihe .btn { min-height: 44px; text-decoration: none; }
+  .fg-reihe a.btn.fg-go { color: #0b0e14; font-size: 16px; }
+  .fg-dlg .btn:focus-visible, .fg-x:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .fg-klein { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  @media (max-height: 460px) {
+    /* Quer auf dem Handy: kompakter, Knöpfe nebeneinander */
+    .fg-dlg { padding: 12px 16px; gap: 8px; }
+    .fg-dlg h2 { font-size: 17px; }
+    .fg-schritte { gap: 4px; }
+    .fg-schritte li { font-size: 14px; }
+    .fg-reihe { flex-direction: row; }
+    .fg-reihe .btn { flex: 1 1 0; min-width: 0; }
+  }
 
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
 
@@ -926,6 +973,29 @@
       <p class="fb-hint">Keine Mail-App? Text kopieren und an die Adresse oben schicken.</p>
       <p class="fb-status" id="fbStatus" aria-live="polite"></p>
     </div>
+  </div>
+</div>
+
+<!-- Hinweis nach „Veröffentlichen“ (README „Playtester-Updates sammeln und veröffentlichen“): Kennung in der
+     Zwischenablage, Lauf auf GitHub von Hand starten. Das Dashboard schreibt nie und löst nichts aus. -->
+<div id="fgDialog" hidden>
+  <div class="fg-dlg" role="dialog" aria-modal="true" aria-labelledby="fgTitel" aria-describedby="fgUmfang">
+    <button class="fg-x" id="fgZu" type="button" aria-label="Schließen">✕</button>
+    <h2 id="fgTitel"></h2>
+    <code class="fg-gross" id="fgKennungGross" hidden></code>
+    <p class="fg-umfang" id="fgUmfang"></p>
+    <ol class="fg-schritte">
+      <li>„Run workflow“ tippen (GitHub-App: „Konfigurieren“)</li>
+      <li>Branch „main“ lassen</li>
+      <li>Ins Feld „Build-Kennung“ einfügen (statt „neuester“)</li>
+      <li>Starten – Lauf ca. 1 Minute, Cloudflare danach 1–2 Minuten</li>
+    </ol>
+    <div class="fg-reihe">
+      <a class="btn fg-go" id="fgGithub" href="https://github.com/konstantin9ezm/aether/actions/workflows/playtester-freigabe.yml" target="_blank" rel="noopener noreferrer">Zu GitHub ›</a>
+      <button class="btn" id="fgNochmal" type="button">Kennung nochmal kopieren</button>
+    </div>
+    <p class="fg-klein">Kennung auch zum Markieren: <code id="fgKennung"></code></p>
+    <p class="fg-klein" id="fgDanach"></p>
   </div>
 </div>
 
@@ -2137,13 +2207,14 @@
       try { game.iframe.focus(); game.iframe.contentWindow.focus(); } catch (e) { /* egal */ }
     }
   }
-  function execCopy(text) {
+  // ort: wohin das Hilfs-Textfeld kommt (Standard: Feedback-Dialog); es muss sichtbar sein.
+  function execCopy(text, ort) {
     var ok = false;
     var ta = document.createElement('textarea');
     ta.value = text;
     ta.setAttribute('readonly', '');
     ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;-webkit-user-select:text;user-select:text';
-    $('feedback').appendChild(ta);
+    (ort || $('feedback')).appendChild(ta);
     try { ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); } catch (e) { ok = false; }
     ta.remove();
     return ok;
@@ -4652,10 +4723,75 @@
   $('fgUpdate').addEventListener('click', auswahlStarten);
   $('fgAbbrechen').addEventListener('click', auswahlBeenden);
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || !auswahl || $('buildsView').hidden) return;
+    if (e.key !== 'Escape') return;
+    if (fgDialog) { e.preventDefault(); fgDialogZu(); return; }
+    if (!auswahl || $('buildsView').hidden) return;
     e.preventDefault();
     auswahlBeenden();
   });
+
+  // --- Veröffentlichen (Variante A): Kennung kopieren, Hinweis zeigen. Kein Schreiben, kein Workflow-Aufruf. ---
+  var fgDialog = null; // { kennung } solange der Hinweis offen ist; danach vergessen (maßgeblich ist freigabe.json)
+  function fgDialogOeffnen(ziel) {
+    fgDialog = { kennung: ziel.kennung };
+    $('fgTitel').textContent = 'Kennung ' + ziel.kennung + ' wird kopiert …';
+    $('fgKennungGross').textContent = ziel.kennung;
+    $('fgKennungGross').hidden = true;
+    $('fgUmfang').textContent = (ziel.n === 1 ? '1 Update' : ziel.n + ' Updates') + ' (' + ziel.teile.join(', ') + ') für Playtester';
+    $('fgKennung').textContent = ziel.kennung;
+    $('fgDanach').textContent = 'Danach „Aktualisieren“: ' + (ziel.pr ? '#' + ziel.pr : ziel.kennung) + ' wird FREIGEGEBEN.';
+    $('fgGithub').href = FREIGABE_WORKFLOW_URL;
+    $('fgDialog').hidden = false;
+    try { $('fgGithub').focus({ preventScroll: true }); } catch (e) { /* egal */ }
+  }
+  function fgDialogZu() {
+    if (!fgDialog) return;
+    fgDialog = null;
+    $('fgDialog').hidden = true;
+    try { $('fgUpdate').focus({ preventScroll: true }); } catch (e) { /* egal */ }
+  }
+  function fgKopiert(ok) {
+    if (!fgDialog) return;
+    var k = fgDialog.kennung;
+    $('fgTitel').textContent = ok ? 'Kennung ' + k + ' kopiert ✓' : 'Kopieren nicht möglich – Kennung markieren:';
+    $('fgKennungGross').hidden = ok;
+    if (ok) return;
+    try {
+      var r = document.createRange();
+      r.selectNodeContents($('fgKennungGross'));
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } catch (e) { /* markieren von Hand */ }
+  }
+  // navigator.clipboard.writeText im selben Tipp; scheitert es, Ersatzweg wie im Feedback-Dialog (execCommand),
+  // scheitert auch der, steht die Kennung markiert zum Kopieren von Hand da.
+  function fgKopieren() {
+    if (!fgDialog) return;
+    var text = fgDialog.kennung;
+    var noch = function () { return fgDialog && fgDialog.kennung === text; };
+    var ersatz = function () {
+      if (!noch()) return;
+      var ok = execCopy(text, $('fgDialog'));
+      if (ok) { try { $('fgNochmal').focus({ preventScroll: true }); } catch (e) { /* egal */ } }
+      fgKopiert(ok);
+    };
+    var p = null;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) p = navigator.clipboard.writeText(text); } catch (e) { p = null; }
+    if (!p) { ersatz(); return; }
+    p.then(function () { if (noch()) fgKopiert(true); }, ersatz);
+  }
+  $('fgVeroeffentlichen').addEventListener('click', function () {
+    var ziel = auswahl ? auswahlZiel(freigabeSicht(builds, freigabe)) : null;
+    if (!ziel || !KENNUNG_RE.test(ziel.kennung)) return;
+    auswahl = null;      // Auswahl verlassen; das Dashboard merkt sich nichts als „freigegeben“
+    renderBuilds();
+    fgDialogOeffnen(ziel);
+    fgKopieren();        // noch im selben Tipp (Nutzeraktion)
+  });
+  $('fgNochmal').addEventListener('click', fgKopieren);
+  $('fgZu').addEventListener('click', fgDialogZu);
+  $('fgDialog').addEventListener('click', function (e) { if (e.target === $('fgDialog')) fgDialogZu(); });
   $('fassungEntwickler').addEventListener('click', function () { setFassung('entwickler'); });
   $('fassungPlaytester').addEventListener('click', function () { setFassung('playtester'); });
   renderFassung();
