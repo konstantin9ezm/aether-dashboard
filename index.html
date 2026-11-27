@@ -199,6 +199,25 @@
   }
   .btn.fg-go:disabled { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); opacity: 1; }
   @media (max-width: 360px) { .btn.fg-go { font-size: 13px; padding: 8px 10px; } }
+  /* Auswahlmodus „Updates für Playtester auswählen“: Kopf statt Umschalter, Kästchen statt Auswahlkreis */
+  .card.fg-modus #fassungBox, .card.fg-modus #fgBox, .card.fg-modus #buildList, .card.fg-modus #buildsKlapp,
+  .card.fg-modus #fassungHint, .card.fg-modus #playSlot { display: none !important; }
+  .fg-kopf {
+    display: flex; align-items: center; min-height: 38px; margin-bottom: 10px; padding: 6px 14px;
+    border: 1px solid var(--warn); border-radius: 13px; background: #2a2312;
+    color: var(--warn); font-size: 15px; font-weight: 700; outline: none;
+  }
+  .fg-kopf:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .build.fg-fest:has(input:checked) { border-color: var(--line); background: var(--panel-2); }
+  .fg-regel { margin: 10px 0 0; }
+  .fg-leiste {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding: 10px 14px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2);
+  }
+  .fg-summe { flex: 1 1 180px; min-width: 0; }
+  .fg-summe b { display: block; font-size: 15px; font-weight: 600; }
+  .fg-knoepfe { display: flex; gap: 8px; flex: 0 1 auto; max-width: 100%; }
+  .fg-knoepfe .btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
 
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
 
@@ -765,7 +784,7 @@
 
   <!-- Build-Auswahl -->
   <section id="buildsView" hidden>
-    <div class="card">
+    <div class="card" id="buildsCard">
       <div class="row" style="margin-bottom:10px">
         <h2 class="grow" style="margin:0">Build wählen</h2>
         <button class="btn" id="reloadBtn" type="button" title="Liste neu laden">Aktualisieren</button>
@@ -777,6 +796,7 @@
           <button type="button" id="fassungPlaytester" data-fassung="playtester" aria-pressed="false">Playtester</button>
         </div>
       </div>
+      <div class="fg-kopf" id="fgKopf" tabindex="-1" hidden>Updates für Playtester auswählen</div>
       <!-- Fassung „Playtester“: welcher Build bei den Playtestern ist (freigabe.json in web-build) -->
       <div class="fg-box" id="fgBox" hidden>
         <div class="fg-text">
@@ -791,6 +811,19 @@
       </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
       <div id="buildsKlapp"></div>
+      <!-- Auswahlmodus: Builds bis zu einer Obergrenze für die Playtester wählen (README „Playtester-Updates …“) -->
+      <div id="fgAuswahl" hidden>
+        <ul class="builds" id="fgListe" role="group" aria-labelledby="fgKopf"></ul>
+        <div id="fgKlapp"></div>
+        <p class="muted small fg-regel">Ein Update enthält immer alle Updates davor. Builds ohne Playtester-Fassung sind nicht wählbar.</p>
+        <div class="fg-leiste" id="fgLeiste">
+          <div class="fg-summe" aria-live="polite"><b id="fgSumme"></b><span class="muted small" id="fgBis"></span></div>
+          <div class="fg-knoepfe">
+            <button class="btn" id="fgAbbrechen" type="button">Abbrechen</button>
+            <button class="btn fg-go" id="fgVeroeffentlichen" type="button" disabled>Veröffentlichen ›</button>
+          </div>
+        </div>
+      </div>
       <p class="muted small fassung-hint" id="fassungHint" role="status" hidden></p>
       <!-- Hier sitzt das Spiel-iframe mit dem Knopf „Spielen“ (#game.slot, siehe startDocument()). -->
       <div id="playSlot" class="mt"><button class="btn primary block big" id="playOff" type="button" disabled hidden>Spielen</button></div>
@@ -1083,6 +1116,8 @@
   var KENNUNG_RE = /^[0-9a-f]{4,40}$/;
   var FREIGABE_WORKFLOW_URL = 'https://github.com/konstantin9ezm/aether/actions/workflows/playtester-freigabe.yml';
   var freigabe = { art: 'unbekannt', at: '' };
+  // Auswahlmodus (nur in dieser Sitzung, nie gespeichert): null oder { grenze: Kurz-Hash der Obergrenze | null, offen }
+  var auswahl = null;
 
   function parseFreigabe(text, at) {
     var fehler = function (grund) { return { art: 'fehler', grund: grund, at: at }; };
@@ -2214,7 +2249,8 @@
   // schon getippt wurde (Laden/Spiel), fasst diese Funktion nie an.
   function syncStartFrame() {
     if (frame && frame.state !== 'start') { layoutGame(); return; }
-    var visible = !$('buildsView').hidden;
+    // Im Auswahlmodus gibt es kein „Spielen“ (und damit keinen Start-Rahmen).
+    var visible = !$('buildsView').hidden && !auswahl;
     // Fenster ohne Speicherrecht (bzw. solange das noch geprüft wird): kein Spielrahmen.
     var b = visible && darfSpeichern() ? startableSelection() : null;
     if (frame && (!b || frame.build.short !== b.short || frame.build.path !== b.path || frame.build.fassung !== b.fassung)) discardFrame(frame);
@@ -2567,6 +2603,8 @@
       $('buildsKlapp').textContent = '';
       updateFassungHint([]);
       renderFreigabe(freigabeSicht(builds, freigabe));
+      auswahl = null;
+      renderAuswahl(null);
       syncStartFrame();
       return;
     }
@@ -2625,6 +2663,9 @@
     applyBuildsKlapp();
     updateFassungHint(startable);
     renderFreigabe(fs);
+    if (auswahl && !auswahlMoeglich(fs)) auswahl = null;
+    if (auswahl && auswahl.grenze && fs.waehlbar.indexOf(auswahl.grenze) < 0) auswahl.grenze = null;
+    renderAuswahl(fs);
     updateApiInfo();
     syncStartFrame();
   }
@@ -2690,6 +2731,105 @@
     off.textContent = !offline ? '' : (fs.art !== 'unbekannt' && freigabe.at ? 'offline – Stand von ' + fmtKurz(freigabe.at) : 'offline – kein gespeicherter Stand');
     $('fgUpdate').disabled = offline || !fs.waehlbar.length;
     $('fgNur').hidden = !offline;
+  }
+
+  // --- Auswahlmodus -----------------------------------------------------------
+  function auswahlMoeglich(fs) { return fassung === 'playtester' && !isOffline() && fs.waehlbar.length > 0; }
+  function buildByShort(short) { return builds.filter(function (b) { return b.short === short; })[0] || null; }
+  // Gewählt: die Obergrenze und alle älteren wählbaren Builds (bis zum freigegebenen). Neueste zuerst.
+  function auswahlGewaehlt(fs) {
+    if (!auswahl || !auswahl.grenze) return [];
+    var gi = fs.waehlbar.indexOf(auswahl.grenze);
+    return gi < 0 ? [] : fs.waehlbar.slice(gi);
+  }
+  function auswahlStarten() {
+    if (auswahl || !auswahlMoeglich(freigabeSicht(builds, freigabe))) return;
+    auswahl = { grenze: null, offen: false };   // Vorauswahl: nichts
+    renderBuilds();
+    try { $('fgKopf').focus({ preventScroll: true }); } catch (e) { /* egal */ }
+  }
+  function auswahlBeenden() {
+    if (!auswahl) return;
+    auswahl = null;
+    renderBuilds();
+    try { $('fgUpdate').focus({ preventScroll: true }); } catch (e) { /* egal */ }
+  }
+  // Antippen: nicht gewählt → Obergrenze (er und alle älteren wählbaren sind gewählt);
+  // gewählt → er und alle neueren ab (Obergrenze = nächstälterer wählbarer Build oder keiner).
+  function auswahlTippen(short) {
+    if (!auswahl) return;
+    var fs = freigabeSicht(builds, freigabe);
+    var w = fs.waehlbar, i = w.indexOf(short);
+    if (i < 0) return;
+    var gewaehlt = auswahlGewaehlt(fs).indexOf(short) >= 0;
+    auswahl.grenze = gewaehlt ? (w[i + 1] || null) : short;
+    renderAuswahl(fs);
+  }
+  // Was „Veröffentlichen“ freigibt: Kennung der Obergrenze, PR-Nummern (älteste zuerst), Anzahl.
+  function auswahlZiel(fs) {
+    var gew = auswahlGewaehlt(fs);
+    if (!gew.length) return null;
+    var top = buildByShort(gew[0]);
+    var teile = gew.slice().reverse().map(function (sh) { var n = prNummer((buildByShort(sh) || {}).message); return n ? '#' + n : sh; });
+    return { kennung: top.short, pr: prNummer(top.message), teile: teile, n: gew.length };
+  }
+
+  function renderAuswahl(fs) {
+    var an = !!auswahl && !!fs;
+    $('buildsCard').classList.toggle('fg-modus', an);
+    $('fgKopf').hidden = !an;
+    $('fgAuswahl').hidden = !an;
+    var ul = $('fgListe');
+    if (!an) { ul.textContent = ''; $('fgKlapp').textContent = ''; return; }
+    var gew = auswahlGewaehlt(fs);
+    ul.textContent = '';
+    var verborgen = 0;
+    builds.forEach(function (b, i) {
+      var ok = fs.waehlbar.indexOf(b.short) >= 0;
+      var gewaehlt = gew.indexOf(b.short) >= 0;
+      // Freigegebener und ältere Builds mit Playtester-Fassung: schon bei den Playtestern (grau mit Haken)
+      var fest = !ok && fs.idx >= 0 && i >= fs.idx && !!b.playtester;
+      var li = document.createElement('li');
+      var label = document.createElement('label');
+      label.className = 'build' + (ok ? '' : ' unavailable') + (fest ? ' fg-fest' : '');
+      var input = document.createElement('input');
+      input.type = 'checkbox';
+      input.name = 'fgUpdate';
+      input.dataset.short = b.short;
+      input.checked = gewaehlt || fest;
+      input.disabled = !ok;
+      input.addEventListener('change', function () { auswahlTippen(b.short); });
+      var msg = el('div', 'msgline', b.message.split('\n')[0] || '(ohne Nachricht)');
+      var meta = el('div', 'meta');
+      meta.appendChild(el('code', '', b.short));
+      meta.appendChild(el('span', '', fmtDate(b.date)));
+      fgMarken(meta, fs, b, i, true);
+      if (!b.playtester) meta.appendChild(el('span', 'no-variant', 'keine Playtester-Fassung'));
+      label.appendChild(input);
+      label.appendChild(msg);
+      label.appendChild(meta);
+      li.appendChild(label);
+      // Zugeklappt wie die Build-Liste: die neuesten BUILDS_SICHTBAR, alle gewählten und der freigegebene (als Bezug)
+      li.hidden = !(auswahl.offen || i < BUILDS_SICHTBAR || gewaehlt || i === fs.idx);
+      if (li.hidden) verborgen++;
+      ul.appendChild(li);
+    });
+    var box = $('fgKlapp');
+    box.textContent = '';
+    if (builds.length > BUILDS_SICHTBAR && (auswahl.offen || verborgen)) {
+      var btn = auswahl.offen
+        ? klappKnopf('Einklappen', true, 'Liste einklappen', function () { auswahl.offen = false; renderAuswahl(freigabeSicht(builds, freigabe)); })
+        : klappKnopf('Ältere Builds anzeigen (' + verborgen + ')', false, 'Ältere Builds anzeigen, ' + verborgen + ' weitere', function () {
+            auswahl.offen = true; renderAuswahl(freigabeSicht(builds, freigabe));
+          });
+      btn.id = auswahl.offen ? 'fgLess' : 'fgMore';
+      box.appendChild(btn);
+    }
+    var ziel = auswahlZiel(fs);
+    $('fgSumme').textContent = !ziel ? 'Noch kein Update gewählt'
+      : ziel.n === 1 ? '1 Update wird veröffentlicht' : ziel.n + ' Updates werden veröffentlicht';
+    $('fgBis').textContent = ziel ? 'bis ' + (ziel.pr ? '#' + ziel.pr + ' · ' : '') + ziel.kennung : 'Build antippen: er und alle älteren neuen Updates';
+    $('fgVeroeffentlichen').disabled = !ziel;
   }
 
   // Kurzer Hinweis, wenn in der Fassung „Playtester“ kein Build startbar ist (Start gesperrt).
@@ -4509,6 +4649,13 @@
     await refreshSaved();
     renderBuilds();
   }
+  $('fgUpdate').addEventListener('click', auswahlStarten);
+  $('fgAbbrechen').addEventListener('click', auswahlBeenden);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !auswahl || $('buildsView').hidden) return;
+    e.preventDefault();
+    auswahlBeenden();
+  });
   $('fassungEntwickler').addEventListener('click', function () { setFassung('entwickler'); });
   $('fassungPlaytester').addEventListener('click', function () { setFassung('playtester'); });
   renderFassung();
