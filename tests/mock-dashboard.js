@@ -1,4 +1,5 @@
-// Gemeinsame Test-Hilfe für tests/klappen.test.js und tests/selbst-aktualisieren.test.js:
+// Gemeinsame Test-Hilfe für tests/klappen.test.js, tests/selbst-aktualisieren.test.js, tests/fassung.test.js und
+// tests/playtester-updates.test.js:
 // nachgebaute GitHub-REST-API (Spiel- und Projektansicht), statischer Server mit steuerbarer
 // Dashboard-Version und Seitenaufbau mit Test-Schaltern. Keine festen Wartezeiten.
 'use strict';
@@ -65,7 +66,8 @@ const JOBS = [{ id: 1, name: 'build', status: 'completed', conclusion: 'success'
 
 const mock = {
   reset() {
-    Object.assign(this, { builds: makeBuilds(2), pulls: makePulls(5, 50), dashPulls: [], roadmap: roadmap(), mode: 'ok', requests: [], hold: false, held: [] });
+    Object.assign(this, { builds: makeBuilds(2), pulls: makePulls(5, 50), dashPulls: [], roadmap: roadmap(), mode: 'ok', requests: [], hold: false, held: [],
+      freigabe: null, freigabeStatus: 200 });
   },
   release() { this.hold = false; const h = this.held; this.held = []; h.forEach((go) => go()); }
 };
@@ -91,6 +93,13 @@ async function githubApi(route) {
   if (p === `${DASH_BASE}/pulls`) return json(route, 200, mock.dashPulls);
   if (headers.authorization !== `Bearer ${TOKEN}`) return json(route, 401, { message: 'Bad credentials' });
   if (p === `${BASE}/contents/index.json`) return raw(route, JSON.stringify(mock.builds));
+  // freigabe.json (aether: Workflow „Playtester-Freigabe“): null = noch keine Freigabe (404), Text = roh (z. B. kaputt),
+  // sonst als JSON; freigabeStatus ≠ 200 = Fehlerantwort.
+  if (p === `${BASE}/contents/freigabe.json`) {
+    if (mock.freigabeStatus !== 200) return json(route, mock.freigabeStatus, { message: 'Fehler' });
+    if (mock.freigabe === null) return json(route, 404, { message: 'Not Found' });
+    return raw(route, typeof mock.freigabe === 'string' ? mock.freigabe : JSON.stringify(mock.freigabe));
+  }
   const b = mock.builds.find((x) => p === `${BASE}/contents/${x.path.replace(/\/$/, '')}`);
   if (b) return json(route, 200, listing(b.path, GAME_FILES));
   const pt = mock.builds.find((x) => typeof x.playtester === 'string' && p === `${BASE}/contents/${x.playtester.replace(/\/$/, '')}`);

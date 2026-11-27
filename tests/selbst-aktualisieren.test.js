@@ -99,7 +99,7 @@ describe('Teil D – Daten selbst aktualisieren', () => {
     await context.close();
   });
 
-  test('Build-Liste: neuer Build erscheint, Auswahl, Klapp-Zustand, Start-Rahmen und Scroll-Position bleiben; 1 Anfrage je Neuladen', async () => {
+  test('Build-Liste: neuer Build erscheint, Auswahl, Klapp-Zustand, Start-Rahmen und Scroll-Position bleiben; 2 Anfragen je Neuladen (index.json, freigabe.json)', async () => {
     mock.reset();
     mock.builds = H.makeBuilds(6);
     const s = mock.builds.map((b) => b.short);
@@ -122,13 +122,13 @@ describe('Teil D – Daten selbst aktualisieren', () => {
     assert.equal(await page.evaluate(() => window.scrollY), y, 'Scroll-Position unverändert');
     assert.equal(await iframe.evaluate((f) => f.isConnected && f === document.querySelector('#game.slot iframe')), true, 'Start-Rahmen nicht neu erzeugt');
     assert.deepEqual(await noise(page), []);
-    // Unveränderte Liste: genau 1 Anfrage (index.json), nichts neu gezeichnet
+    // Unveränderte Liste: genau 2 Anfragen (index.json und – seit „Playtester-Updates sammeln“ – freigabe.json), nichts neu gezeichnet
     const n0 = (await auto(page)).length;
     await untilAuto(page, 'unveraendert', 1, n0);
     const r1 = apiCount();
     const n1 = (await auto(page)).length;
     await untilAuto(page, 'unveraendert', 1, n1);
-    assert.deepEqual(mock.requests.slice(r1), [`${BASE}/contents/index.json?ref=web-build`]);
+    assert.deepEqual(mock.requests.slice(r1).sort(), [`${BASE}/contents/freigabe.json?ref=web-build`, `${BASE}/contents/index.json?ref=web-build`]);
     assert.deepEqual(log.errors, []);
     await context.close();
   });

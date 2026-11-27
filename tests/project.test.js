@@ -401,7 +401,8 @@ async function waitProjectLoaded(page) {
     .every((id) => { const b = document.getElementById(id); return b.firstChild && !b.querySelector('.loadline'); })
     && !document.querySelector('#timelineList[data-dash="loading"]'));
 }
-// Anfragen der Projektansicht beim ersten Öffnen (Stand f8aa148, vor dem Logo-PNG), sortiert
+// Anfragen der Projektansicht beim ersten Öffnen (Stand f8aa148, vor dem Logo-PNG; dazu freigabe.json seit
+// „Playtester-Updates sammeln“), sortiert
 const ERWARTETE_PROJEKT_ANFRAGEN = [
   `/repos/konstantin9ezm/aether-dashboard/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`,
   `/repos/konstantin9ezm/aether/actions/runs/9001/jobs?filter=latest&per_page=100`,
@@ -412,6 +413,7 @@ const ERWARTETE_PROJEKT_ANFRAGEN = [
   `/repos/konstantin9ezm/aether/contents/.github/workflows/build.yml?ref=${CI_SHA}`,
   `/repos/konstantin9ezm/aether/contents/ROADMAP.md?ref=main`,
   `/repos/konstantin9ezm/aether/contents/builds/aaaaaaa?ref=web-build`,
+  `/repos/konstantin9ezm/aether/contents/freigabe.json?ref=web-build`, // seit „Playtester-Updates sammeln“ (Spielansicht beim Start)
   `/repos/konstantin9ezm/aether/contents/index.json?ref=web-build`,
   `/repos/konstantin9ezm/aether/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`
 ];
@@ -580,10 +582,10 @@ test('Kurzer Cache: erneutes Öffnen ohne neue Anfragen, Aktualisieren lädt neu
   await openProject(page);
   // index.json + Dateiliste des neuesten Builds (Spielansicht, beim Start) + die vier Teile der Projektansicht
   // + 3 für die CI-Laufzeit (abgeschlossene Läufe, Jobs des letzten Laufs, build.yml an dessen Commit)
-  // + 1 für die gemergten PRs des Dashboard-Repos (Zeitleiste)
+  // + 1 für die gemergten PRs des Dashboard-Repos (Zeitleiste) + 1 für freigabe.json (seit „Playtester-Updates sammeln“)
   await waitCiTime(page);
   const first = mock.requests.length;
-  assert.ok(first >= 10 && first <= 11, `Anfragen beim ersten Laden: ${first}`);
+  assert.ok(first >= 11 && first <= 12, `Anfragen beim ersten Laden: ${first}`);
   await page.click('#tabPlay');
   await page.waitForSelector('#buildsView:not([hidden])');
   const afterPlay = mock.requests.length;
@@ -605,7 +607,7 @@ test('Projektansicht: Anzahl und Ziele der API-Anfragen unverändert, kein Logo-
   await openProject(page);
   await waitCiTime(page);
   const liste = mock.requests.map((r) => r.path + r.query).sort();
-  // Stand vor dem Logo-PNG (Dashboard PR #25): dieselben 11 Anfragen
+  // Stand vor dem Logo-PNG (Dashboard PR #25): dieselben 11 Anfragen, dazu freigabe.json (Playtester-Updates sammeln)
   assert.deepEqual(liste, ERWARTETE_PROJEKT_ANFRAGEN);
   assert.ok(!log.urls.some((u) => /logo\.(png|svg)/.test(u)), 'weder logo.png noch logo.svg');
   await context.close();
@@ -1727,7 +1729,8 @@ describe('CI-Laufzeit mit realistischen API-Daten', () => {
     assert.equal(await page.getAttribute('#ciTime .ci-pct', 'data-level'), 'ok', '43 % bleibt grün');
     // Anfragen der Projektansicht beim ersten Laden (10: Workflows, letzter Lauf, 5 abgeschlossene, Jobs,
     // build.yml, PRs, Commits, ROADMAP.md, einmalig Jobs des älteren Re-runs #99, PRs des Dashboard-Repos) – ohne die Spielansicht davor.
-    const projReq = mock.requests.filter((r) => !/\/contents\/(index\.json|builds\/)/.test(r.path));
+    // (Spielansicht: index.json, freigabe.json – seit „Playtester-Updates sammeln“ –, Dateiliste des Builds)
+    const projReq = mock.requests.filter((r) => !/\/contents\/(index\.json|freigabe\.json|builds\/)/.test(r.path));
     assert.equal(projReq.length, 10, projReq.map((r) => r.path).join('\n'));
 
     // Lage jedes Zeichens eines Textes (ohne Leerzeichen) – unabhängig davon, wie das DOM aufgebaut ist.
@@ -2317,6 +2320,7 @@ describe('Zeitleiste lädt Dashboard-PRs nach', () => {
   // Erstes Laden (Spielansicht beim Start + Projektansicht): genau dieselben Anfragen wie vor dem Nachladen.
   const FIRST_LOAD = [
     `${BASE}/contents/index.json?ref=web-build`,
+    `${BASE}/contents/freigabe.json?ref=web-build`, // seit „Playtester-Updates sammeln“
     `${BASE}/contents/builds/aaaaaaa?ref=web-build`,
     `${BASE}/actions/workflows?per_page=100`,
     `${BASE}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50`,
