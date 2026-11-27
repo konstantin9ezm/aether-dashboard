@@ -62,7 +62,8 @@ async function exitGame(page) {
   await page.click('#exitBtn');
   await page.waitForSelector('#buildsView:not([hidden]) #buildList .build');
 }
-const contentReqs = () => mock.requests.filter((r) => /\/contents\//.test(r) && !/index\.json/.test(r)).map((r) => r.replace(/^.*\/contents\//, '').replace(/\?.*$/, ''));
+// Inhalte außer index.json und freigabe.json (die zweite Anfrage beim Laden, seit „Playtester-Updates sammeln“)
+const contentReqs = () => mock.requests.filter((r) => /\/contents\//.test(r) && !/index\.json|freigabe\.json/.test(r)).map((r) => r.replace(/^.*\/contents\//, '').replace(/\?.*$/, ''));
 const blobReqs = () => mock.requests.filter((r) => /\/git\/blobs\//.test(r)).length;
 const cacheIndex = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('aether.cachedBuilds') || '[]'));
 async function frameAttrs(page) {

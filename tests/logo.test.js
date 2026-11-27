@@ -102,6 +102,8 @@ async function githubApi(route) {
   }
   // Das Dashboard selbst (für den Service Worker geöffnet) fragt die Build-Liste ab: leer.
   if (url.pathname === `${BASE}/contents/index.json`) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/vnd.github.raw+json' }, body: '[]' });
+  // web-build hat seit der ersten Playtester-Freigabe eine freigabe.json (die Spielansicht liest sie mit index.json)
+  if (url.pathname === `${BASE}/contents/freigabe.json`) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/vnd.github.raw+json' }, body: JSON.stringify({ version: 1, build: 'aaaaaaa', commit: 'a'.repeat(40), zeit: '2026-11-27T13:18:29Z', vorheriger: null }) });
   if (url.pathname === `${BASE}/commits` && url.searchParams.get('path') === 'art/logo/logo.svg' && url.searchParams.get('sha') === 'main') {
     return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify([{ sha: COMMIT, commit: { message: 'Logo' } }]) });
   }

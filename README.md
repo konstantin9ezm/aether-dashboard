@@ -74,6 +74,47 @@ und `playtester/<hash>/` (Playtester-Fassung). In `index.json` haben Builds ab P
   wird nichts automatisch geladen.
 - Tests: `tests/fassung.test.js`.
 
+## Playtester-Updates sammeln und veröffentlichen
+
+**Ablauf (5 Sätze):** Seit aether PR #98 bekommen die Playtester nur noch freigegebene Builds; neue Merges landen
+zuerst in der Entwickler-Fassung und erscheinen in der Fassung „Playtester“ mit der Marke **NEU** („<n> neue Updates
+noch nicht veröffentlicht“). „Playtester-Fassung updaten ›“ öffnet die Auswahl: Antippen eines Builds wählt ihn und
+alle älteren neuen Builds mit (ein Update enthält immer alle davor, freigegeben wird genau ein Build), Antippen eines
+gewählten Builds nimmt ihn und alle neueren wieder heraus. „Veröffentlichen ›“ kopiert die Build-Kennung (Kurz-Hash
+der Obergrenze) in die Zwischenablage und zeigt die vier Schritte; „Zu GitHub ›“ öffnet die Workflow-Seite
+[Playtester-Freigabe](https://github.com/konstantin9ezm/aether/actions/workflows/playtester-freigabe.yml), dort
+„Run workflow“, Branch `main` lassen, die Kennung ins Feld „Build-Kennung …“ (statt „neuester“) einfügen und
+starten. Nach dem Lauf (ca. 1 Minute, Cloudflare danach 1–2 Minuten) zeigt „Aktualisieren“ den Build als
+**FREIGEGEBEN**.
+
+**Datenquelle:** `freigabe.json` im Branch `web-build` von aether (schreibt nur der Workflow „Playtester-Freigabe“,
+`update_web_build.py freigeben`): `{"version": 1, "build": "<Kurz-Hash>", "commit", "zeit": "<ISO 8601, UTC>",
+"vorheriger"}`. Das Dashboard liest sie beim Laden und bei „Aktualisieren“ zusammen mit `index.json` – gleicher Weg
+(Contents-API, Rohinhalt, `cache: "no-store"`, derselbe Lese-Token), genau **eine** Anfrage mehr – und legt den
+Stand mit der Build-Liste in `aether.lastIndex` ab (offline: „offline – Stand von …“, Knopf gesperrt „nur online“).
+- Kasten (nur Fassung „Playtester“): „Bei Playtestern: <hash> · PR #<n> · freigegeben <Datum, Uhrzeit>“ – Uhrzeit der
+  Freigabe (`zeit`, Europe/Berlin), PR-Nummer aus der Commit-Nachricht des Builds in `index.json`. Steht der Build
+  nicht mehr in der Liste: Zusatz „(nicht mehr in der Liste)“, als neu zählen dann nur Builds, die nach der Freigabe
+  entstanden sind (das Datum des freigegebenen Builds ist unbekannt). Keine Datei (404): „Bei Playtestern: automatisch
+  (jeder Merge)“, keine NEU-Marken, die erste Freigabe ist auch hier möglich. Kaputte oder unlesbare Datei: „Freigabe-
+  Stand nicht lesbar“ mit Grund, Knopf gesperrt; die Build-Liste funktioniert wie bisher.
+- Marken: Playtester – **FREIGEGEBEN** (grün), **NEU** (orange, neuer als der freigegebene und mit Playtester-Fassung),
+  **NEUESTER** wie bisher. Entwickler – unverändert, nur **BEI PLAYTESTERN** (grün) am freigegebenen Build.
+- Wählbar sind nur Builds, die der Workflow annimmt: neuer als der freigegebene, mit Playtester-Fassung (Feld
+  `"playtester"`; ohne Ordner `playtester/<hash>/` bricht der Lauf ohne Änderung ab) und Kurz-Hash aus 4–40 Zeichen
+  `0-9a-f` (`update_web_build.py` sucht die Eingabe als `short` in `index.json`). Ältere und der freigegebene Build
+  sind grau (Haken = schon bei den Playtestern), Builds ohne Playtester-Fassung grau mit „keine Playtester-Fassung“.
+  Vorauswahl: nichts; „Abbrechen“ und Esc verlassen die Auswahl ohne Änderung.
+- Kopieren: `navigator.clipboard.writeText` im selben Tipp, sonst der Ersatzweg des Feedback-Dialogs
+  (`execCommand('copy')`); scheitert auch der: „Kopieren nicht möglich – Kennung markieren:“ mit markiertem Text.
+
+**Was das Dashboard nicht tut:** Es schreibt nie in ein Repository, löst keinen Workflow per API aus und braucht keine
+neuen Token-Rechte (Variante A, der Lese-Token bleibt, wie er ist). Es merkt sich nichts als „freigegeben“ –
+maßgeblich ist allein `freigabe.json` nach „Aktualisieren“. Eine Freigabe zurücknehmen (älteren Build freigeben),
+„Was ist neu“ und Änderungen im Repo aether gehören nicht dazu; das Eingabefeld der Workflow-Seite lässt sich per
+Adresse nicht vorbelegen (in der GitHub-Doku nicht beschrieben), daher Kopieren und Einfügen.
+- Tests: `tests/playtester-updates.test.js`.
+
 ## Spielstart im Rahmen
 
 Safari/WebKit drosselt `requestAnimationFrame` in einem fremden (cross-origin) iframe auf 30 fps, bis der Nutzer
@@ -1700,6 +1741,11 @@ Die Tests bauen die GitHub-REST-API mit Playwright-Routing nach und prüfen die 
   CI-Zeile mit langen Job- und Schrittnamen (Re-run): „Dauer / Limit (Prozent)“ liegt bei 1194×834, 834×1194,
   874×402, 402×874, 390×844, 360 und 320 px sowie in 10-px-Schritten von 320 bis 1400 px immer in einer Zeile,
   ohne Überlauf aus der Karte. Gegenprobe (muss rot werden): ohne `white-space: nowrap` am Block.
+- `tests/playtester-updates.test.js` – Playtester-Updates sammeln und veröffentlichen mit nachgestellter `freigabe.json`
+  (`mock.freigabe`, `mock.freigabeStatus` in `tests/mock-dashboard.js`): Kasten und Zählung, Marken in beiden
+  Fassungen, Auswahl (Obergrenze, Mitwählen, Abwählen, nicht wählbare Builds, „Ältere Builds anzeigen“), freigegebener
+  Build nicht in der Liste, keine bzw. kaputte Datei, offline, Kopieren samt Ersatzweg, Link-Ziel und `rel`, genau eine
+  zusätzliche Anfrage, nur GET-Anfragen, Layout bei 320 px, iPhone quer und iPad (hoch/quer).
 - `tests/fassung.test.js` – Umschalter „Fassung: Entwickler | Playtester“ mit nachgestelltem `index.json` (Builds mit und
   ohne `playtester`): Standard Entwickler, Speichern/Wiederherstellen (`aether.fassung`, ungültige Werte), Ausgrauen
   und Nicht-Wählbarkeit auch unter „Ältere Builds“, Sprung der Auswahl, gesperrter Start, Pfad beim Laden
