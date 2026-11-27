@@ -175,6 +175,31 @@
   .build .meta .no-variant { margin-left: auto; font-style: italic; }
   .fassung-hint { margin: 10px 0 0; }
 
+  /* Playtester-Updates sammeln und veröffentlichen (README): Freigabe-Stand aus freigabe.json (web-build) */
+  .badge.neu { background: #33270f; color: var(--warn); }
+  .badge.frei { background: #12241a; color: var(--ok); }
+  .fg-box {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    margin-bottom: 10px; padding: 10px 12px; border-radius: 12px;
+    border: 1px solid #2c5a3d; background: #0f1b15;
+  }
+  .fg-box.fehler { border-color: #5b2630; background: #2a1519; }
+  .fg-box.unklar { border-color: var(--line); background: var(--panel-2); }
+  .fg-text { flex: 1 1 200px; min-width: 0; }
+  .fg-stand { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  .fg-stand .fg-teil:last-child { white-space: nowrap; } /* „freigegeben 27.11., 14:18“ am Stück */
+  .fg-neu { font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
+  .fg-neu.ruhig { color: var(--muted); }
+  .fg-off { font-size: 13px; color: var(--muted); }
+  .fg-aktion { flex: 0 1 auto; max-width: 100%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .fg-nur { font-size: 12px; color: var(--muted); }
+  .btn.fg-go {
+    background: var(--warn); border: 0; color: #0b0e14; font-weight: 700;
+    min-height: 40px; padding: 8px 14px; font-size: 14px; max-width: 100%; text-align: center;
+  }
+  .btn.fg-go:disabled { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); opacity: 1; }
+  @media (max-width: 360px) { .btn.fg-go { font-size: 13px; padding: 8px 10px; } }
+
   .footer { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; }
 
   /* Offline-Hinweis */
@@ -752,6 +777,18 @@
           <button type="button" id="fassungPlaytester" data-fassung="playtester" aria-pressed="false">Playtester</button>
         </div>
       </div>
+      <!-- Fassung „Playtester“: welcher Build bei den Playtestern ist (freigabe.json in web-build) -->
+      <div class="fg-box" id="fgBox" hidden>
+        <div class="fg-text">
+          <div class="fg-stand" id="fgStand"></div>
+          <div class="fg-neu" id="fgNeu"></div>
+          <div class="fg-off" id="fgOff" hidden></div>
+        </div>
+        <div class="fg-aktion">
+          <button class="btn fg-go" id="fgUpdate" type="button">Playtester-Fassung updaten ›</button>
+          <span class="fg-nur" id="fgNur" hidden>nur online</span>
+        </div>
+      </div>
       <ul class="builds" id="buildList" role="radiogroup" aria-label="Builds"></ul>
       <div id="buildsKlapp"></div>
       <p class="muted small fassung-hint" id="fassungHint" role="status" hidden></p>
@@ -1033,6 +1070,102 @@
     return normalizeIndex(data);
   }
 
+  // ---------------------------------------------------------------------------
+  // Freigabe für Playtester (aether: Workflow „Playtester-Freigabe“ schreibt freigabe.json in web-build:
+  // {"version": 1, "build": "<kurzer Hash>", "commit", "zeit": ISO 8601 UTC, "vorheriger"}). Das Dashboard liest
+  // die Datei nur (1 Anfrage zusätzlich zu index.json, gleicher Weg) und schreibt nie.
+  // freigabe.art: 'ok' (build, commit, zeit, vorheriger) | 'keine' (Datei fehlt: Playtester bekommen jeden Merge)
+  //               | 'fehler' (grund) | 'unbekannt' (offline ohne gespeicherten Stand). at: wann gelesen.
+  // ---------------------------------------------------------------------------
+  var FREIGABE_DATEI = 'freigabe.json';
+  // Build-Kennung wie im Workflow verlangt: update_web_build.py vergleicht die Eingabe (klein geschrieben) mit "short"
+  // aus index.json – nur ein Kurz-Hash aus 4–40 Zeichen 0-9/a-f wird dort gefunden.
+  var KENNUNG_RE = /^[0-9a-f]{4,40}$/;
+  var FREIGABE_WORKFLOW_URL = 'https://github.com/konstantin9ezm/aether/actions/workflows/playtester-freigabe.yml';
+  var freigabe = { art: 'unbekannt', at: '' };
+
+  function parseFreigabe(text, at) {
+    var fehler = function (grund) { return { art: 'fehler', grund: grund, at: at }; };
+    var d;
+    try { d = JSON.parse(text); } catch (e) { return fehler('freigabe.json enthält kein gültiges JSON.'); }
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return fehler('freigabe.json enthält kein Objekt.');
+    if (d.version !== 1) return fehler('freigabe.json hat eine unbekannte Version.');
+    if (typeof d.build !== 'string' || !KENNUNG_RE.test(d.build)) return fehler('In freigabe.json fehlt eine gültige Build-Kennung.');
+    return {
+      art: 'ok', build: d.build, commit: typeof d.commit === 'string' ? d.commit : '',
+      zeit: typeof d.zeit === 'string' && !isNaN(Date.parse(d.zeit)) ? d.zeit : '',
+      vorheriger: typeof d.vorheriger === 'string' ? d.vorheriger : null, at: at
+    };
+  }
+  // Gespeicherter Stand (localStorage, mit der Build-Liste): nur bekannte Formen übernehmen.
+  function normalizeFreigabe(v) {
+    if (!v || typeof v !== 'object') return { art: 'unbekannt', at: '' };
+    var at = typeof v.at === 'string' ? v.at : '';
+    if (v.art === 'ok') return parseFreigabe(JSON.stringify({ version: 1, build: v.build, commit: v.commit, zeit: v.zeit, vorheriger: v.vorheriger }), at);
+    if (v.art === 'keine') return { art: 'keine', at: at };
+    if (v.art === 'fehler') return { art: 'fehler', grund: String(v.grund || ''), at: at };
+    return { art: 'unbekannt', at: '' };
+  }
+  // Nie ein Fehler nach außen (die Build-Liste funktioniert weiter), außer Abbruch (Zeitlimit).
+  async function loadFreigabe(useToken, signal) {
+    var at = new Date().toISOString();
+    try {
+      var res = await api(contentsPath(FREIGABE_DATEI), {
+        token: useToken,
+        accept: 'application/vnd.github.raw+json',
+        signal: signal,
+        notFound: new AppError('keinefreigabe', 'Keine Freigabe.', '')
+      });
+      return parseFreigabe(await res.text(), at);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      if (e && e.kind === 'keinefreigabe') return { art: 'keine', at: at };
+      return { art: 'fehler', grund: (e && e.title) || 'Unbekannter Fehler.', at: at };
+    }
+  }
+  // Build-Liste und Freigabe-Stand gemeinsam (genau 2 Anfragen pro Laden).
+  async function loadStand(useToken, signal) {
+    var r = await Promise.all([loadIndex(useToken, signal), loadFreigabe(useToken, signal)]);
+    return { list: r[0], freigabe: r[1] };
+  }
+  function gleicheFreigabe(a, b) {
+    var ohneZeit = function (x) { var c = {}; Object.keys(x || {}).forEach(function (k) { if (k !== 'at') c[k] = x[k]; }); return JSON.stringify(c); };
+    return ohneZeit(a) === ohneZeit(b);
+  }
+  // PR-Nummer aus der Commit-Nachricht („Merge pull request #99 from …“ bzw. „… (#99)“), sonst null.
+  function prNummer(msg) {
+    var z = String(msg || '').split('\n')[0];
+    var m = /^Merge pull request #(\d+)\b/.exec(z) || /\(#(\d+)\)\s*$/.exec(z);
+    return m ? Number(m[1]) : null;
+  }
+  // Freigabe-Sicht auf die Liste (ohne DOM): idx = Stelle des freigegebenen Builds (-1: nicht in der Liste),
+  // neu[short] = neuer als der freigegebene und mit Playtester-Fassung, waehlbar = Kurz-Hashes, die der Workflow
+  // annimmt (neu bzw. vor der ersten Freigabe jeder Build mit Playtester-Fassung; Kennung im verlangten Format).
+  function freigabeSicht(list, fr) {
+    var s = { art: fr.art, idx: -1, neu: {}, nNeu: 0, waehlbar: [] };
+    if (fr.art === 'ok') {
+      for (var i = 0; i < list.length; i++) if (list[i].short === fr.build) { s.idx = i; break; }
+      // Nicht mehr in der Liste: Datum des Builds unbekannt – sicher neuer ist nur, was nach der Freigabe entstand.
+      var seit = Date.parse(fr.zeit);
+      list.forEach(function (b, j) {
+        if (!b.playtester) return;
+        var neuer = s.idx >= 0 ? j < s.idx : (!isNaN(seit) && Date.parse(b.date) > seit);
+        if (neuer) { s.neu[b.short] = true; s.nNeu++; }
+      });
+    }
+    list.forEach(function (b) {
+      var kandidat = fr.art === 'ok' ? !!s.neu[b.short] : (fr.art === 'keine' && !!b.playtester);
+      if (kandidat && KENNUNG_RE.test(b.short)) s.waehlbar.push(b.short);
+    });
+    return s;
+  }
+  // „27.11., 14:18“ (Europe/Berlin, wie die Uhr der Playtester)
+  function fmtKurz(s) {
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
   function safeBuildPath(p) {
     return typeof p === 'string' && /^[\w.\-\/]+$/.test(p) && !/(^|\/)\.\.(\/|$)/.test(p);
   }
@@ -1210,11 +1343,14 @@
     var idx = readJson(CACHE_INDEX_KEY, []);
     return Array.isArray(idx) ? idx.filter(function (x) { return x && typeof x.short === 'string'; }) : [];
   }
-  function storeLastIndex(list) { writeJson(LAST_INDEX_KEY, { at: new Date().toISOString(), builds: list }); }
+  // Mit der Liste der zuletzt online gelesene Freigabe-Stand (für „offline – Stand von …“).
+  function storeLastIndex(list) {
+    writeJson(LAST_INDEX_KEY, { at: new Date().toISOString(), builds: list, freigabe: freigabe.art === 'unbekannt' ? null : freigabe });
+  }
   function readLastIndex() {
     var v = readJson(LAST_INDEX_KEY, null);
     if (!v || !Array.isArray(v.builds)) return null;
-    return { at: String(v.at || ''), builds: normalizeIndex(v.builds) };
+    return { at: String(v.at || ''), builds: normalizeIndex(v.builds), freigabe: normalizeFreigabe(v.freigabe) };
   }
 
   // Nach einem vollständigen Download: Build vorn in den Index, alte Builds samt Dateien entfernen.
@@ -2430,6 +2566,7 @@
       ul.appendChild(li);
       $('buildsKlapp').textContent = '';
       updateFassungHint([]);
+      renderFreigabe(freigabeSicht(builds, freigabe));
       syncStartFrame();
       return;
     }
@@ -2437,6 +2574,7 @@
     // Vorausgewählt bleibt der gewählte Build, sonst der neueste wählbare (z. B. nach dem Umschalten).
     var startable = builds.filter(function (b) { return variantOf(b) && (!offline || savedBuilds[b.short]); });
     var preselect = startable.filter(function (b) { return b.short === keepShort; })[0] || startable[0] || null;
+    var fs = freigabeSicht(builds, freigabe);
     builds.forEach(function (b, i) {
       var li = document.createElement('li');
       var label = document.createElement('label');
@@ -2465,6 +2603,7 @@
         badge.textContent = 'neuester';
         meta.appendChild(badge);
       }
+      fgMarken(meta, fs, b, i, fassung === 'playtester');
       if (!variantOf(b)) {
         var nv = document.createElement('span');
         nv.className = 'no-variant';
@@ -2485,8 +2624,72 @@
     });
     applyBuildsKlapp();
     updateFassungHint(startable);
+    renderFreigabe(fs);
     updateApiInfo();
     syncStartFrame();
+  }
+
+  // Marken der Freigabe: Playtester – FREIGEGEBEN (grün) bzw. NEU (orange); Entwickler – nur BEI PLAYTESTERN (grün).
+  function fgMarken(meta, fs, b, i, playtester) {
+    var text = '', cls = '';
+    if (fs.idx === i) { text = playtester ? 'freigegeben' : 'bei Playtestern'; cls = 'frei'; }
+    else if (playtester && fs.neu[b.short]) { text = 'neu'; cls = 'neu'; }
+    if (!text) return;
+    var m = document.createElement('span');
+    m.className = 'badge ' + cls;
+    m.textContent = text;
+    meta.appendChild(m);
+  }
+
+  // Kasten „Bei Playtestern: …“ über der Liste (nur Fassung „Playtester“).
+  function renderFreigabe(fs) {
+    var box = $('fgBox');
+    var zeigen = fassung === 'playtester' && builds.length > 0;
+    box.hidden = !zeigen;
+    if (!zeigen) return;
+    var offline = isOffline();
+    var stand = '', neu = '', ruhig = false, cls = '';
+    if (fs.art === 'ok') {
+      var b = fs.idx >= 0 ? builds[fs.idx] : null;
+      var pr = b ? prNummer(b.message) : null;
+      stand = ['Bei Playtestern: ' + freigabe.build + (b ? '' : ' (nicht mehr in der Liste)')];
+      if (pr) stand.push('PR #' + pr);
+      // Uhrzeit der Freigabe (freigabe.json "zeit"), nicht die des Builds
+      stand.push(freigabe.zeit ? 'freigegeben ' + fmtKurz(freigabe.zeit) : 'Zeit der Freigabe unbekannt');
+      neu = fs.nNeu === 0 ? 'Keine neuen Updates' : fs.nNeu === 1 ? '1 neues Update noch nicht veröffentlicht'
+        : fs.nNeu + ' neue Updates noch nicht veröffentlicht';
+      ruhig = fs.nNeu === 0;
+    } else if (fs.art === 'keine') {
+      stand = 'Bei Playtestern: automatisch (jeder Merge)';
+      neu = 'Noch keine Freigabe';
+      ruhig = true;
+    } else if (fs.art === 'fehler') {
+      stand = 'Freigabe-Stand nicht lesbar';
+      neu = freigabe.grund || '';
+      ruhig = true;
+      cls = ' fehler';
+    } else {
+      stand = 'Freigabe-Stand nicht bekannt';
+      ruhig = true;
+      cls = ' unklar';
+    }
+    box.className = 'fg-box' + cls;
+    box.dataset.art = fs.art;
+    // Teile mit „ · “ getrennt; ein Teil bricht nicht in sich um (z. B. „27.11., 14:18“).
+    var st = $('fgStand');
+    st.textContent = '';
+    [].concat(stand).forEach(function (t, i) {
+      if (i) st.appendChild(document.createTextNode(' · '));
+      st.appendChild(el('span', 'fg-teil', t));
+    });
+    $('fgNeu').textContent = neu;
+    $('fgNeu').className = 'fg-neu' + (ruhig ? ' ruhig' : '');
+    $('fgNeu').hidden = !neu;
+    var off = $('fgOff');
+    off.hidden = !offline;
+    off.textContent = !offline ? '' : (fs.art !== 'unbekannt' && freigabe.at ? 'offline – Stand von ' + fmtKurz(freigabe.at) : 'offline – kein gespeicherter Stand');
+    $('fgUpdate').disabled = offline || !fs.waehlbar.length;
+    $('fgNur').hidden = !offline;
   }
 
   // Kurzer Hinweis, wenn in der Fassung „Playtester“ kein Build startbar ist (Start gesperrt).
@@ -2547,7 +2750,7 @@
     var timedOut = false;
     var timer = setTimeout(function () { timedOut = true; ctrl.abort(); }, checkTimeoutMs);
     try {
-      return await loadIndex(token, ctrl.signal);
+      return await loadStand(token, ctrl.signal);
     } catch (e) {
       if (timedOut) {
         throw new AppError('timeout', 'GitHub antwortet nicht.',
@@ -2613,8 +2816,9 @@
     setProgress(0, 0, '');
     $('cancelLoadBtn').hidden = true;
     try {
-      var list = await checkOnline();
-      await applyIndex(list);
+      var st = await checkOnline();
+      freigabe = st.freigabe;
+      await applyIndex(st.list);
       showView('builds');
       checkExpiry();
     } catch (e) {
@@ -2622,6 +2826,7 @@
       if (local) {
         // GitHub nicht erreichbar: lokalen Stand zeigen, gespeicherte Builds bleiben startbar.
         builds = local.builds;
+        freigabe = local.freigabe;
         indexLoaded = true;
         setOffline(e);
         await refreshSaved();
@@ -2635,11 +2840,13 @@
 
   // Wieder online (Netz meldet Verbindung oder "Aktualisieren"): Prüfung wiederholen.
   async function reconnect() {
-    var list;
-    try { list = await checkOnline(); } catch (e) {
+    var st;
+    try { st = await checkOnline(); } catch (e) {
       if (unreachable(e)) { setOffline(e); return false; }
       throw e;
     }
+    var list = st.list;
+    freigabe = st.freigabe;
     builds = list;
     indexLoaded = true;
     zuletztGeladen.builds = Date.now();
@@ -4140,13 +4347,16 @@
     });
   }
 
-  // Build-Liste: 1 API-Anfrage (index.json). Unveränderte Liste: nichts neu zeichnen. Ein neuer Build
-  // erscheint in der Liste, wird aber nicht automatisch heruntergeladen (das ginge nur mit Ladeansicht).
+  // Build-Liste: 2 API-Anfragen (index.json und freigabe.json). Unveränderte Liste und Freigabe: nichts neu zeichnen.
+  // Ein neuer Build erscheint in der Liste, wird aber nicht automatisch heruntergeladen (das ginge nur mit Ladeansicht).
   async function stillBuilds() {
-    var list = await checkOnline();
+    var st = await checkOnline();
+    var list = st.list;
+    var gleich = gleicheFreigabe(st.freigabe, freigabe);
+    freigabe = st.freigabe;
     zuletztGeladen.builds = Date.now();
     storeLastIndex(list);
-    if (JSON.stringify(list) === JSON.stringify(builds)) return 'unveraendert';
+    if (gleich && JSON.stringify(list) === JSON.stringify(builds)) return 'unveraendert';
     builds = list;
     indexLoaded = true;
     await refreshSaved();
@@ -4248,7 +4458,9 @@
     btn.disabled = true;
     btn.textContent = 'Prüfe …';
     try {
-      var list = await loadIndex(candidate);
+      var st = await loadStand(candidate);
+      var list = st.list;
+      freigabe = st.freigabe;
       token = candidate;
       clearProjectCache();
       if (!storeToken(candidate)) showInfo('Token konnte nicht dauerhaft gespeichert werden (privater Modus?). Es gilt nur bis zum Neuladen.', 'warn');
